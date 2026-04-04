@@ -1,0 +1,29 @@
+# Binaries
+/mockly
+/mockly.exe
+dist/
+
+# UI build
+ui/dist/
+ui/node_modules/
+
+# Assets (built by make)
+assets/
+
+# Go
+*.test
+*.out
+vendor/
+coverage.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config (user-specific, not example)
+mockly.yaml

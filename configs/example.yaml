@@ -1,0 +1,123 @@
+# Mockly example configuration
+# Run with: mockly start --config configs/example.yaml
+
+mockly:
+  ui:
+    enabled: true
+    port: 9090       # The management UI is served here
+  api:
+    port: 9091       # The management REST API is served here (UI proxies /api → this port)
+
+protocols:
+
+  # ─── HTTP ───────────────────────────────────────────────────────────────────
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      - id: get-users
+        request:
+          method: GET
+          path: /api/users
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: '[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]'
+
+      - id: get-user-by-id
+        request:
+          method: GET
+          path: re:^/api/users/\d+$       # regex path matching
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: '{"id":1,"name":"Alice"}'
+
+      - id: create-user
+        request:
+          method: POST
+          path: /api/users
+        response:
+          status: 201
+          headers:
+            Content-Type: application/json
+          body: '{"id":3,"name":"Charlie"}'
+          delay: 50ms                     # simulate slow endpoint
+
+      - id: not-found
+        request:
+          method: GET
+          path: /api/missing
+        response:
+          status: 404
+          body: '{"error":"not found"}'
+
+      # State-conditional mock — only fires when runtime state matches
+      - id: get-profile-authenticated
+        request:
+          method: GET
+          path: /api/me
+        state:
+          key: authenticated
+          value: "true"
+        response:
+          status: 200
+          body: '{"user":"alice","role":"admin"}'
+
+      - id: get-profile-unauthenticated
+        request:
+          method: GET
+          path: /api/me
+        response:
+          status: 401
+          body: '{"error":"unauthorized"}'
+
+  # ─── WebSocket ──────────────────────────────────────────────────────────────
+  websocket:
+    enabled: true
+    port: 8081
+    mocks:
+
+      - id: echo-ws
+        path: /ws/echo
+        on_connect:
+          send: '{"type":"connected"}'
+        on_message:
+          - match: ping
+            respond: pong
+          - match: re:^{"type":"subscribe"
+            respond: '{"type":"subscribed","channel":"updates"}'
+          - match: close
+            close: true
+
+  # ─── gRPC ───────────────────────────────────────────────────────────────────
+  grpc:
+    enabled: true
+    port: 50051
+    services:
+      - proto: ./protos/users.proto          # path is informational; server is codec-agnostic
+        mocks:
+          - id: get-user-grpc
+            method: GetUser
+            response:
+              id: "1"
+              name: Alice
+              email: alice@example.com
+
+          - id: list-users-grpc
+            method: ListUsers
+            response:
+              users:
+                - id: "1"
+                  name: Alice
+                - id: "2"
+                  name: Bob
+
+          - id: delete-user-error
+            method: DeleteUser
+            error:
+              code: 7      # PERMISSION_DENIED
+              message: you do not have permission to delete users

@@ -41,6 +41,9 @@ func newInbox(maxSize int) *Inbox {
 	return &Inbox{maxSize: maxSize}
 }
 
+// NewInbox creates a new Inbox with the given capacity. Exported for testing.
+func NewInbox(maxSize int) *Inbox { return newInbox(maxSize) }
+
 func (b *Inbox) Add(e config.ReceivedEmail) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

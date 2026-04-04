@@ -9,9 +9,9 @@ on:
     types: [created]
 
 jobs:
-  # ─── Go tests ───────────────────────────────────────────────────────────────
+  # ─── Unit + Integration tests ───────────────────────────────────────────────
   test:
-    name: Go Tests
+    name: Unit & Integration Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,9 +58,31 @@ jobs:
           path: assets/dist/
           retention-days: 1
 
+  # ─── E2E tests (requires built binary) ──────────────────────────────────────
+  e2e:
+    name: E2E Tests
+    needs: [test, ui]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Download UI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: assets/dist/
+
+      - name: Run E2E tests
+        run: go test -tags e2e ./tests/e2e/... -v -timeout 120s
+
   # ─── Cross-platform Go binaries ─────────────────────────────────────────────
   build:
-    name: Build Binary (${{ matrix.os }})
+    name: Build Binary (${{ matrix.goos }}-${{ matrix.goarch }})
     needs: [test, ui]
     runs-on: ubuntu-latest
     strategy:
@@ -114,7 +136,7 @@ jobs:
   # ─── Release ────────────────────────────────────────────────────────────────
   release:
     name: Release
-    needs: build
+    needs: [build, e2e]
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:

@@ -31,9 +31,13 @@ clean:
 	rm -f $(BINARY) $(BINARY).exe
 	cd $(UI_DIR) && rm -rf dist
 
-## test: Run all Go tests
+## test: Run unit and integration tests
 test:
-	go test ./... -v -race -coverprofile=coverage.txt
+	go test ./internal/... -v -race -coverprofile=coverage.txt
+
+## test-e2e: Run end-to-end tests (builds binary first)
+test-e2e: build-go
+	go test -tags e2e ./tests/e2e/... -v -timeout 120s
 
 ## lint: Run golangci-lint
 lint:

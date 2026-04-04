@@ -17,6 +17,8 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/protocols/mqttserver"
+	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
@@ -48,6 +50,43 @@ type GRPCProtocol interface {
 	SetMocks([]config.GRPCMock)
 }
 
+// GraphQLProtocol is the subset of graphqlserver.Server used by the API.
+type GraphQLProtocol interface {
+	ProtocolServer
+	GetMocks() []config.GraphQLMock
+	SetMocks([]config.GraphQLMock)
+}
+
+// TCPProtocol is the subset of tcpserver.Server used by the API.
+type TCPProtocol interface {
+	ProtocolServer
+	GetMocks() []config.TCPMock
+	SetMocks([]config.TCPMock)
+}
+
+// RedisProtocol is the subset of redisserver.Server used by the API.
+type RedisProtocol interface {
+	ProtocolServer
+	GetMocks() []config.RedisMock
+	SetMocks([]config.RedisMock)
+}
+
+// SMTPProtocol is the subset of smtpserver.Server used by the API.
+type SMTPProtocol interface {
+	ProtocolServer
+	GetRules() []config.SMTPRule
+	SetRules([]config.SMTPRule)
+	GetInbox() *smtpserver.Inbox
+}
+
+// MQTTProtocol is the subset of mqttserver.Server used by the API.
+type MQTTProtocol interface {
+	ProtocolServer
+	GetMocks() []config.MQTTMock
+	SetMocks([]config.MQTTMock)
+	GetMessageStore() *mqttserver.MessageStore
+}
+
 // Server is the management API HTTP server.
 type Server struct {
 	cfg       *config.MocklyConfig
@@ -57,6 +96,11 @@ type Server struct {
 	http      HTTPProtocol
 	ws        WSProtocol
 	grpc      GRPCProtocol
+	graphql   GraphQLProtocol
+	tcp       TCPProtocol
+	redis     RedisProtocol
+	smtp      SMTPProtocol
+	mqtt      MQTTProtocol
 	server    *http.Server
 	uiFiles   http.FileSystem
 }
@@ -70,6 +114,11 @@ func New(
 	httpSrv HTTPProtocol,
 	wsSrv WSProtocol,
 	grpcSrv GRPCProtocol,
+	graphqlSrv GraphQLProtocol,
+	tcpSrv TCPProtocol,
+	redisSrv RedisProtocol,
+	smtpSrv SMTPProtocol,
+	mqttSrv MQTTProtocol,
 ) *Server {
 	return &Server{
 		cfg:       cfg,
@@ -79,6 +128,11 @@ func New(
 		http:      httpSrv,
 		ws:        wsSrv,
 		grpc:      grpcSrv,
+		graphql:   graphqlSrv,
+		tcp:       tcpSrv,
+		redis:     redisSrv,
+		smtp:      smtpSrv,
+		mqtt:      mqttSrv,
 	}
 }
 
@@ -139,6 +193,40 @@ func (s *Server) buildRouter() http.Handler {
 		r.Patch("/api/mocks/grpc/{id}", s.patchGRPCMock)
 		r.Delete("/api/mocks/grpc/{id}", s.deleteGRPCMock)
 
+		// GraphQL mocks
+		r.Get("/api/mocks/graphql", s.listGraphQLMocks)
+		r.Post("/api/mocks/graphql", s.addGraphQLMock)
+		r.Put("/api/mocks/graphql/{id}", s.updateGraphQLMock)
+		r.Delete("/api/mocks/graphql/{id}", s.deleteGraphQLMock)
+
+		// TCP mocks
+		r.Get("/api/mocks/tcp", s.listTCPMocks)
+		r.Post("/api/mocks/tcp", s.addTCPMock)
+		r.Put("/api/mocks/tcp/{id}", s.updateTCPMock)
+		r.Delete("/api/mocks/tcp/{id}", s.deleteTCPMock)
+
+		// Redis mocks
+		r.Get("/api/mocks/redis", s.listRedisMocks)
+		r.Post("/api/mocks/redis", s.addRedisMock)
+		r.Put("/api/mocks/redis/{id}", s.updateRedisMock)
+		r.Delete("/api/mocks/redis/{id}", s.deleteRedisMock)
+
+		// SMTP rules + inbox
+		r.Get("/api/mocks/smtp", s.listSMTPRules)
+		r.Post("/api/mocks/smtp", s.addSMTPRule)
+		r.Put("/api/mocks/smtp/{id}", s.updateSMTPRule)
+		r.Delete("/api/mocks/smtp/{id}", s.deleteSMTPRule)
+		r.Get("/api/emails", s.listEmails)
+		r.Delete("/api/emails", s.clearEmails)
+
+		// MQTT mocks + captured messages
+		r.Get("/api/mocks/mqtt", s.listMQTTMocks)
+		r.Post("/api/mocks/mqtt", s.addMQTTMock)
+		r.Put("/api/mocks/mqtt/{id}", s.updateMQTTMock)
+		r.Delete("/api/mocks/mqtt/{id}", s.deleteMQTTMock)
+		r.Get("/api/mqtt/messages", s.listMQTTMessages)
+		r.Delete("/api/mqtt/messages", s.clearMQTTMessages)
+
 		r.Get("/api/state", s.getState)
 		r.Post("/api/state", s.setState)
 		r.Delete("/api/state/{key}", s.deleteState)
@@ -192,14 +280,10 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listProtocols(w http.ResponseWriter, r *http.Request) {
 	var protocols []map[string]interface{}
-	if s.http != nil {
-		protocols = append(protocols, s.http.StatusInfo())
-	}
-	if s.ws != nil {
-		protocols = append(protocols, s.ws.StatusInfo())
-	}
-	if s.grpc != nil {
-		protocols = append(protocols, s.grpc.StatusInfo())
+	for _, p := range []ProtocolServer{s.http, s.ws, s.grpc, s.graphql, s.tcp, s.redis, s.smtp, s.mqtt} {
+		if p != nil {
+			protocols = append(protocols, p.StatusInfo())
+		}
 	}
 	writeJSON(w, http.StatusOK, protocols)
 }
@@ -601,6 +685,330 @@ func (s *Server) clearFault(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
+// GraphQL mocks
+// ---------------------------------------------------------------------------
+
+func (s *Server) listGraphQLMocks(w http.ResponseWriter, r *http.Request) {
+	if s.graphql == nil {
+		writeJSON(w, http.StatusOK, []config.GraphQLMock{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.graphql.GetMocks())
+}
+
+func (s *Server) addGraphQLMock(w http.ResponseWriter, r *http.Request) {
+	var m config.GraphQLMock
+	if err := decodeBody(r, &m); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if m.ID == "" {
+		m.ID = fmt.Sprintf("gql-%d", time.Now().UnixNano())
+	}
+	mocks := s.graphql.GetMocks()
+	s.graphql.SetMocks(append(mocks, m))
+	writeJSON(w, http.StatusCreated, m)
+}
+
+func (s *Server) updateGraphQLMock(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var updated config.GraphQLMock
+	if err := decodeBody(r, &updated); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated.ID = id
+	mocks := s.graphql.GetMocks()
+	for i, m := range mocks {
+		if m.ID == id {
+			mocks[i] = updated
+			s.graphql.SetMocks(mocks)
+			writeJSON(w, http.StatusOK, updated)
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "mock not found")
+}
+
+func (s *Server) deleteGraphQLMock(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	mocks := s.graphql.GetMocks()
+	filtered := mocks[:0]
+	for _, m := range mocks {
+		if m.ID != id {
+			filtered = append(filtered, m)
+		}
+	}
+	s.graphql.SetMocks(filtered)
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+// ---------------------------------------------------------------------------
+// TCP mocks
+// ---------------------------------------------------------------------------
+
+func (s *Server) listTCPMocks(w http.ResponseWriter, r *http.Request) {
+	if s.tcp == nil {
+		writeJSON(w, http.StatusOK, []config.TCPMock{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.tcp.GetMocks())
+}
+
+func (s *Server) addTCPMock(w http.ResponseWriter, r *http.Request) {
+	var m config.TCPMock
+	if err := decodeBody(r, &m); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if m.ID == "" {
+		m.ID = fmt.Sprintf("tcp-%d", time.Now().UnixNano())
+	}
+	s.tcp.SetMocks(append(s.tcp.GetMocks(), m))
+	writeJSON(w, http.StatusCreated, m)
+}
+
+func (s *Server) updateTCPMock(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var updated config.TCPMock
+	if err := decodeBody(r, &updated); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated.ID = id
+	mocks := s.tcp.GetMocks()
+	for i, m := range mocks {
+		if m.ID == id {
+			mocks[i] = updated
+			s.tcp.SetMocks(mocks)
+			writeJSON(w, http.StatusOK, updated)
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "mock not found")
+}
+
+func (s *Server) deleteTCPMock(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	mocks := s.tcp.GetMocks()
+	filtered := mocks[:0]
+	for _, m := range mocks {
+		if m.ID != id {
+			filtered = append(filtered, m)
+		}
+	}
+	s.tcp.SetMocks(filtered)
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+// ---------------------------------------------------------------------------
+// Redis mocks
+// ---------------------------------------------------------------------------
+
+func (s *Server) listRedisMocks(w http.ResponseWriter, r *http.Request) {
+	if s.redis == nil {
+		writeJSON(w, http.StatusOK, []config.RedisMock{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.redis.GetMocks())
+}
+
+func (s *Server) addRedisMock(w http.ResponseWriter, r *http.Request) {
+	var m config.RedisMock
+	if err := decodeBody(r, &m); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if m.ID == "" {
+		m.ID = fmt.Sprintf("redis-%d", time.Now().UnixNano())
+	}
+	s.redis.SetMocks(append(s.redis.GetMocks(), m))
+	writeJSON(w, http.StatusCreated, m)
+}
+
+func (s *Server) updateRedisMock(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var updated config.RedisMock
+	if err := decodeBody(r, &updated); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated.ID = id
+	mocks := s.redis.GetMocks()
+	for i, m := range mocks {
+		if m.ID == id {
+			mocks[i] = updated
+			s.redis.SetMocks(mocks)
+			writeJSON(w, http.StatusOK, updated)
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "mock not found")
+}
+
+func (s *Server) deleteRedisMock(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	mocks := s.redis.GetMocks()
+	filtered := mocks[:0]
+	for _, m := range mocks {
+		if m.ID != id {
+			filtered = append(filtered, m)
+		}
+	}
+	s.redis.SetMocks(filtered)
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+// ---------------------------------------------------------------------------
+// SMTP rules + inbox
+// ---------------------------------------------------------------------------
+
+func (s *Server) listSMTPRules(w http.ResponseWriter, r *http.Request) {
+	if s.smtp == nil {
+		writeJSON(w, http.StatusOK, []config.SMTPRule{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.smtp.GetRules())
+}
+
+func (s *Server) addSMTPRule(w http.ResponseWriter, r *http.Request) {
+	var rule config.SMTPRule
+	if err := decodeBody(r, &rule); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if rule.ID == "" {
+		rule.ID = fmt.Sprintf("smtp-%d", time.Now().UnixNano())
+	}
+	if rule.Action == "" {
+		rule.Action = "accept"
+	}
+	s.smtp.SetRules(append(s.smtp.GetRules(), rule))
+	writeJSON(w, http.StatusCreated, rule)
+}
+
+func (s *Server) updateSMTPRule(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var updated config.SMTPRule
+	if err := decodeBody(r, &updated); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated.ID = id
+	rules := s.smtp.GetRules()
+	for i, rule := range rules {
+		if rule.ID == id {
+			rules[i] = updated
+			s.smtp.SetRules(rules)
+			writeJSON(w, http.StatusOK, updated)
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "rule not found")
+}
+
+func (s *Server) deleteSMTPRule(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	rules := s.smtp.GetRules()
+	filtered := rules[:0]
+	for _, rule := range rules {
+		if rule.ID != id {
+			filtered = append(filtered, rule)
+		}
+	}
+	s.smtp.SetRules(filtered)
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+func (s *Server) listEmails(w http.ResponseWriter, r *http.Request) {
+	if s.smtp == nil {
+		writeJSON(w, http.StatusOK, []config.ReceivedEmail{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.smtp.GetInbox().All())
+}
+
+func (s *Server) clearEmails(w http.ResponseWriter, r *http.Request) {
+	if s.smtp != nil {
+		s.smtp.GetInbox().Clear()
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+// ---------------------------------------------------------------------------
+// MQTT mocks + captured messages
+// ---------------------------------------------------------------------------
+
+func (s *Server) listMQTTMocks(w http.ResponseWriter, r *http.Request) {
+	if s.mqtt == nil {
+		writeJSON(w, http.StatusOK, []config.MQTTMock{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.mqtt.GetMocks())
+}
+
+func (s *Server) addMQTTMock(w http.ResponseWriter, r *http.Request) {
+	var m config.MQTTMock
+	if err := decodeBody(r, &m); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if m.ID == "" {
+		m.ID = fmt.Sprintf("mqtt-%d", time.Now().UnixNano())
+	}
+	s.mqtt.SetMocks(append(s.mqtt.GetMocks(), m))
+	writeJSON(w, http.StatusCreated, m)
+}
+
+func (s *Server) updateMQTTMock(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var updated config.MQTTMock
+	if err := decodeBody(r, &updated); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated.ID = id
+	mocks := s.mqtt.GetMocks()
+	for i, m := range mocks {
+		if m.ID == id {
+			mocks[i] = updated
+			s.mqtt.SetMocks(mocks)
+			writeJSON(w, http.StatusOK, updated)
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "mock not found")
+}
+
+func (s *Server) deleteMQTTMock(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	mocks := s.mqtt.GetMocks()
+	filtered := mocks[:0]
+	for _, m := range mocks {
+		if m.ID != id {
+			filtered = append(filtered, m)
+		}
+	}
+	s.mqtt.SetMocks(filtered)
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+func (s *Server) listMQTTMessages(w http.ResponseWriter, r *http.Request) {
+	if s.mqtt == nil {
+		writeJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.mqtt.GetMessageStore().All())
+}
+
+func (s *Server) clearMQTTMessages(w http.ResponseWriter, r *http.Request) {
+	if s.mqtt != nil {
+		s.mqtt.GetMessageStore().Clear()
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
@@ -653,6 +1061,12 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 	s.scenarios.ClearFault()
 	for _, id := range s.scenarios.ActiveIDs() {
 		s.scenarios.Deactivate(id)
+	}
+	if s.smtp != nil {
+		s.smtp.GetInbox().Clear()
+	}
+	if s.mqtt != nil {
+		s.mqtt.GetMessageStore().Clear()
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})
 }

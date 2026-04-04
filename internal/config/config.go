@@ -35,6 +35,11 @@ type ProtocolsConfig struct {
 	HTTP      *HTTPConfig      `yaml:"http,omitempty" json:"http,omitempty"`
 	WebSocket *WebSocketConfig `yaml:"websocket,omitempty" json:"websocket,omitempty"`
 	GRPC      *GRPCConfig      `yaml:"grpc,omitempty" json:"grpc,omitempty"`
+	GraphQL   *GraphQLConfig   `yaml:"graphql,omitempty" json:"graphql,omitempty"`
+	TCP       *TCPConfig       `yaml:"tcp,omitempty" json:"tcp,omitempty"`
+	Redis     *RedisConfig     `yaml:"redis,omitempty" json:"redis,omitempty"`
+	SMTP      *SMTPConfig      `yaml:"smtp,omitempty" json:"smtp,omitempty"`
+	MQTT      *MQTTConfig      `yaml:"mqtt,omitempty" json:"mqtt,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +129,147 @@ type GRPCMock struct {
 type GRPCError struct {
 	Code    int    `yaml:"code" json:"code"`
 	Message string `yaml:"message" json:"message"`
+}
+
+// ---------------------------------------------------------------------------
+// GraphQL
+// ---------------------------------------------------------------------------
+
+type GraphQLConfig struct {
+	Enabled bool          `yaml:"enabled" json:"enabled"`
+	Port    int           `yaml:"port" json:"port"`
+	Path    string        `yaml:"path,omitempty" json:"path,omitempty"` // default: /graphql
+	Mocks   []GraphQLMock `yaml:"mocks" json:"mocks"`
+}
+
+// GraphQLMock matches an incoming GraphQL operation and returns a response.
+type GraphQLMock struct {
+	ID            string                 `yaml:"id" json:"id"`
+	OperationType string                 `yaml:"operation_type,omitempty" json:"operation_type,omitempty"` // query|mutation|subscription (empty = any)
+	OperationName string                 `yaml:"operation_name,omitempty" json:"operation_name,omitempty"` // exact or wildcard, empty = any
+	Response      map[string]interface{} `yaml:"response,omitempty" json:"response,omitempty"`              // data field
+	Errors        []GraphQLError         `yaml:"errors,omitempty" json:"errors,omitempty"`
+	Delay         Duration               `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State         *StateCondition        `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+type GraphQLError struct {
+	Message    string                 `yaml:"message" json:"message"`
+	Path       []string               `yaml:"path,omitempty" json:"path,omitempty"`
+	Extensions map[string]interface{} `yaml:"extensions,omitempty" json:"extensions,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// TCP
+// ---------------------------------------------------------------------------
+
+type TCPConfig struct {
+	Enabled bool      `yaml:"enabled" json:"enabled"`
+	Port    int       `yaml:"port" json:"port"`
+	Mocks   []TCPMock `yaml:"mocks" json:"mocks"`
+}
+
+// TCPMock matches incoming raw TCP data and sends a response.
+// Match is an exact string, a "re:…" regex, or "hex:…" hex bytes.
+// Response can be a plain string or "hex:…" hex bytes.
+type TCPMock struct {
+	ID       string          `yaml:"id" json:"id"`
+	Match    string          `yaml:"match" json:"match"`
+	Response string          `yaml:"response" json:"response"`
+	Close    bool            `yaml:"close,omitempty" json:"close,omitempty"`
+	Delay    Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State    *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Redis
+// ---------------------------------------------------------------------------
+
+type RedisConfig struct {
+	Enabled bool        `yaml:"enabled" json:"enabled"`
+	Port    int         `yaml:"port" json:"port"`
+	Mocks   []RedisMock `yaml:"mocks" json:"mocks"`
+}
+
+// RedisMock matches an incoming Redis command and returns a configured response.
+// Key supports exact, "re:…" regex, and "*" wildcards.
+type RedisMock struct {
+	ID       string          `yaml:"id" json:"id"`
+	Command  string          `yaml:"command" json:"command"` // e.g. GET, SET, HGET
+	Key      string          `yaml:"key,omitempty" json:"key,omitempty"`
+	Response RedisResponse   `yaml:"response" json:"response"`
+	Delay    Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State    *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+// RedisResponse holds the value to return for a matched Redis command.
+// Type is one of: string | bulk | integer | array | error | nil.
+// For type "array", Value should be a []interface{} (each element a string).
+type RedisResponse struct {
+	Type  string      `yaml:"type" json:"type"`
+	Value interface{} `yaml:"value,omitempty" json:"value,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// SMTP
+// ---------------------------------------------------------------------------
+
+type SMTPConfig struct {
+	Enabled    bool       `yaml:"enabled" json:"enabled"`
+	Port       int        `yaml:"port" json:"port"`
+	Domain     string     `yaml:"domain,omitempty" json:"domain,omitempty"` // default: mockly.local
+	MaxEmails  int        `yaml:"max_emails,omitempty" json:"max_emails,omitempty"`
+	Rules      []SMTPRule `yaml:"rules,omitempty" json:"rules,omitempty"`
+}
+
+// SMTPRule defines accept/reject behaviour for incoming emails.
+// From, To, Subject are matched as exact strings, "re:…" regexes, or wildcards.
+// Action is "accept" (default) or "reject".
+type SMTPRule struct {
+	ID      string `yaml:"id" json:"id"`
+	From    string `yaml:"from,omitempty" json:"from,omitempty"`
+	To      string `yaml:"to,omitempty" json:"to,omitempty"`
+	Subject string `yaml:"subject,omitempty" json:"subject,omitempty"`
+	Action  string `yaml:"action" json:"action"` // accept | reject
+	Message string `yaml:"message,omitempty" json:"message,omitempty"` // SMTP reject error message
+}
+
+// ReceivedEmail is a captured inbound email stored in the SMTP inbox.
+type ReceivedEmail struct {
+	ID          string   `json:"id"`
+	From        string   `json:"from"`
+	To          []string `json:"to"`
+	Subject     string   `json:"subject"`
+	Body        string   `json:"body"`
+	ReceivedAt  string   `json:"received_at"`
+}
+
+// ---------------------------------------------------------------------------
+// MQTT
+// ---------------------------------------------------------------------------
+
+type MQTTConfig struct {
+	Enabled bool       `yaml:"enabled" json:"enabled"`
+	Port    int        `yaml:"port" json:"port"`
+	Mocks   []MQTTMock `yaml:"mocks" json:"mocks"`
+}
+
+// MQTTMock subscribes to a topic pattern. When a message arrives, the broker
+// publishes Response to ResponseTopic (defaults to <topic>/response).
+// Topic supports MQTT wildcards: + (single level) and # (multi-level).
+type MQTTMock struct {
+	ID            string          `yaml:"id" json:"id"`
+	Topic         string          `yaml:"topic" json:"topic"`
+	Response      *MQTTResponse   `yaml:"response,omitempty" json:"response,omitempty"`
+	State         *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+type MQTTResponse struct {
+	Topic   string   `yaml:"topic" json:"topic"` // publish on this topic; empty = <incoming>/response
+	Payload string   `yaml:"payload" json:"payload"`
+	QoS     byte     `yaml:"qos,omitempty" json:"qos,omitempty"`
+	Retain  bool     `yaml:"retain,omitempty" json:"retain,omitempty"`
+	Delay   Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -273,5 +419,33 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Protocols.GRPC != nil && cfg.Protocols.GRPC.Port == 0 {
 		cfg.Protocols.GRPC.Port = 50051
+	}
+	if cfg.Protocols.GraphQL != nil {
+		if cfg.Protocols.GraphQL.Port == 0 {
+			cfg.Protocols.GraphQL.Port = 8082
+		}
+		if cfg.Protocols.GraphQL.Path == "" {
+			cfg.Protocols.GraphQL.Path = "/graphql"
+		}
+	}
+	if cfg.Protocols.TCP != nil && cfg.Protocols.TCP.Port == 0 {
+		cfg.Protocols.TCP.Port = 8083
+	}
+	if cfg.Protocols.Redis != nil && cfg.Protocols.Redis.Port == 0 {
+		cfg.Protocols.Redis.Port = 6379
+	}
+	if cfg.Protocols.SMTP != nil {
+		if cfg.Protocols.SMTP.Port == 0 {
+			cfg.Protocols.SMTP.Port = 2525
+		}
+		if cfg.Protocols.SMTP.Domain == "" {
+			cfg.Protocols.SMTP.Domain = "mockly.local"
+		}
+		if cfg.Protocols.SMTP.MaxEmails == 0 {
+			cfg.Protocols.SMTP.MaxEmails = 1000
+		}
+	}
+	if cfg.Protocols.MQTT != nil && cfg.Protocols.MQTT.Port == 0 {
+		cfg.Protocols.MQTT.Port = 1883
 	}
 }

@@ -1,0 +1,252 @@
+# Mockly preset: Generic OAuth2 / OpenID Connect
+#
+# Mocks a standards-compliant OAuth2 + OIDC authorization server.
+# Suitable for testing applications that use any OAuth2 provider
+# (Auth0, Okta, Azure AD, Google, etc.) without vendor-specific paths.
+#
+# Start:   mockly preset use oauth2
+#          mockly start --config configs/presets/oauth2.yaml
+#
+# Common flows supported:
+#   - Authorization code + PKCE
+#   - Client credentials
+#   - Resource owner password (legacy)
+#   - Refresh token
+#   - Token introspection (RFC 7662)
+#   - Token revocation (RFC 7009)
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── OIDC Discovery ────────────────────────────────────────────────────
+      - id: oidc-discovery
+        request:
+          method: GET
+          path: /.well-known/openid-configuration
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "issuer": "http://localhost:8080",
+              "authorization_endpoint": "http://localhost:8080/oauth2/authorize",
+              "token_endpoint": "http://localhost:8080/oauth2/token",
+              "userinfo_endpoint": "http://localhost:8080/oauth2/userinfo",
+              "jwks_uri": "http://localhost:8080/.well-known/jwks.json",
+              "registration_endpoint": "http://localhost:8080/oauth2/register",
+              "introspection_endpoint": "http://localhost:8080/oauth2/introspect",
+              "revocation_endpoint": "http://localhost:8080/oauth2/revoke",
+              "scopes_supported": ["openid", "profile", "email", "address", "phone", "offline_access"],
+              "response_types_supported": ["code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token"],
+              "response_modes_supported": ["query", "fragment", "form_post"],
+              "grant_types_supported": ["authorization_code", "implicit", "client_credentials", "password", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
+              "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt", "none"],
+              "subject_types_supported": ["public"],
+              "id_token_signing_alg_values_supported": ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"],
+              "claims_supported": ["sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "name", "given_name", "family_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "email", "email_verified", "gender", "birthdate", "zoneinfo", "locale", "phone_number", "phone_number_verified", "address", "updated_at"],
+              "code_challenge_methods_supported": ["plain", "S256"],
+              "end_session_endpoint": "http://localhost:8080/oauth2/logout",
+              "check_session_iframe": "http://localhost:8080/oauth2/session/check",
+              "frontchannel_logout_supported": true,
+              "backchannel_logout_supported": true
+            }
+
+      # ── JWKS ──────────────────────────────────────────────────────────────
+      - id: jwks
+        request:
+          method: GET
+          path: /.well-known/jwks.json
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "keys": [
+                {
+                  "kid": "mockly-rsa-key-1",
+                  "kty": "RSA",
+                  "use": "sig",
+                  "alg": "RS256",
+                  "n": "mockly-rsa-modulus-placeholder",
+                  "e": "AQAB"
+                },
+                {
+                  "kid": "mockly-ec-key-1",
+                  "kty": "EC",
+                  "use": "sig",
+                  "alg": "ES256",
+                  "crv": "P-256",
+                  "x": "mockly-ec-x-placeholder",
+                  "y": "mockly-ec-y-placeholder"
+                }
+              ]
+            }
+
+      # ── Token endpoint — authorization_code / password / client_credentials
+      - id: token-success
+        request:
+          method: POST
+          path: /oauth2/token
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+            Cache-Control: no-store
+            Pragma: no-cache
+          body: |
+            {
+              "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Im1vY2tseS1yc2Eta2V5LTEifQ.eyJzdWIiOiJ1c2VyLTEyMyIsImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA4MCIsImF1ZCI6Im15LWFwcCIsImV4cCI6OTk5OTk5OTk5OSwiaWF0IjoxNzAwMDAwMDAwLCJqdGkiOiJtb2NrLWp0aS0wMDEiLCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIiwibmFtZSI6IkFsaWNlIEV4YW1wbGUiLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIn0.mock-signature",
+              "token_type": "Bearer",
+              "expires_in": 3600,
+              "refresh_token": "mock-refresh-token-opaque-string-001",
+              "refresh_expires_in": 86400,
+              "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Im1vY2tseS1yc2Eta2V5LTEifQ.eyJzdWIiOiJ1c2VyLTEyMyIsImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA4MCIsImF1ZCI6Im15LWFwcCIsImV4cCI6OTk5OTk5OTk5OSwiaWF0IjoxNzAwMDAwMDAwLCJub25jZSI6Im1vY2stbm9uY2UiLCJuYW1lIjoiQWxpY2UgRXhhbXBsZSIsImVtYWlsIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZX0.mock-id-sig",
+              "scope": "openid profile email"
+            }
+
+      # ── Token endpoint — invalid client ───────────────────────────────────
+      - id: token-invalid-client
+        request:
+          method: POST
+          path: /oauth2/token
+          body: "client_id=bad-client"
+        response:
+          status: 401
+          headers:
+            Content-Type: application/json
+            WWW-Authenticate: 'Basic realm="oauth2"'
+          body: |
+            {
+              "error": "invalid_client",
+              "error_description": "Client authentication failed"
+            }
+
+      # ── UserInfo ─────────────────────────────────────────────────────────
+      - id: userinfo
+        request:
+          method: GET
+          path: /oauth2/userinfo
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "sub": "user-123",
+              "name": "Alice Example",
+              "given_name": "Alice",
+              "family_name": "Example",
+              "middle_name": "",
+              "nickname": "alice",
+              "preferred_username": "alice",
+              "profile": "https://example.com/~alice",
+              "picture": "https://example.com/~alice/photo.jpg",
+              "website": "https://blog.example.com",
+              "email": "alice@example.com",
+              "email_verified": true,
+              "gender": "female",
+              "birthdate": "1990-01-01",
+              "zoneinfo": "America/Los_Angeles",
+              "locale": "en-US",
+              "phone_number": "+1 (555) 555-5555",
+              "phone_number_verified": false,
+              "address": {
+                "formatted": "123 Mock St, Mockville, MC 00000, US",
+                "street_address": "123 Mock St",
+                "locality": "Mockville",
+                "region": "MC",
+                "postal_code": "00000",
+                "country": "US"
+              },
+              "updated_at": 1700000000
+            }
+
+      # ── Introspect — active ────────────────────────────────────────────────
+      - id: introspect-active
+        request:
+          method: POST
+          path: /oauth2/introspect
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "active": true,
+              "scope": "openid profile email",
+              "client_id": "my-app",
+              "username": "alice",
+              "token_type": "Bearer",
+              "exp": 9999999999,
+              "iat": 1700000000,
+              "nbf": 1700000000,
+              "sub": "user-123",
+              "aud": ["my-app"],
+              "iss": "http://localhost:8080",
+              "jti": "mock-jti-001"
+            }
+
+      # ── Introspect — inactive / expired ──────────────────────────────────
+      - id: introspect-inactive
+        request:
+          method: POST
+          path: /oauth2/introspect
+          body: "token=expired-token"
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: '{"active":false}'
+
+      # ── Token revocation ─────────────────────────────────────────────────
+      - id: revoke
+        request:
+          method: POST
+          path: /oauth2/revoke
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: "{}"
+
+      # ── Logout / end session ──────────────────────────────────────────────
+      - id: logout
+        request:
+          method: GET
+          path: /oauth2/logout
+        response:
+          status: 302
+          headers:
+            Location: http://localhost:8080/logged-out
+          body: ""
+
+      # ── Device authorization ──────────────────────────────────────────────
+      - id: device-authorization
+        request:
+          method: POST
+          path: /oauth2/device_authorization
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "device_code": "mockly-device-code-001",
+              "user_code": "MOCK-1234",
+              "verification_uri": "http://localhost:8080/activate",
+              "verification_uri_complete": "http://localhost:8080/activate?user_code=MOCK-1234",
+              "expires_in": 1800,
+              "interval": 5
+            }

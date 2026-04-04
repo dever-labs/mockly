@@ -1,0 +1,414 @@
+# Mockly preset: GitHub REST API v3
+#
+# Mocks the most commonly tested GitHub REST API endpoints.
+# Useful for testing CI/CD tools, integrations, and GitHub Apps.
+#
+# Start:   mockly preset use github
+#          mockly start --config configs/presets/github.yaml
+#
+# Docs: https://docs.github.com/en/rest
+# Conventions:
+#   - All responses include the standard GitHub rate limit headers
+#   - Default user: "octocat" / org: "github" / repo: "hello-world"
+#   - Authenticated via "Authorization: Bearer <token>" header
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── Meta ──────────────────────────────────────────────────────────────
+      - id: meta
+        request:
+          method: GET
+          path: /meta
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+            X-GitHub-Media-Type: github.v3; format=json
+          body: |
+            {
+              "verifiable_password_authentication": true,
+              "ssh_key_fingerprints": {},
+              "hooks": ["192.30.252.0/22"],
+              "web": ["192.30.252.0/22"],
+              "api": ["192.30.252.0/22"],
+              "git": ["192.30.252.0/22"]
+            }
+
+      # ── Rate limit ────────────────────────────────────────────────────────
+      - id: rate-limit
+        request:
+          method: GET
+          path: /rate_limit
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+            X-RateLimit-Limit: "5000"
+            X-RateLimit-Remaining: "4999"
+            X-RateLimit-Reset: "9999999999"
+          body: |
+            {
+              "resources": {
+                "core": {"limit": 5000, "used": 1, "remaining": 4999, "reset": 9999999999},
+                "search": {"limit": 30, "used": 0, "remaining": 30, "reset": 9999999999},
+                "graphql": {"limit": 5000, "used": 0, "remaining": 5000, "reset": 9999999999},
+                "code_search": {"limit": 10, "used": 0, "remaining": 10, "reset": 9999999999}
+              },
+              "rate": {"limit": 5000, "used": 1, "remaining": 4999, "reset": 9999999999}
+            }
+
+      # ── Authenticated user ────────────────────────────────────────────────
+      - id: get-user
+        request:
+          method: GET
+          path: /user
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+            X-RateLimit-Limit: "5000"
+            X-RateLimit-Remaining: "4999"
+          body: |
+            {
+              "login": "octocat",
+              "id": 1,
+              "node_id": "MDQ6VXNlcjE=",
+              "avatar_url": "https://github.com/images/error/octocat_happy.gif",
+              "gravatar_id": "",
+              "url": "http://localhost:8080/users/octocat",
+              "html_url": "https://github.com/octocat",
+              "repos_url": "http://localhost:8080/users/octocat/repos",
+              "type": "User",
+              "site_admin": false,
+              "name": "The Octocat",
+              "company": "GitHub",
+              "blog": "https://github.com/blog",
+              "location": "San Francisco, CA",
+              "email": "octocat@github.com",
+              "hireable": false,
+              "bio": "A mysterious entity",
+              "twitter_username": null,
+              "public_repos": 2,
+              "public_gists": 1,
+              "followers": 20,
+              "following": 0,
+              "created_at": "2011-01-25T18:44:36Z",
+              "updated_at": "2023-01-01T00:00:00Z",
+              "private_gists": 0,
+              "total_private_repos": 2,
+              "owned_private_repos": 2,
+              "plan": {"name": "pro", "space": 976562499, "private_repos": 9999, "collaborators": 0}
+            }
+
+      # ── Get user by username ──────────────────────────────────────────────
+      - id: get-user-by-login
+        request:
+          method: GET
+          path: re:^/users/[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "login": "octocat",
+              "id": 1,
+              "node_id": "MDQ6VXNlcjE=",
+              "avatar_url": "https://github.com/images/error/octocat_happy.gif",
+              "type": "User",
+              "site_admin": false,
+              "name": "The Octocat",
+              "company": "GitHub",
+              "public_repos": 2,
+              "followers": 20,
+              "following": 0,
+              "created_at": "2011-01-25T18:44:36Z"
+            }
+
+      # ── User repos ────────────────────────────────────────────────────────
+      - id: list-user-repos
+        request:
+          method: GET
+          path: /user/repos
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+            Link: '<http://localhost:8080/user/repos?page=2>; rel="next"'
+          body: |
+            [
+              {
+                "id": 1296269,
+                "name": "hello-world",
+                "full_name": "octocat/hello-world",
+                "owner": {"login": "octocat", "id": 1},
+                "private": false,
+                "html_url": "https://github.com/octocat/hello-world",
+                "description": "This your first repo!",
+                "fork": false,
+                "url": "http://localhost:8080/repos/octocat/hello-world",
+                "language": "Go",
+                "default_branch": "main",
+                "visibility": "public",
+                "stargazers_count": 1337,
+                "forks_count": 42,
+                "open_issues_count": 3,
+                "created_at": "2011-01-26T19:01:12Z",
+                "updated_at": "2023-01-01T00:00:00Z",
+                "pushed_at": "2023-01-01T00:00:00Z"
+              }
+            ]
+
+      # ── Get repo ──────────────────────────────────────────────────────────
+      - id: get-repo
+        request:
+          method: GET
+          path: re:^/repos/[^/]+/[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": 1296269,
+              "name": "hello-world",
+              "full_name": "octocat/hello-world",
+              "owner": {"login": "octocat", "id": 1},
+              "private": false,
+              "html_url": "https://github.com/octocat/hello-world",
+              "description": "This your first repo!",
+              "language": "Go",
+              "default_branch": "main",
+              "visibility": "public",
+              "stargazers_count": 1337,
+              "forks_count": 42,
+              "open_issues_count": 3,
+              "created_at": "2011-01-26T19:01:12Z",
+              "updated_at": "2023-01-01T00:00:00Z",
+              "pushed_at": "2023-01-01T00:00:00Z",
+              "topics": ["mockly", "testing"],
+              "has_issues": true,
+              "has_projects": true,
+              "has_wiki": true,
+              "has_pages": false,
+              "archived": false,
+              "disabled": false,
+              "license": {"key": "mit", "name": "MIT License"}
+            }
+
+      # ── List issues ───────────────────────────────────────────────────────
+      - id: list-issues
+        request:
+          method: GET
+          path: re:^/repos/[^/]+/[^/]+/issues$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            [
+              {
+                "id": 1,
+                "number": 1347,
+                "title": "Found a bug",
+                "state": "open",
+                "user": {"login": "octocat", "id": 1},
+                "labels": [{"name": "bug", "color": "d73a4a"}],
+                "assignee": null,
+                "comments": 2,
+                "created_at": "2023-01-01T00:00:00Z",
+                "updated_at": "2023-01-02T00:00:00Z",
+                "closed_at": null,
+                "body": "I'm having trouble with this.",
+                "url": "http://localhost:8080/repos/octocat/hello-world/issues/1347"
+              },
+              {
+                "id": 2,
+                "number": 1348,
+                "title": "Feature request: dark mode",
+                "state": "open",
+                "user": {"login": "octocat", "id": 1},
+                "labels": [{"name": "enhancement", "color": "a2eeef"}],
+                "comments": 0,
+                "created_at": "2023-01-03T00:00:00Z",
+                "updated_at": "2023-01-03T00:00:00Z",
+                "closed_at": null,
+                "body": "Please add dark mode support."
+              }
+            ]
+
+      # ── Create issue ──────────────────────────────────────────────────────
+      - id: create-issue
+        request:
+          method: POST
+          path: re:^/repos/[^/]+/[^/]+/issues$
+        response:
+          status: 201
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": 3,
+              "number": 1349,
+              "title": "New issue",
+              "state": "open",
+              "user": {"login": "octocat", "id": 1},
+              "labels": [],
+              "comments": 0,
+              "created_at": "2023-06-01T00:00:00Z",
+              "updated_at": "2023-06-01T00:00:00Z",
+              "closed_at": null,
+              "url": "http://localhost:8080/repos/octocat/hello-world/issues/1349"
+            }
+
+      # ── List pull requests ────────────────────────────────────────────────
+      - id: list-pulls
+        request:
+          method: GET
+          path: re:^/repos/[^/]+/[^/]+/pulls$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            [
+              {
+                "id": 1,
+                "number": 42,
+                "title": "Add feature X",
+                "state": "open",
+                "user": {"login": "octocat", "id": 1},
+                "head": {"ref": "feature-x", "sha": "abc123"},
+                "base": {"ref": "main", "sha": "def456"},
+                "draft": false,
+                "mergeable": true,
+                "merged": false,
+                "comments": 3,
+                "commits": 2,
+                "additions": 100,
+                "deletions": 10,
+                "created_at": "2023-01-01T00:00:00Z",
+                "updated_at": "2023-01-02T00:00:00Z"
+              }
+            ]
+
+      # ── List commits ──────────────────────────────────────────────────────
+      - id: list-commits
+        request:
+          method: GET
+          path: re:^/repos/[^/]+/[^/]+/commits$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            [
+              {
+                "sha": "abc1234567890abcdef1234567890abcdef123456",
+                "commit": {
+                  "message": "Fix: resolve issue #1347",
+                  "author": {"name": "The Octocat", "email": "octocat@github.com", "date": "2023-01-02T00:00:00Z"},
+                  "committer": {"name": "The Octocat", "email": "octocat@github.com", "date": "2023-01-02T00:00:00Z"}
+                },
+                "author": {"login": "octocat", "id": 1},
+                "html_url": "https://github.com/octocat/hello-world/commit/abc1234"
+              }
+            ]
+
+      # ── Create repo dispatch (trigger workflow) ───────────────────────────
+      - id: create-repo-dispatch
+        request:
+          method: POST
+          path: re:^/repos/[^/]+/[^/]+/dispatches$
+        response:
+          status: 204
+          body: ""
+
+      # ── List workflow runs ────────────────────────────────────────────────
+      - id: list-workflow-runs
+        request:
+          method: GET
+          path: re:^/repos/[^/]+/[^/]+/actions/runs$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "total_count": 1,
+              "workflow_runs": [
+                {
+                  "id": 30433642,
+                  "name": "CI",
+                  "status": "completed",
+                  "conclusion": "success",
+                  "workflow_id": 161335,
+                  "head_sha": "abc1234567890abcdef1234567890abcdef123456",
+                  "head_branch": "main",
+                  "created_at": "2023-01-01T00:00:00Z",
+                  "updated_at": "2023-01-01T00:05:00Z",
+                  "run_attempt": 1
+                }
+              ]
+            }
+
+      # ── 401 unauthorized ──────────────────────────────────────────────────
+      - id: unauthorized
+        request:
+          method: GET
+          path: /user/private
+        response:
+          status: 401
+          headers:
+            Content-Type: application/json
+            WWW-Authenticate: Bearer
+          body: |
+            {
+              "message": "Requires authentication",
+              "documentation_url": "https://docs.github.com/rest"
+            }
+
+      # ── 404 not found ─────────────────────────────────────────────────────
+      - id: not-found
+        request:
+          method: GET
+          path: /repos/octocat/does-not-exist
+        response:
+          status: 404
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "message": "Not Found",
+              "documentation_url": "https://docs.github.com/rest"
+            }
+
+      # ── 429 rate limited ──────────────────────────────────────────────────
+      - id: rate-limited
+        request:
+          method: GET
+          path: /rate-limited-endpoint
+        response:
+          status: 429
+          headers:
+            Content-Type: application/json
+            Retry-After: "60"
+            X-RateLimit-Limit: "5000"
+            X-RateLimit-Remaining: "0"
+            X-RateLimit-Reset: "9999999999"
+          body: |
+            {
+              "message": "API rate limit exceeded for user ID 1.",
+              "documentation_url": "https://docs.github.com/rest/overview/rate-limits"
+            }

@@ -1,0 +1,237 @@
+# Mockly preset: Twilio API
+#
+# Mocks the Twilio REST API for SMS, voice, and messaging services.
+# Useful for testing communications integrations without sending real messages.
+#
+# Start:   mockly preset use twilio
+#          mockly start --config configs/presets/twilio.yaml
+#
+# Base URL: http://localhost:8080/2010-04-01/Accounts/{AccountSid}
+# Set TWILIO_ACCOUNT_SID=ACmockaccountsid001 in your app
+# Set TWILIO_AUTH_TOKEN=mock_auth_token in your app
+# Docs: https://www.twilio.com/docs/usage/api
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── Account info ──────────────────────────────────────────────────────
+      - id: get-account
+        request:
+          method: GET
+          path: re:^/2010-04-01/Accounts/[^/]+\.json$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "sid": "ACmockaccountsid001",
+              "friendly_name": "Mock Account",
+              "status": "active",
+              "type": "Full",
+              "date_created": "Mon, 01 Jan 2024 00:00:00 +0000",
+              "date_updated": "Mon, 01 Jan 2024 00:00:00 +0000",
+              "uri": "/2010-04-01/Accounts/ACmockaccountsid001.json",
+              "subresource_uris": {
+                "messages": "/2010-04-01/Accounts/ACmockaccountsid001/Messages.json",
+                "calls": "/2010-04-01/Accounts/ACmockaccountsid001/Calls.json"
+              }
+            }
+
+      # ── Send SMS ──────────────────────────────────────────────────────────
+      - id: send-sms
+        request:
+          method: POST
+          path: re:^/2010-04-01/Accounts/[^/]+/Messages\.json$
+        response:
+          status: 201
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "sid": "SMmockmessagesid001",
+              "account_sid": "ACmockaccountsid001",
+              "to": "+15551234567",
+              "from": "+15559876543",
+              "body": "Your verification code is 123456",
+              "status": "queued",
+              "direction": "outbound-api",
+              "date_created": "Mon, 01 Jan 2024 00:00:00 +0000",
+              "date_updated": "Mon, 01 Jan 2024 00:00:00 +0000",
+              "date_sent": null,
+              "price": null,
+              "price_unit": "USD",
+              "error_code": null,
+              "error_message": null,
+              "num_segments": "1",
+              "num_media": "0",
+              "uri": "/2010-04-01/Accounts/ACmockaccountsid001/Messages/SMmockmessagesid001.json",
+              "subresource_uris": {
+                "media": "/2010-04-01/Accounts/ACmockaccountsid001/Messages/SMmockmessagesid001/Media.json"
+              }
+            }
+
+      # ── Get message ───────────────────────────────────────────────────────
+      - id: get-message
+        request:
+          method: GET
+          path: re:^/2010-04-01/Accounts/[^/]+/Messages/SM[^/]+\.json$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "sid": "SMmockmessagesid001",
+              "account_sid": "ACmockaccountsid001",
+              "to": "+15551234567",
+              "from": "+15559876543",
+              "body": "Your verification code is 123456",
+              "status": "delivered",
+              "direction": "outbound-api",
+              "date_sent": "Mon, 01 Jan 2024 00:00:01 +0000",
+              "price": "-0.00750",
+              "price_unit": "USD",
+              "error_code": null,
+              "error_message": null
+            }
+
+      # ── List messages ─────────────────────────────────────────────────────
+      - id: list-messages
+        request:
+          method: GET
+          path: re:^/2010-04-01/Accounts/[^/]+/Messages\.json$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "page": 0,
+              "page_size": 50,
+              "first_page_uri": "/2010-04-01/Accounts/ACmockaccountsid001/Messages.json?Page=0&PageSize=50",
+              "previous_page_uri": null,
+              "next_page_uri": null,
+              "uri": "/2010-04-01/Accounts/ACmockaccountsid001/Messages.json",
+              "messages": [
+                {
+                  "sid": "SMmockmessagesid001",
+                  "to": "+15551234567",
+                  "from": "+15559876543",
+                  "body": "Your verification code is 123456",
+                  "status": "delivered",
+                  "date_sent": "Mon, 01 Jan 2024 00:00:01 +0000"
+                }
+              ]
+            }
+
+      # ── Make a call ───────────────────────────────────────────────────────
+      - id: make-call
+        request:
+          method: POST
+          path: re:^/2010-04-01/Accounts/[^/]+/Calls\.json$
+        response:
+          status: 201
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "sid": "CAmockcallsid001",
+              "account_sid": "ACmockaccountsid001",
+              "to": "+15551234567",
+              "from": "+15559876543",
+              "status": "queued",
+              "direction": "outbound-api",
+              "duration": null,
+              "date_created": "Mon, 01 Jan 2024 00:00:00 +0000",
+              "price": null,
+              "price_unit": "USD",
+              "uri": "/2010-04-01/Accounts/ACmockaccountsid001/Calls/CAmockcallsid001.json"
+            }
+
+      # ── Verify: send OTP ───────────────────────────────────────────────────
+      - id: verify-send
+        request:
+          method: POST
+          path: re:^/v2/Services/[^/]+/Verifications$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "sid": "VEmockverificationsid001",
+              "service_sid": "VAmockservicesid001",
+              "account_sid": "ACmockaccountsid001",
+              "to": "+15551234567",
+              "channel": "sms",
+              "status": "pending",
+              "date_created": "2024-01-01T00:00:00Z",
+              "date_updated": "2024-01-01T00:00:00Z"
+            }
+
+      # ── Verify: check OTP ──────────────────────────────────────────────────
+      - id: verify-check-success
+        request:
+          method: POST
+          path: re:^/v2/Services/[^/]+/VerificationCheck$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "sid": "VEmockverificationsid001",
+              "service_sid": "VAmockservicesid001",
+              "account_sid": "ACmockaccountsid001",
+              "to": "+15551234567",
+              "channel": "sms",
+              "status": "approved",
+              "valid": true,
+              "date_created": "2024-01-01T00:00:00Z",
+              "date_updated": "2024-01-01T00:00:01Z"
+            }
+
+      # ── Error: invalid phone number ───────────────────────────────────────
+      - id: error-invalid-number
+        request:
+          method: POST
+          path: /invalid-number
+        response:
+          status: 400
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "code": 21211,
+              "message": "The 'To' number is not a valid phone number.",
+              "more_info": "https://www.twilio.com/docs/errors/21211",
+              "status": 400
+            }
+
+      # ── Error: authentication failed ──────────────────────────────────────
+      - id: error-auth-failed
+        request:
+          method: GET
+          path: /auth-error
+        response:
+          status: 401
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "code": 20003,
+              "message": "Authenticate",
+              "more_info": "https://www.twilio.com/docs/errors/20003",
+              "status": 401
+            }

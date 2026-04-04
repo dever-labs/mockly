@@ -1,0 +1,375 @@
+# Mockly preset: Slack API
+#
+# Mocks the Slack Web API and incoming webhooks.
+# Useful for testing Slack integrations, bots, and notifications.
+#
+# Start:   mockly preset use slack
+#          mockly start --config configs/presets/slack.yaml
+#
+# Base URL in your app config: http://localhost:8080
+# Docs: https://api.slack.com/methods
+#
+# Includes:
+#   - Incoming webhooks
+#   - chat.postMessage
+#   - conversations (list, info, history)
+#   - users (info, list)
+#   - files (upload)
+#   - reactions
+#   - OAuth token exchange
+#   - Error responses
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── Incoming Webhook ──────────────────────────────────────────────────
+      # Simulate posting to a Slack incoming webhook
+      - id: incoming-webhook
+        request:
+          method: POST
+          path: re:^/services/[A-Z0-9]+/[A-Z0-9]+/[a-zA-Z0-9]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: text/plain
+          body: "ok"
+
+      # ── chat.postMessage ──────────────────────────────────────────────────
+      - id: chat-post-message
+        request:
+          method: POST
+          path: /api/chat.postMessage
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "ok": true,
+              "channel": "C1234567890",
+              "ts": "1700000000.000100",
+              "message": {
+                "type": "message",
+                "subtype": "bot_message",
+                "text": "Hello, World!",
+                "ts": "1700000000.000100",
+                "username": "MockBot",
+                "bot_id": "B1234567890",
+                "app_id": "A1234567890"
+              }
+            }
+
+      # ── chat.update ───────────────────────────────────────────────────────
+      - id: chat-update
+        request:
+          method: POST
+          path: /api/chat.update
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "ok": true,
+              "channel": "C1234567890",
+              "ts": "1700000000.000100",
+              "text": "Updated message text"
+            }
+
+      # ── chat.delete ───────────────────────────────────────────────────────
+      - id: chat-delete
+        request:
+          method: POST
+          path: /api/chat.delete
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: '{"ok": true, "channel": "C1234567890", "ts": "1700000000.000100"}'
+
+      # ── conversations.list ────────────────────────────────────────────────
+      - id: conversations-list
+        request:
+          method: GET
+          path: /api/conversations.list
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "ok": true,
+              "channels": [
+                {
+                  "id": "C1234567890",
+                  "name": "general",
+                  "is_channel": true,
+                  "is_group": false,
+                  "is_im": false,
+                  "is_private": false,
+                  "is_archived": false,
+                  "is_member": true,
+                  "num_members": 42,
+                  "topic": {"value": "Company-wide announcements"},
+                  "purpose": {"value": "This is the one channel that will always include everyone."}
+                },
+                {
+                  "id": "C0987654321",
+                  "name": "random",
+                  "is_channel": true,
+                  "is_group": false,
+                  "is_im": false,
+                  "is_private": false,
+                  "is_archived": false,
+                  "is_member": true,
+                  "num_members": 40
+                },
+                {
+                  "id": "C1122334455",
+                  "name": "dev-alerts",
+                  "is_channel": true,
+                  "is_private": false,
+                  "is_member": true,
+                  "num_members": 10
+                }
+              ],
+              "response_metadata": {"next_cursor": ""}
+            }
+
+      # ── conversations.info ────────────────────────────────────────────────
+      - id: conversations-info
+        request:
+          method: GET
+          path: /api/conversations.info
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "ok": true,
+              "channel": {
+                "id": "C1234567890",
+                "name": "general",
+                "is_channel": true,
+                "is_private": false,
+                "is_archived": false,
+                "is_member": true,
+                "num_members": 42,
+                "topic": {"value": "Company-wide announcements", "creator": "U1234567890", "last_set": 1700000000},
+                "purpose": {"value": "This is the one channel that will always include everyone."}
+              }
+            }
+
+      # ── conversations.history ─────────────────────────────────────────────
+      - id: conversations-history
+        request:
+          method: GET
+          path: /api/conversations.history
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "ok": true,
+              "messages": [
+                {
+                  "type": "message",
+                  "user": "U1234567890",
+                  "text": "Hello team!",
+                  "ts": "1700000000.000100"
+                },
+                {
+                  "type": "message",
+                  "bot_id": "B1234567890",
+                  "text": "Deployment successful :rocket:",
+                  "ts": "1699999000.000200"
+                }
+              ],
+              "has_more": false,
+              "response_metadata": {"next_cursor": ""}
+            }
+
+      # ── users.info ────────────────────────────────────────────────────────
+      - id: users-info
+        request:
+          method: GET
+          path: /api/users.info
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "ok": true,
+              "user": {
+                "id": "U1234567890",
+                "name": "alice",
+                "real_name": "Alice Example",
+                "deleted": false,
+                "is_admin": false,
+                "is_owner": false,
+                "is_bot": false,
+                "profile": {
+                  "real_name": "Alice Example",
+                  "display_name": "alice",
+                  "email": "alice@example.com",
+                  "image_48": "https://example.com/avatar.jpg",
+                  "title": "Software Engineer"
+                },
+                "tz": "America/Los_Angeles",
+                "tz_label": "Pacific Daylight Time"
+              }
+            }
+
+      # ── users.list ────────────────────────────────────────────────────────
+      - id: users-list
+        request:
+          method: GET
+          path: /api/users.list
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "ok": true,
+              "members": [
+                {
+                  "id": "U1234567890",
+                  "name": "alice",
+                  "real_name": "Alice Example",
+                  "is_bot": false,
+                  "profile": {"email": "alice@example.com", "display_name": "alice"}
+                },
+                {
+                  "id": "U0987654321",
+                  "name": "bob",
+                  "real_name": "Bob Example",
+                  "is_bot": false,
+                  "profile": {"email": "bob@example.com", "display_name": "bob"}
+                },
+                {
+                  "id": "USLACKBOT",
+                  "name": "slackbot",
+                  "real_name": "Slackbot",
+                  "is_bot": true,
+                  "deleted": false
+                }
+              ],
+              "cache_ts": 1700000000,
+              "response_metadata": {"next_cursor": ""}
+            }
+
+      # ── reactions.add ─────────────────────────────────────────────────────
+      - id: reactions-add
+        request:
+          method: POST
+          path: /api/reactions.add
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: '{"ok": true}'
+
+      # ── files.upload (legacy) ─────────────────────────────────────────────
+      - id: files-upload
+        request:
+          method: POST
+          path: /api/files.upload
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "ok": true,
+              "file": {
+                "id": "F1234567890",
+                "name": "report.pdf",
+                "title": "Monthly Report",
+                "filetype": "pdf",
+                "size": 204800,
+                "url_private": "http://localhost:8080/files/F1234567890",
+                "created": 1700000000,
+                "user": "U1234567890"
+              }
+            }
+
+      # ── OAuth token exchange ───────────────────────────────────────────────
+      - id: oauth-access
+        request:
+          method: POST
+          path: /api/oauth.v2.access
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "ok": true,
+              "access_token": "xoxb-mock-slack-bot-token-001",
+              "token_type": "bot",
+              "scope": "chat:write,channels:read,users:read",
+              "bot_user_id": "U_BOT_MOCK_001",
+              "app_id": "A1234567890",
+              "team": {"id": "T1234567890", "name": "Mock Team"},
+              "authed_user": {"id": "U1234567890", "scope": "identity.basic", "access_token": "xoxp-mock-user-token"}
+            }
+
+      # ── auth.test ─────────────────────────────────────────────────────────
+      - id: auth-test
+        request:
+          method: POST
+          path: /api/auth.test
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "ok": true,
+              "url": "http://localhost:8080/",
+              "team": "Mock Team",
+              "user": "mockbot",
+              "team_id": "T1234567890",
+              "user_id": "U_BOT_MOCK_001",
+              "bot_id": "B1234567890",
+              "is_enterprise_install": false
+            }
+
+      # ── Error: not authed ─────────────────────────────────────────────────
+      - id: error-not-authed
+        request:
+          method: POST
+          path: /api/error/not_authed
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {"ok": false, "error": "not_authed"}
+
+      # ── Error: rate limited ───────────────────────────────────────────────
+      - id: error-ratelimited
+        request:
+          method: POST
+          path: /api/error/ratelimited
+        response:
+          status: 429
+          headers:
+            Content-Type: application/json
+            Retry-After: "30"
+          body: |
+            {"ok": false, "error": "ratelimited"}

@@ -1,0 +1,336 @@
+# Mockly preset: OpenAI API
+#
+# Mocks the OpenAI REST API endpoints.
+# Useful for testing AI integrations without consuming credits or hitting rate limits.
+#
+# Start:   mockly preset use openai
+#          mockly start --config configs/presets/openai.yaml
+#
+# Base URL in your app config: http://localhost:8080/v1
+# Docs: https://platform.openai.com/docs/api-reference
+#
+# Includes:
+#   - Chat Completions (GPT-4, GPT-3.5)
+#   - Completions (legacy)
+#   - Embeddings
+#   - Models list
+#   - Images (DALL-E)
+#   - Audio (transcription, speech)
+#   - Moderations
+#   - Files
+#   - Common error responses (rate limit, token limit, invalid key)
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── Models ────────────────────────────────────────────────────────────
+      - id: list-models
+        request:
+          method: GET
+          path: /v1/models
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "object": "list",
+              "data": [
+                {"id": "gpt-4o", "object": "model", "created": 1715367049, "owned_by": "system"},
+                {"id": "gpt-4o-mini", "object": "model", "created": 1721172741, "owned_by": "system"},
+                {"id": "gpt-4-turbo", "object": "model", "created": 1712361441, "owned_by": "system"},
+                {"id": "gpt-4", "object": "model", "created": 1687882411, "owned_by": "openai"},
+                {"id": "gpt-3.5-turbo", "object": "model", "created": 1677610602, "owned_by": "openai"},
+                {"id": "text-embedding-3-large", "object": "model", "created": 1705953180, "owned_by": "system"},
+                {"id": "text-embedding-3-small", "object": "model", "created": 1705948997, "owned_by": "system"},
+                {"id": "text-embedding-ada-002", "object": "model", "created": 1671217299, "owned_by": "openai-internal"},
+                {"id": "whisper-1", "object": "model", "created": 1677532384, "owned_by": "openai-internal"},
+                {"id": "tts-1", "object": "model", "created": 1681940951, "owned_by": "openai-internal"},
+                {"id": "dall-e-3", "object": "model", "created": 1698785189, "owned_by": "system"}
+              ]
+            }
+
+      - id: get-model
+        request:
+          method: GET
+          path: re:^/v1/models/.+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {"id": "gpt-4o", "object": "model", "created": 1715367049, "owned_by": "system"}
+
+      # ── Chat Completions ──────────────────────────────────────────────────
+      - id: chat-completions
+        request:
+          method: POST
+          path: /v1/chat/completions
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "chatcmpl-mockly001",
+              "object": "chat.completion",
+              "created": 1700000000,
+              "model": "gpt-4o",
+              "system_fingerprint": "fp_mockly001",
+              "choices": [
+                {
+                  "index": 0,
+                  "message": {
+                    "role": "assistant",
+                    "content": "This is a mock response from Mockly. In production, this would be a real response from the OpenAI API."
+                  },
+                  "logprobs": null,
+                  "finish_reason": "stop"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 25,
+                "completion_tokens": 30,
+                "total_tokens": 55,
+                "prompt_tokens_details": {"cached_tokens": 0},
+                "completion_tokens_details": {"reasoning_tokens": 0}
+              }
+            }
+
+      # ── Chat Completions — streaming (SSE) ────────────────────────────────
+      # Note: Real streaming uses SSE chunks. This mock returns the done sentinel.
+      # For real streaming tests, use the logger's SSE support or a WebSocket mock.
+      - id: chat-completions-stream
+        request:
+          method: POST
+          path: /v1/chat/completions
+          body: '"stream":true'
+        response:
+          status: 200
+          headers:
+            Content-Type: text/event-stream
+            Cache-Control: no-cache
+          body: |
+            data: {"id":"chatcmpl-mockly002","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"This "},"finish_reason":null}]}
+
+            data: {"id":"chatcmpl-mockly002","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"is a mock response."},"finish_reason":null}]}
+
+            data: {"id":"chatcmpl-mockly002","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+            data: [DONE]
+
+      # ── Embeddings ────────────────────────────────────────────────────────
+      - id: embeddings
+        request:
+          method: POST
+          path: /v1/embeddings
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "object": "list",
+              "model": "text-embedding-3-small",
+              "data": [
+                {
+                  "object": "embedding",
+                  "index": 0,
+                  "embedding": [0.0023064255, -0.009327292, 0.015797347, -0.0076700356, -0.010447618, 0.007816112, -0.017896893, -0.010031009, -0.012823161, 0.0029042315]
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 8,
+                "total_tokens": 8
+              }
+            }
+
+      # ── Images ────────────────────────────────────────────────────────────
+      - id: create-image
+        request:
+          method: POST
+          path: /v1/images/generations
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "created": 1700000000,
+              "data": [
+                {
+                  "url": "https://example.com/mock-image-001.png",
+                  "revised_prompt": "A mock image generated by Mockly for testing purposes."
+                }
+              ]
+            }
+
+      - id: edit-image
+        request:
+          method: POST
+          path: /v1/images/edits
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "created": 1700000000,
+              "data": [{"url": "https://example.com/mock-edited-image-001.png"}]
+            }
+
+      # ── Audio ─────────────────────────────────────────────────────────────
+      - id: audio-transcription
+        request:
+          method: POST
+          path: /v1/audio/transcriptions
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "text": "This is a mock transcription of the provided audio file."
+            }
+
+      - id: audio-translation
+        request:
+          method: POST
+          path: /v1/audio/translations
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {"text": "This is a mock translation of the provided audio file."}
+
+      - id: audio-speech
+        request:
+          method: POST
+          path: /v1/audio/speech
+        response:
+          status: 200
+          headers:
+            Content-Type: audio/mpeg
+          body: "mock-audio-binary-data"
+
+      # ── Moderations ───────────────────────────────────────────────────────
+      - id: moderations-clean
+        request:
+          method: POST
+          path: /v1/moderations
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "modr-mockly001",
+              "model": "text-moderation-latest",
+              "results": [
+                {
+                  "flagged": false,
+                  "categories": {
+                    "hate": false, "hate/threatening": false, "harassment": false,
+                    "harassment/threatening": false, "self-harm": false,
+                    "self-harm/intent": false, "self-harm/instructions": false,
+                    "sexual": false, "sexual/minors": false, "violence": false, "violence/graphic": false
+                  },
+                  "category_scores": {
+                    "hate": 0.00001, "hate/threatening": 0.00001, "harassment": 0.00001,
+                    "harassment/threatening": 0.00001, "self-harm": 0.00001,
+                    "self-harm/intent": 0.00001, "self-harm/instructions": 0.00001,
+                    "sexual": 0.00001, "sexual/minors": 0.00001, "violence": 0.00001, "violence/graphic": 0.00001
+                  }
+                }
+              ]
+            }
+
+      # ── Files ─────────────────────────────────────────────────────────────
+      - id: list-files
+        request:
+          method: GET
+          path: /v1/files
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "object": "list",
+              "data": [
+                {"id": "file-mockly001", "object": "file", "bytes": 1024, "created_at": 1700000000, "filename": "training_data.jsonl", "purpose": "fine-tune", "status": "processed"}
+              ],
+              "has_more": false
+            }
+
+      # ── Error: invalid API key ────────────────────────────────────────────
+      - id: error-invalid-key
+        request:
+          method: POST
+          path: /v1/invalid-key
+        response:
+          status: 401
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "error": {
+                "message": "Incorrect API key provided. You can find your API key at https://platform.openai.com/account/api-keys.",
+                "type": "invalid_request_error",
+                "param": null,
+                "code": "invalid_api_key"
+              }
+            }
+
+      # ── Error: rate limited ───────────────────────────────────────────────
+      - id: error-rate-limited
+        request:
+          method: POST
+          path: /v1/rate-limited
+        response:
+          status: 429
+          headers:
+            Content-Type: application/json
+            Retry-After: "30"
+            x-ratelimit-limit-requests: "3"
+            x-ratelimit-remaining-requests: "0"
+            x-ratelimit-reset-requests: "30s"
+          body: |
+            {
+              "error": {
+                "message": "Rate limit reached for gpt-4o in organization org-mock on tokens per min. Limit: 30000, Used: 30000, Requested: 1000.",
+                "type": "tokens",
+                "param": null,
+                "code": "rate_limit_exceeded"
+              }
+            }
+
+      # ── Error: context length exceeded ───────────────────────────────────
+      - id: error-context-length
+        request:
+          method: POST
+          path: /v1/context-exceeded
+        response:
+          status: 400
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "error": {
+                "message": "This model's maximum context length is 128000 tokens. However, your messages resulted in 130000 tokens.",
+                "type": "invalid_request_error",
+                "param": "messages",
+                "code": "context_length_exceeded"
+              }
+            }

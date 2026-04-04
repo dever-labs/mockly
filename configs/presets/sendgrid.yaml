@@ -1,0 +1,304 @@
+# Mockly preset: SendGrid / Email API
+#
+# Mocks the SendGrid v3 REST API and a generic email sending endpoint.
+# Useful for testing email integrations without sending real emails.
+#
+# Start:   mockly preset use sendgrid
+#          mockly start --config configs/presets/sendgrid.yaml
+#
+# Base URL in your app config: http://localhost:8080
+# Docs: https://docs.sendgrid.com/api-reference
+#
+# Includes:
+#   - Send email (v3 mail/send)
+#   - Sender verification
+#   - Templates (list, get)
+#   - Suppressions (unsubscribes, bounces, spam reports)
+#   - Stats
+#   - Generic SMTP-style response mocks
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── Send email ────────────────────────────────────────────────────────
+      - id: mail-send
+        request:
+          method: POST
+          path: /v3/mail/send
+        response:
+          status: 202
+          headers:
+            X-Message-Id: mockly-msg-001
+          body: ""
+
+      # ── Send email — error: invalid to address ────────────────────────────
+      - id: mail-send-invalid-to
+        request:
+          method: POST
+          path: /v3/mail/send
+          body: '"to":[{"email":"notvalid"}]'
+        response:
+          status: 400
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "errors": [
+                {
+                  "message": "The to.email field is required and must be a valid email address.",
+                  "field": "to.email",
+                  "help": "http://sendgrid.com/docs/API_Reference/Web_API_v3/Mail/errors.html#message.to"
+                }
+              ]
+            }
+
+      # ── Dynamic Templates ─────────────────────────────────────────────────
+      - id: list-templates
+        request:
+          method: GET
+          path: /v3/templates
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "templates": [
+                {
+                  "id": "d-mockly001templateid",
+                  "name": "Welcome Email",
+                  "generation": "dynamic",
+                  "updated_at": "2024-01-01 00:00:00",
+                  "versions": [
+                    {
+                      "id": "v-mockly001",
+                      "template_id": "d-mockly001templateid",
+                      "active": 1,
+                      "name": "v1",
+                      "subject": "Welcome to {{company_name}}!"
+                    }
+                  ]
+                },
+                {
+                  "id": "d-mockly002templateid",
+                  "name": "Password Reset",
+                  "generation": "dynamic",
+                  "updated_at": "2024-01-01 00:00:00",
+                  "versions": [
+                    {
+                      "id": "v-mockly002",
+                      "template_id": "d-mockly002templateid",
+                      "active": 1,
+                      "name": "v1",
+                      "subject": "Reset your {{company_name}} password"
+                    }
+                  ]
+                }
+              ]
+            }
+
+      - id: get-template
+        request:
+          method: GET
+          path: re:^/v3/templates/d-[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "d-mockly001templateid",
+              "name": "Welcome Email",
+              "generation": "dynamic",
+              "updated_at": "2024-01-01 00:00:00",
+              "versions": [
+                {
+                  "id": "v-mockly001",
+                  "active": 1,
+                  "name": "v1",
+                  "subject": "Welcome to {{company_name}}!",
+                  "html_content": "<html><body><h1>Welcome, {{first_name}}!</h1></body></html>",
+                  "plain_content": "Welcome, {{first_name}}!"
+                }
+              ]
+            }
+
+      # ── Verified Senders ──────────────────────────────────────────────────
+      - id: list-verified-senders
+        request:
+          method: GET
+          path: /v3/verified_senders
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "results": [
+                {
+                  "id": 1,
+                  "nickname": "Mock Sender",
+                  "from_email": "noreply@example.com",
+                  "from_name": "Example App",
+                  "reply_to": "support@example.com",
+                  "verified": true,
+                  "locked": false
+                }
+              ]
+            }
+
+      # ── Suppressions: Global Unsubscribes ─────────────────────────────────
+      - id: global-unsubscribes
+        request:
+          method: GET
+          path: /v3/suppression/unsubscribes
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            [
+              {"created": 1700000000, "email": "unsubscribed@example.com"},
+              {"created": 1700001000, "email": "optout@example.com"}
+            ]
+
+      # ── Suppressions: Bounces ─────────────────────────────────────────────
+      - id: bounces
+        request:
+          method: GET
+          path: /v3/suppression/bounces
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            [
+              {
+                "created": 1700000000,
+                "email": "bounced@example.com",
+                "reason": "550 5.1.1 The email account does not exist.",
+                "status": "5.1.1"
+              }
+            ]
+
+      # ── Suppressions: Spam Reports ────────────────────────────────────────
+      - id: spam-reports
+        request:
+          method: GET
+          path: /v3/suppression/spam_reports
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            [
+              {"created": 1700000000, "email": "spamreport@example.com", "ip": "127.0.0.1"}
+            ]
+
+      # ── Stats ─────────────────────────────────────────────────────────────
+      - id: stats-global
+        request:
+          method: GET
+          path: /v3/stats
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            [
+              {
+                "date": "2024-01-01",
+                "stats": [
+                  {
+                    "metrics": {
+                      "blocks": 0,
+                      "bounce_drops": 0,
+                      "bounces": 0,
+                      "clicks": 42,
+                      "deferred": 0,
+                      "delivered": 150,
+                      "invalid_emails": 0,
+                      "opens": 85,
+                      "processed": 150,
+                      "requests": 150,
+                      "spam_report_drops": 0,
+                      "spam_reports": 0,
+                      "unique_clicks": 30,
+                      "unique_opens": 70,
+                      "unsubscribe_drops": 0,
+                      "unsubscribes": 2
+                    }
+                  }
+                ]
+              }
+            ]
+
+      # ── Validate email ────────────────────────────────────────────────────
+      - id: validate-email
+        request:
+          method: POST
+          path: /v3/validations/email
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "result": {
+                "email": "alice@example.com",
+                "verdict": "Valid",
+                "score": 0.98,
+                "local": "alice",
+                "host": "example.com",
+                "checks": {
+                  "domain": {"has_valid_address_syntax": true, "has_mx_or_a_record": true, "is_suspected_disposable_address": false},
+                  "local_part": {"is_suspected_role_address": false},
+                  "additional": {"has_known_bounces": false, "has_suspected_bounces": false}
+                }
+              }
+            }
+
+      # ── Error: unauthorized ───────────────────────────────────────────────
+      - id: error-unauthorized
+        request:
+          method: GET
+          path: /v3/unauthorized
+        response:
+          status: 401
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "errors": [
+                {"message": "The provided authorization grant is invalid, expired, or revoked.", "field": null, "help": null}
+              ]
+            }
+
+      # ── Error: rate limited ───────────────────────────────────────────────
+      - id: error-rate-limited
+        request:
+          method: POST
+          path: /v3/rate-limited
+        response:
+          status: 429
+          headers:
+            Content-Type: application/json
+            X-RateLimit-Limit: "100"
+            X-RateLimit-Remaining: "0"
+            X-RateLimit-Reset: "9999999999"
+          body: |
+            {
+              "errors": [
+                {"message": "too many requests", "field": null, "help": null}
+              ]
+            }

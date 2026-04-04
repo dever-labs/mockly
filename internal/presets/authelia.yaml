@@ -1,0 +1,249 @@
+# Mockly preset: Authelia
+#
+# Mocks Authelia's authentication, authorization, and session API endpoints.
+# Authelia is a self-hosted SSO/2FA gateway commonly placed in front of services
+# via a reverse proxy (e.g. nginx, Traefik) using auth_request / forwardAuth.
+#
+# Start:   mockly preset use authelia
+#          mockly start --config configs/presets/authelia.yaml
+#
+# Key flows:
+#   - Forward Auth (Nginx/Traefik): GET /api/authz/forward-auth → 200 or 401
+#   - Session check:                GET /api/verify              → 200 or 401
+#   - Login form submit:            POST /api/firstfactor        → 200 with cookie
+#   - TOTP/2FA:                     POST /api/secondfactor/totp  → 200
+#   - User info:                    GET /api/user/info            → user object
+#   - Logout:                       POST /api/logout             → 200
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 9091
+    mocks:
+
+      # ── Health / readiness ────────────────────────────────────────────────
+      - id: health
+        request:
+          method: GET
+          path: /api/health
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "status": "OK",
+              "build_tag": "v4.38.0",
+              "build_commit": "mockly"
+            }
+
+      # ── State: returns current auth state of session ──────────────────────
+      - id: state
+        request:
+          method: GET
+          path: /api/state
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "DefaultRedirectionURL": "https://home.example.com",
+              "Themes": [],
+              "PasswordPolicy": {
+                "Mode": "disabled",
+                "MinLength": 8,
+                "MaxLength": 0,
+                "MinScore": 0,
+                "RequireUppercase": false,
+                "RequireLowercase": false,
+                "RequireNumber": false,
+                "RequireSpecial": false
+              }
+            }
+
+      # ── Forward Auth verify — authenticated (200) ─────────────────────────
+      # Used by Nginx auth_request or Traefik forwardAuth
+      - id: authz-forward-auth-ok
+        request:
+          method: GET
+          path: /api/authz/forward-auth
+        state:
+          key: authelia_authenticated
+          value: "true"
+        response:
+          status: 200
+          headers:
+            Remote-User: alice
+            Remote-Name: Alice Example
+            Remote-Groups: admins,users
+            Remote-Email: alice@example.com
+          body: ""
+
+      # ── Forward Auth verify — unauthenticated (401) ───────────────────────
+      - id: authz-forward-auth-unauth
+        request:
+          method: GET
+          path: /api/authz/forward-auth
+        response:
+          status: 401
+          headers:
+            Content-Type: application/json
+            Location: https://auth.example.com/?rd=https%3A%2F%2Fapp.example.com%2F
+          body: |
+            {"status":"KO","message":"Authentication required.","authentication":"false"}
+
+      # ── Verify endpoint (legacy) — authenticated ──────────────────────────
+      - id: verify-ok
+        request:
+          method: GET
+          path: /api/verify
+        state:
+          key: authelia_authenticated
+          value: "true"
+        response:
+          status: 200
+          headers:
+            Remote-User: alice
+            Remote-Name: Alice Example
+            Remote-Groups: admins,users
+            Remote-Email: alice@example.com
+          body: ""
+
+      # ── Verify endpoint (legacy) — unauthenticated ────────────────────────
+      - id: verify-unauth
+        request:
+          method: GET
+          path: /api/verify
+        response:
+          status: 401
+          body: ""
+
+      # ── First factor (username + password) — success ──────────────────────
+      - id: firstfactor-success
+        request:
+          method: POST
+          path: /api/firstfactor
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+            Set-Cookie: authelia_session=mock-session-token; Path=/; HttpOnly; SameSite=Lax
+          body: |
+            {
+              "status": "OK",
+              "data": {
+                "redirect": "https://home.example.com"
+              }
+            }
+
+      # ── First factor — bad credentials ───────────────────────────────────
+      - id: firstfactor-bad-credentials
+        request:
+          method: POST
+          path: /api/firstfactor
+          body: "wrong_password"
+        response:
+          status: 401
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "status": "KO",
+              "message": "Incorrect username or password."
+            }
+
+      # ── Second factor — TOTP ──────────────────────────────────────────────
+      - id: secondfactor-totp
+        request:
+          method: POST
+          path: /api/secondfactor/totp
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "status": "OK",
+              "data": {
+                "redirect": "https://home.example.com"
+              }
+            }
+
+      # ── Second factor — WebAuthn ──────────────────────────────────────────
+      - id: secondfactor-webauthn-assertion
+        request:
+          method: POST
+          path: /api/secondfactor/webauthn/assertion/finish
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {"status":"OK","data":{"redirect":"https://home.example.com"}}
+
+      # ── User info ─────────────────────────────────────────────────────────
+      - id: user-info
+        request:
+          method: GET
+          path: /api/user/info
+        state:
+          key: authelia_authenticated
+          value: "true"
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "status": "OK",
+              "data": {
+                "display_name": "Alice Example",
+                "method": "totp",
+                "has_webauthn": false,
+                "has_totp": true,
+                "has_duo": false,
+                "groups": ["admins", "users"],
+                "emails": ["alice@example.com"]
+              }
+            }
+
+      # ── Password change ───────────────────────────────────────────────────
+      - id: password-change
+        request:
+          method: POST
+          path: /api/user/password/change
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: '{"status":"OK"}'
+
+      # ── Password reset initiation ─────────────────────────────────────────
+      - id: password-reset-step1
+        request:
+          method: POST
+          path: /api/reset-password/step1
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: '{"status":"OK"}'
+
+      # ── Logout ────────────────────────────────────────────────────────────
+      - id: logout
+        request:
+          method: POST
+          path: /api/logout
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: '{"status":"OK","data":{"redirect":"https://auth.example.com/logout"}}'

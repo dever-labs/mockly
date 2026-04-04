@@ -1,0 +1,316 @@
+# Mockly preset: Keycloak
+#
+# Mocks the most commonly tested Keycloak endpoints for a realm named "myrealm".
+# Change the realm name by editing the paths below (search/replace "myrealm").
+#
+# Start:   mockly preset use keycloak
+#          mockly start --config configs/presets/keycloak.yaml
+#
+# Realm admin console would be at: http://localhost:8080/admin/myrealm/console
+#
+# Ports:
+#   HTTP mock server (Keycloak API) → :8080
+#   Management API + UI             → :9091
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── OIDC Discovery ────────────────────────────────────────────────────
+      - id: oidc-discovery
+        request:
+          method: GET
+          path: /realms/myrealm/.well-known/openid-configuration
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "issuer": "http://localhost:8080/realms/myrealm",
+              "authorization_endpoint": "http://localhost:8080/realms/myrealm/protocol/openid-connect/auth",
+              "token_endpoint": "http://localhost:8080/realms/myrealm/protocol/openid-connect/token",
+              "introspection_endpoint": "http://localhost:8080/realms/myrealm/protocol/openid-connect/token/introspect",
+              "userinfo_endpoint": "http://localhost:8080/realms/myrealm/protocol/openid-connect/userinfo",
+              "end_session_endpoint": "http://localhost:8080/realms/myrealm/protocol/openid-connect/logout",
+              "jwks_uri": "http://localhost:8080/realms/myrealm/protocol/openid-connect/certs",
+              "grant_types_supported": ["authorization_code", "implicit", "refresh_token", "password", "client_credentials", "urn:ietf:params:oauth:grant-type:device_code"],
+              "response_types_supported": ["code", "none", "id_token", "token", "token id_token", "code id_token", "code token", "code token id_token"],
+              "subject_types_supported": ["public", "pairwise"],
+              "id_token_signing_alg_values_supported": ["PS384", "ES384", "RS384", "HS256", "HS512", "ES256", "RS256", "HS384", "ES512", "PS256", "PS512", "RS512"],
+              "scopes_supported": ["openid", "address", "email", "microprofile-jwt", "offline_access", "phone", "profile", "roles", "web-origins"],
+              "token_endpoint_auth_methods_supported": ["private_key_jwt", "client_secret_basic", "client_secret_post", "tls_client_auth", "client_secret_jwt"],
+              "claims_supported": ["aud", "sub", "iss", "auth_time", "name", "given_name", "family_name", "preferred_username", "email", "email_verified", "acr", "nonce", "locale", "updated_at"],
+              "code_challenge_methods_supported": ["plain", "S256"],
+              "tls_client_certificate_bound_access_tokens": true,
+              "require_pushed_authorization_requests": false
+            }
+
+      # ── JWKS (public keys) ────────────────────────────────────────────────
+      - id: jwks
+        request:
+          method: GET
+          path: /realms/myrealm/protocol/openid-connect/certs
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "keys": [
+                {
+                  "kid": "mockly-key-1",
+                  "kty": "RSA",
+                  "alg": "RS256",
+                  "use": "sig",
+                  "n": "mockly-public-key-modulus-placeholder",
+                  "e": "AQAB",
+                  "x5c": ["mockly-x509-certificate-placeholder"],
+                  "x5t": "mockly-thumbprint",
+                  "x5t#S256": "mockly-thumbprint-s256"
+                }
+              ]
+            }
+
+      # ── Token endpoint — success (password / client_credentials grant) ────
+      - id: token-success
+        request:
+          method: POST
+          path: /realms/myrealm/protocol/openid-connect/token
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJtb2NrbHkta2V5LTEifQ.eyJzdWIiOiJ1c2VyLTEyMzQ1NiIsImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA4MC9yZWFsbXMvbXlyZWFsbSIsImF1ZCI6WyJteS1hcHAiLCJhY2NvdW50Il0sImV4cCI6OTk5OTk5OTk5OSwiaWF0IjoxNzAwMDAwMDAwLCJqdGkiOiJtb2NrLWp0aS0wMDEiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJteS1hcHAiLCJzZXNzaW9uX3N0YXRlIjoibW9jay1zZXNzaW9uLTAwMSIsImFjciI6IjEiLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsib2ZmbGluZV9hY2Nlc3MiLCJ1bWFfYXV0aG9yaXphdGlvbiIsImRlZmF1bHQtcm9sZXMtbXlyZWFsbSIsInVzZXIiXX0sInNjb3BlIjoib3BlbmlkIGVtYWlsIHByb2ZpbGUiLCJzaWQiOiJtb2NrLXNlc3Npb24tMDAxIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsIm5hbWUiOiJBbGljZSBFeGFtcGxlIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiYWxpY2UiLCJnaXZlbl9uYW1lIjoiQWxpY2UiLCJmYW1pbHlfbmFtZSI6IkV4YW1wbGUiLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIn0.mock-signature",
+              "expires_in": 300,
+              "refresh_expires_in": 1800,
+              "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJtb2NrbHktcmVmcmVzaC1rZXkifQ.eyJzdWIiOiJ1c2VyLTEyMzQ1NiIsInNpZCI6Im1vY2stc2Vzc2lvbi0wMDEiLCJ0eXAiOiJSZWZyZXNoIn0.mock-refresh-signature",
+              "token_type": "Bearer",
+              "not-before-policy": 0,
+              "session_state": "mock-session-001",
+              "scope": "openid email profile"
+            }
+
+      # ── Token endpoint — invalid credentials ────────────────────────────
+      - id: token-invalid-credentials
+        request:
+          method: POST
+          path: /realms/myrealm/protocol/openid-connect/token
+          body: "invalid_grant"
+        response:
+          status: 401
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "error": "invalid_grant",
+              "error_description": "Invalid user credentials"
+            }
+
+      # ── UserInfo ─────────────────────────────────────────────────────────
+      - id: userinfo
+        request:
+          method: GET
+          path: /realms/myrealm/protocol/openid-connect/userinfo
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "sub": "user-123456",
+              "name": "Alice Example",
+              "given_name": "Alice",
+              "family_name": "Example",
+              "preferred_username": "alice",
+              "email": "alice@example.com",
+              "email_verified": true,
+              "locale": "en",
+              "updated_at": 1700000000,
+              "realm_access": {
+                "roles": ["offline_access", "uma_authorization", "default-roles-myrealm", "user"]
+              }
+            }
+
+      # ── Token introspect — active token ──────────────────────────────────
+      - id: introspect-active
+        request:
+          method: POST
+          path: /realms/myrealm/protocol/openid-connect/token/introspect
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "active": true,
+              "sub": "user-123456",
+              "iss": "http://localhost:8080/realms/myrealm",
+              "aud": ["my-app", "account"],
+              "exp": 9999999999,
+              "iat": 1700000000,
+              "jti": "mock-jti-001",
+              "typ": "Bearer",
+              "azp": "my-app",
+              "preferred_username": "alice",
+              "email": "alice@example.com",
+              "email_verified": true,
+              "scope": "openid email profile",
+              "realm_access": {
+                "roles": ["offline_access", "uma_authorization", "user"]
+              }
+            }
+
+      # ── Logout ────────────────────────────────────────────────────────────
+      - id: logout
+        request:
+          method: POST
+          path: /realms/myrealm/protocol/openid-connect/logout
+        response:
+          status: 204
+          headers: {}
+          body: ""
+
+      # ── Realm info ────────────────────────────────────────────────────────
+      - id: realm-info
+        request:
+          method: GET
+          path: /realms/myrealm
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "realm": "myrealm",
+              "public_key": "mockly-public-key-placeholder",
+              "token-service": "http://localhost:8080/realms/myrealm/protocol/openid-connect",
+              "account-service": "http://localhost:8080/realms/myrealm/account",
+              "tokens-not-before": 0
+            }
+
+      # ── Admin: list users ─────────────────────────────────────────────────
+      - id: admin-list-users
+        request:
+          method: GET
+          path: /admin/realms/myrealm/users
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            [
+              {
+                "id": "user-123456",
+                "username": "alice",
+                "enabled": true,
+                "emailVerified": true,
+                "firstName": "Alice",
+                "lastName": "Example",
+                "email": "alice@example.com",
+                "createdTimestamp": 1700000000000,
+                "requiredActions": [],
+                "realmRoles": ["default-roles-myrealm", "user"]
+              },
+              {
+                "id": "user-789012",
+                "username": "bob",
+                "enabled": true,
+                "emailVerified": true,
+                "firstName": "Bob",
+                "lastName": "Example",
+                "email": "bob@example.com",
+                "createdTimestamp": 1700000001000,
+                "requiredActions": [],
+                "realmRoles": ["default-roles-myrealm"]
+              }
+            ]
+
+      # ── Admin: get user ───────────────────────────────────────────────────
+      - id: admin-get-user
+        request:
+          method: GET
+          path: re:^/admin/realms/myrealm/users/[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "user-123456",
+              "username": "alice",
+              "enabled": true,
+              "emailVerified": true,
+              "firstName": "Alice",
+              "lastName": "Example",
+              "email": "alice@example.com",
+              "createdTimestamp": 1700000000000,
+              "requiredActions": [],
+              "realmRoles": ["default-roles-myrealm", "user"],
+              "clientRoles": {}
+            }
+
+      # ── Admin: create user ────────────────────────────────────────────────
+      - id: admin-create-user
+        request:
+          method: POST
+          path: /admin/realms/myrealm/users
+        response:
+          status: 201
+          headers:
+            Location: http://localhost:8080/admin/realms/myrealm/users/user-new-001
+          body: ""
+
+      # ── Admin: delete user ────────────────────────────────────────────────
+      - id: admin-delete-user
+        request:
+          method: DELETE
+          path: re:^/admin/realms/myrealm/users/[^/]+$
+        response:
+          status: 204
+          body: ""
+
+      # ── Admin: get realm roles ────────────────────────────────────────────
+      - id: admin-list-roles
+        request:
+          method: GET
+          path: /admin/realms/myrealm/roles
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            [
+              {"id": "role-001", "name": "user", "composite": false, "clientRole": false},
+              {"id": "role-002", "name": "admin", "composite": false, "clientRole": false},
+              {"id": "role-003", "name": "offline_access", "composite": false, "clientRole": false},
+              {"id": "role-004", "name": "uma_authorization", "composite": false, "clientRole": false}
+            ]
+
+      # ── 401 for missing/invalid Authorization header ──────────────────────
+      - id: userinfo-unauthorized
+        request:
+          method: GET
+          path: /realms/myrealm/protocol/openid-connect/userinfo
+          headers:
+            Authorization: ""
+        response:
+          status: 401
+          headers:
+            WWW-Authenticate: 'Bearer realm="myrealm"'
+            Content-Type: application/json
+          body: |
+            {
+              "error": "HTTP 401 Unauthorized"
+            }

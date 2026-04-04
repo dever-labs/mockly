@@ -1,0 +1,454 @@
+# Mockly preset: Stripe API
+#
+# Mocks the most commonly tested Stripe API endpoints.
+# Useful for testing payment integrations without hitting Stripe's test mode.
+#
+# Start:   mockly preset use stripe
+#          mockly start --config configs/presets/stripe.yaml
+#
+# Base URL in your app config: http://localhost:8080
+# Docs: https://stripe.com/docs/api
+#
+# Includes:
+#   - Customers (CRUD)
+#   - Payment Intents (create, confirm, retrieve)
+#   - Payment Methods (attach, list)
+#   - Subscriptions (create, retrieve, cancel)
+#   - Invoices (list, retrieve)
+#   - Prices & Products
+#   - Common error responses (card_declined, insufficient_funds, etc.)
+#   - Webhook delivery (POST /webhook)
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── Customers ─────────────────────────────────────────────────────────
+      - id: create-customer
+        request:
+          method: POST
+          path: /v1/customers
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "cus_MockCustomer001",
+              "object": "customer",
+              "created": 1700000000,
+              "currency": "usd",
+              "email": "alice@example.com",
+              "name": "Alice Example",
+              "phone": null,
+              "description": null,
+              "livemode": false,
+              "balance": 0,
+              "delinquent": false,
+              "metadata": {},
+              "subscriptions": {"object": "list", "data": [], "has_more": false, "total_count": 0},
+              "tax_exempt": "none",
+              "invoice_settings": {"default_payment_method": null}
+            }
+
+      - id: get-customer
+        request:
+          method: GET
+          path: re:^/v1/customers/cus_[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "cus_MockCustomer001",
+              "object": "customer",
+              "created": 1700000000,
+              "email": "alice@example.com",
+              "name": "Alice Example",
+              "livemode": false,
+              "balance": 0,
+              "delinquent": false,
+              "metadata": {}
+            }
+
+      - id: list-customers
+        request:
+          method: GET
+          path: /v1/customers
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "object": "list",
+              "data": [
+                {
+                  "id": "cus_MockCustomer001",
+                  "object": "customer",
+                  "email": "alice@example.com",
+                  "name": "Alice Example",
+                  "created": 1700000000,
+                  "livemode": false
+                }
+              ],
+              "has_more": false,
+              "url": "/v1/customers"
+            }
+
+      - id: update-customer
+        request:
+          method: POST
+          path: re:^/v1/customers/cus_[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "cus_MockCustomer001",
+              "object": "customer",
+              "email": "alice-updated@example.com",
+              "name": "Alice Updated",
+              "livemode": false
+            }
+
+      - id: delete-customer
+        request:
+          method: DELETE
+          path: re:^/v1/customers/cus_[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {"id": "cus_MockCustomer001", "object": "customer", "deleted": true}
+
+      # ── Payment Intents ───────────────────────────────────────────────────
+      - id: create-payment-intent
+        request:
+          method: POST
+          path: /v1/payment_intents
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "pi_MockPaymentIntent001",
+              "object": "payment_intent",
+              "amount": 2000,
+              "currency": "usd",
+              "status": "requires_payment_method",
+              "client_secret": "pi_MockPaymentIntent001_secret_MockClientSecret001",
+              "created": 1700000000,
+              "livemode": false,
+              "capture_method": "automatic",
+              "confirmation_method": "automatic",
+              "payment_method_types": ["card"],
+              "metadata": {},
+              "customer": "cus_MockCustomer001",
+              "description": null,
+              "receipt_email": null,
+              "setup_future_usage": null,
+              "shipping": null
+            }
+
+      - id: get-payment-intent
+        request:
+          method: GET
+          path: re:^/v1/payment_intents/pi_[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "pi_MockPaymentIntent001",
+              "object": "payment_intent",
+              "amount": 2000,
+              "amount_received": 0,
+              "currency": "usd",
+              "status": "requires_payment_method",
+              "client_secret": "pi_MockPaymentIntent001_secret_MockClientSecret001",
+              "created": 1700000000,
+              "livemode": false,
+              "payment_method_types": ["card"],
+              "metadata": {}
+            }
+
+      - id: confirm-payment-intent
+        request:
+          method: POST
+          path: re:^/v1/payment_intents/pi_[^/]+/confirm$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "pi_MockPaymentIntent001",
+              "object": "payment_intent",
+              "amount": 2000,
+              "amount_received": 2000,
+              "currency": "usd",
+              "status": "succeeded",
+              "created": 1700000000,
+              "livemode": false
+            }
+
+      - id: cancel-payment-intent
+        request:
+          method: POST
+          path: re:^/v1/payment_intents/pi_[^/]+/cancel$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "pi_MockPaymentIntent001",
+              "object": "payment_intent",
+              "status": "canceled",
+              "cancellation_reason": "requested_by_customer"
+            }
+
+      # ── Payment Methods ───────────────────────────────────────────────────
+      - id: create-payment-method
+        request:
+          method: POST
+          path: /v1/payment_methods
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "pm_MockPaymentMethod001",
+              "object": "payment_method",
+              "type": "card",
+              "card": {
+                "brand": "visa",
+                "exp_month": 12,
+                "exp_year": 2030,
+                "last4": "4242",
+                "network": "visa",
+                "country": "US",
+                "funding": "credit",
+                "checks": {"cvc_check": "pass", "address_line1_check": "pass", "address_postal_code_check": "pass"}
+              },
+              "billing_details": {
+                "name": "Alice Example",
+                "email": "alice@example.com"
+              },
+              "created": 1700000000,
+              "livemode": false,
+              "customer": null
+            }
+
+      - id: attach-payment-method
+        request:
+          method: POST
+          path: re:^/v1/payment_methods/pm_[^/]+/attach$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "pm_MockPaymentMethod001",
+              "object": "payment_method",
+              "type": "card",
+              "customer": "cus_MockCustomer001",
+              "card": {"brand": "visa", "last4": "4242", "exp_month": 12, "exp_year": 2030}
+            }
+
+      # ── Subscriptions ─────────────────────────────────────────────────────
+      - id: create-subscription
+        request:
+          method: POST
+          path: /v1/subscriptions
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "sub_MockSubscription001",
+              "object": "subscription",
+              "status": "active",
+              "customer": "cus_MockCustomer001",
+              "current_period_start": 1700000000,
+              "current_period_end": 1702592000,
+              "created": 1700000000,
+              "livemode": false,
+              "cancel_at_period_end": false,
+              "canceled_at": null,
+              "trial_start": null,
+              "trial_end": null,
+              "items": {
+                "object": "list",
+                "data": [
+                  {
+                    "id": "si_MockItem001",
+                    "object": "subscription_item",
+                    "price": {"id": "price_MockPrice001", "currency": "usd", "unit_amount": 999, "recurring": {"interval": "month"}}
+                  }
+                ]
+              },
+              "latest_invoice": "in_MockInvoice001",
+              "collection_method": "charge_automatically"
+            }
+
+      - id: cancel-subscription
+        request:
+          method: DELETE
+          path: re:^/v1/subscriptions/sub_[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "sub_MockSubscription001",
+              "object": "subscription",
+              "status": "canceled",
+              "canceled_at": 1700001000
+            }
+
+      # ── Products & Prices ─────────────────────────────────────────────────
+      - id: list-products
+        request:
+          method: GET
+          path: /v1/products
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "object": "list",
+              "data": [
+                {"id": "prod_MockPro", "name": "Pro Plan", "active": true, "description": "Pro tier"},
+                {"id": "prod_MockBasic", "name": "Basic Plan", "active": true, "description": "Basic tier"}
+              ],
+              "has_more": false
+            }
+
+      - id: list-prices
+        request:
+          method: GET
+          path: /v1/prices
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "object": "list",
+              "data": [
+                {
+                  "id": "price_MockPro001",
+                  "object": "price",
+                  "active": true,
+                  "currency": "usd",
+                  "unit_amount": 2900,
+                  "nickname": "Pro Monthly",
+                  "product": "prod_MockPro",
+                  "recurring": {"interval": "month", "interval_count": 1},
+                  "type": "recurring",
+                  "livemode": false
+                },
+                {
+                  "id": "price_MockBasic001",
+                  "object": "price",
+                  "active": true,
+                  "currency": "usd",
+                  "unit_amount": 900,
+                  "nickname": "Basic Monthly",
+                  "product": "prod_MockBasic",
+                  "recurring": {"interval": "month", "interval_count": 1},
+                  "type": "recurring"
+                }
+              ],
+              "has_more": false
+            }
+
+      # ── Webhooks ──────────────────────────────────────────────────────────
+      - id: webhook-receive
+        request:
+          method: POST
+          path: /webhook
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: '{"received": true}'
+
+      # ── Error: card declined ──────────────────────────────────────────────
+      - id: error-card-declined
+        request:
+          method: POST
+          path: /v1/payment_intents/decline
+        response:
+          status: 402
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "error": {
+                "type": "card_error",
+                "code": "card_declined",
+                "decline_code": "generic_decline",
+                "message": "Your card was declined.",
+                "param": "payment_method_data[card][number]",
+                "charge": "ch_mock001"
+              }
+            }
+
+      # ── Error: insufficient funds ─────────────────────────────────────────
+      - id: error-insufficient-funds
+        request:
+          method: POST
+          path: /v1/payment_intents/insufficient-funds
+        response:
+          status: 402
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "error": {
+                "type": "card_error",
+                "code": "card_declined",
+                "decline_code": "insufficient_funds",
+                "message": "Your card has insufficient funds."
+              }
+            }
+
+      # ── Error: authentication required ───────────────────────────────────
+      - id: error-authentication-required
+        request:
+          method: GET
+          path: /v1/no-auth
+        response:
+          status: 401
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "error": {
+                "type": "invalid_request_error",
+                "code": "authentication_required",
+                "message": "No API key provided. Set your API key using 'Authorization: Bearer sk_test_...'."
+              }
+            }

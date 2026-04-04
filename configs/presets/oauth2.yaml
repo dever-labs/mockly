@@ -250,3 +250,51 @@ protocols:
               "expires_in": 1800,
               "interval": 5
             }
+
+# ── Scenarios ────────────────────────────────────────────────────────────────
+scenarios:
+
+  - id: oauth2-auth-down
+    name: Auth Server Down
+    description: Token and userinfo endpoints return 503. Test your app behaviour when the auth server is unreachable.
+    patches:
+      - mock_id: token-success
+        status: 503
+        body: '{"error":"temporarily_unavailable","error_description":"The authorization server is temporarily unavailable."}'
+      - mock_id: userinfo
+        status: 503
+        body: '{"error":"temporarily_unavailable"}'
+
+  - id: oauth2-invalid-client
+    name: Invalid Client Credentials
+    description: Token endpoint returns 401 invalid_client. Test your app''s handling of misconfigured client credentials.
+    patches:
+      - mock_id: token-success
+        status: 401
+        body: '{"error":"invalid_client","error_description":"Client authentication failed. Invalid client_id or client_secret."}'
+
+  - id: oauth2-token-expired
+    name: Token Expired
+    description: Introspect returns the token as inactive. Simulates an expired access token.
+    patches:
+      - mock_id: introspect-active
+        status: 200
+        body: '{"active":false}'
+      - mock_id: userinfo
+        status: 401
+        body: '{"error":"invalid_token","error_description":"The access token expired."}'
+
+  - id: oauth2-rate-limited
+    name: Rate Limited
+    description: Token and userinfo endpoints return 429. Test retry / back-off logic.
+    patches:
+      - mock_id: token-success
+        status: 429
+        headers:
+          Retry-After: "5"
+        body: '{"error":"slow_down","error_description":"Too many requests. Please retry after 5 seconds."}'
+      - mock_id: userinfo
+        status: 429
+        headers:
+          Retry-After: "5"
+        body: '{"error":"slow_down"}'

@@ -17,26 +17,29 @@ import (
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
 // Server is the HTTP mock server.
 type Server struct {
-	cfg    *config.HTTPConfig
-	store  *state.Store
-	log    *logger.Logger
-	mocks  []config.HTTPMock
-	server *http.Server
+	cfg       *config.HTTPConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
+	mocks     []config.HTTPMock
+	server    *http.Server
 }
 
 // New creates a Server. The mocks slice is taken from cfg initially but can
 // be replaced at runtime via SetMocks.
-func New(cfg *config.HTTPConfig, store *state.Store, log *logger.Logger) *Server {
+func New(cfg *config.HTTPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
 	s := &Server{
-		cfg:   cfg,
-		store: store,
-		log:   log,
-		mocks: append([]config.HTTPMock(nil), cfg.Mocks...),
+		cfg:       cfg,
+		store:     store,
+		scenarios: sc,
+		log:       log,
+		mocks:     append([]config.HTTPMock(nil), cfg.Mocks...),
 	}
 	return s
 }
@@ -89,6 +92,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		hdrs[k] = strings.Join(v, ", ")
 	}
 
+	// Global fault: inject latency on every request before processing.
+	fault := s.scenarios.GetFault()
+	if fault != nil && fault.Enabled && fault.Delay.Duration > 0 {
+		time.Sleep(fault.Delay.Duration)
+	}
+
 	result, matched := engine.HTTPMatch(s.mocks, r.Method, r.URL.Path, hdrs, string(body), s.store)
 
 	status := http.StatusNotFound
@@ -103,6 +112,38 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		respHdrs = result.Headers
 		matchedID = result.MockID
 		delay = result.Delay
+
+		// Apply the first active scenario patch for this mock (if any).
+		if patch := s.scenarios.PatchFor(matchedID); patch != nil {
+			if patch.Disabled {
+				status = http.StatusNotFound
+				respBody = `{"error":"mock disabled by active scenario"}`
+				matchedID = ""
+				delay = 0
+			} else {
+				if patch.Status != 0 {
+					status = patch.Status
+				}
+				if patch.Body != "" {
+					respBody = patch.Body
+				}
+				for k, v := range patch.Headers {
+					respHdrs[k] = v
+				}
+				if patch.Delay != nil {
+					delay = patch.Delay.Duration
+				}
+			}
+		}
+	}
+
+	// Global fault: probabilistically override status/body (chaos testing).
+	// This applies even to matched mocks, after scenario patches.
+	if fault != nil && fault.Enabled && fault.StatusOverride != 0 && s.scenarios.RollFault(fault.ErrorRate) {
+		status = fault.StatusOverride
+		if fault.Body != "" {
+			respBody = fault.Body
+		}
 	}
 
 	if delay > 0 {

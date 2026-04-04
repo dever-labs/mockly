@@ -452,3 +452,98 @@ protocols:
                 "message": "No API key provided. Set your API key using 'Authorization: Bearer sk_test_...'."
               }
             }
+
+# ── Scenarios ────────────────────────────────────────────────────────────────
+# Activate via API: POST /api/scenarios/<id>/activate
+# CLI:             mockly scenario activate stripe-card-declined
+scenarios:
+
+  - id: stripe-card-declined
+    name: Card Declined
+    description: Payment intent confirmation returns a card_declined error. Test your payment failure handling and retry UI.
+    patches:
+      - mock_id: confirm-payment-intent
+        status: 402
+        body: |
+          {
+            "error": {
+              "type": "card_error",
+              "code": "card_declined",
+              "decline_code": "do_not_honor",
+              "message": "Your card was declined.",
+              "charge": "ch_MockDeclined001",
+              "payment_intent": {"id": "pi_MockPayIntent001", "status": "requires_payment_method"}
+            }
+          }
+
+  - id: stripe-insufficient-funds
+    name: Insufficient Funds
+    description: Payment intent confirmation returns an insufficient_funds error.
+    patches:
+      - mock_id: confirm-payment-intent
+        status: 402
+        body: |
+          {
+            "error": {
+              "type": "card_error",
+              "code": "card_declined",
+              "decline_code": "insufficient_funds",
+              "message": "Your card has insufficient funds.",
+              "charge": "ch_MockDeclined002",
+              "payment_intent": {"id": "pi_MockPayIntent001", "status": "requires_payment_method"}
+            }
+          }
+
+  - id: stripe-auth-failure
+    name: API Auth Failure
+    description: All Stripe endpoints return 401. Test your API key rotation / error page.
+    patches:
+      - mock_id: create-customer
+        status: 401
+        body: '{"error":{"type":"invalid_request_error","code":"api_key_expired","message":"The API key has expired."}}'
+      - mock_id: create-payment-intent
+        status: 401
+        body: '{"error":{"type":"invalid_request_error","code":"api_key_expired","message":"The API key has expired."}}'
+      - mock_id: confirm-payment-intent
+        status: 401
+        body: '{"error":{"type":"invalid_request_error","code":"api_key_expired","message":"The API key has expired."}}'
+      - mock_id: create-subscription
+        status: 401
+        body: '{"error":{"type":"invalid_request_error","code":"api_key_expired","message":"The API key has expired."}}'
+
+  - id: stripe-rate-limited
+    name: Rate Limited
+    description: High-traffic endpoints return 429. Test your retry logic and circuit breakers.
+    patches:
+      - mock_id: create-payment-intent
+        status: 429
+        headers:
+          Retry-After: "30"
+        body: '{"error":{"type":"rate_limit_error","message":"Too many requests; please retry after a short delay."}}'
+      - mock_id: confirm-payment-intent
+        status: 429
+        headers:
+          Retry-After: "30"
+        body: '{"error":{"type":"rate_limit_error","message":"Too many requests; please retry after a short delay."}}'
+      - mock_id: create-customer
+        status: 429
+        headers:
+          Retry-After: "30"
+        body: '{"error":{"type":"rate_limit_error","message":"Too many requests; please retry after a short delay."}}'
+
+  - id: stripe-server-error
+    name: Stripe Server Error
+    description: All write endpoints return 500. Test your payment failure recovery flows.
+    patches:
+      - mock_id: create-payment-intent
+        status: 500
+        body: '{"error":{"type":"api_error","message":"An error occurred while processing your request."}}'
+      - mock_id: confirm-payment-intent
+        status: 500
+        body: '{"error":{"type":"api_error","message":"An error occurred while processing your request."}}'
+      - mock_id: create-customer
+        status: 500
+        body: '{"error":{"type":"api_error","message":"An error occurred while processing your request."}}'
+      - mock_id: create-subscription
+        status: 500
+        body: '{"error":{"type":"api_error","message":"An error occurred while processing your request."}}'

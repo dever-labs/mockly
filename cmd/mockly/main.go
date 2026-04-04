@@ -20,6 +20,7 @@ import (
 	"github.com/dever-labs/mockly/internal/protocols/grpcserver"
 	"github.com/dever-labs/mockly/internal/protocols/httpserver"
 	"github.com/dever-labs/mockly/internal/protocols/wsserver"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
@@ -48,6 +49,8 @@ WebSocket, and gRPC protocols with a built-in web UI and REST management API.`,
 		statusCmd(),
 		resetCmd(),
 		presetCmd(),
+		scenarioCmd(),
+		faultCmd(),
 	)
 
 	if err := root.Execute(); err != nil {
@@ -87,6 +90,7 @@ func startCmd() *cobra.Command {
 
 func runServers(cfg *config.Config) error {
 	store := state.New()
+	sc := scenarios.New(cfg.Scenarios)
 	log := logger.New(500)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -99,7 +103,7 @@ func runServers(cfg *config.Config) error {
 	var grpcSrv api.GRPCProtocol
 
 	if cfg.Protocols.HTTP != nil && cfg.Protocols.HTTP.Enabled {
-		srv := httpserver.New(cfg.Protocols.HTTP, store, log)
+		srv := httpserver.New(cfg.Protocols.HTTP, store, sc, log)
 		httpSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ HTTP mock server  on :%d\n", cfg.Protocols.HTTP.Port)
@@ -119,7 +123,7 @@ func runServers(cfg *config.Config) error {
 		fmt.Printf("→ gRPC server       on :%d\n", cfg.Protocols.GRPC.Port)
 	}
 
-	apiSrv := api.New(&cfg.Mockly, store, log, httpSrv, wsSrv, grpcSrv)
+	apiSrv := api.New(&cfg.Mockly, store, sc, log, httpSrv, wsSrv, grpcSrv)
 
 	if cfg.Mockly.UI.Enabled {
 		apiSrv.AttachUI(assets.DistFS())
@@ -409,6 +413,194 @@ func presetShowCmd() *cobra.Command {
 }
 
 
+
+// ---------------------------------------------------------------------------
+// scenario
+// ---------------------------------------------------------------------------
+
+func scenarioCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "scenario",
+		Short: "Manage test scenarios on a running Mockly instance",
+	}
+	cmd.AddCommand(scenarioListCmd(), scenarioActivateCmd(), scenarioDeactivateCmd(), scenarioActiveCmd())
+	return cmd
+}
+
+func scenarioListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List all defined scenarios",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, _ := config.Load(cfgFile)
+			resp, err := http.Get(fmt.Sprintf("http://localhost:%d/api/scenarios", cfg.Mockly.API.Port))
+			if err != nil {
+				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
+			}
+			defer resp.Body.Close()
+			printResponse(resp)
+			return nil
+		},
+	}
+}
+
+func scenarioActiveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "active",
+		Short: "Show currently active scenarios",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, _ := config.Load(cfgFile)
+			resp, err := http.Get(fmt.Sprintf("http://localhost:%d/api/scenarios/active", cfg.Mockly.API.Port))
+			if err != nil {
+				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
+			}
+			defer resp.Body.Close()
+			printResponse(resp)
+			return nil
+		},
+	}
+}
+
+func scenarioActivateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "activate <id>",
+		Short: "Activate a scenario by ID",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, _ := config.Load(cfgFile)
+			url := fmt.Sprintf("http://localhost:%d/api/scenarios/%s/activate", cfg.Mockly.API.Port, args[0])
+			resp, err := http.Post(url, "application/json", nil)
+			if err != nil {
+				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusNotFound {
+				return fmt.Errorf("scenario %q not found", args[0])
+			}
+			fmt.Printf("Scenario %q activated.\n", args[0])
+			return nil
+		},
+	}
+}
+
+func scenarioDeactivateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "deactivate <id>",
+		Short: "Deactivate a scenario by ID",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, _ := config.Load(cfgFile)
+			url := fmt.Sprintf("http://localhost:%d/api/scenarios/%s/activate", cfg.Mockly.API.Port, args[0])
+			req, _ := http.NewRequest(http.MethodDelete, url, nil)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
+			}
+			defer resp.Body.Close()
+			fmt.Printf("Scenario %q deactivated.\n", args[0])
+			return nil
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// fault
+// ---------------------------------------------------------------------------
+
+func faultCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "fault",
+		Short: "Control global fault injection on a running Mockly instance",
+	}
+	cmd.AddCommand(faultSetCmd(), faultClearCmd(), faultStatusCmd())
+	return cmd
+}
+
+func faultSetCmd() *cobra.Command {
+	var status int
+	var delayStr string
+	var body string
+	var errorRate float64
+
+	cmd := &cobra.Command{
+		Use:   "set",
+		Short: "Enable global fault injection",
+		Long: `Enable global fault injection. Examples:
+
+  # Add 500ms latency to every request
+  mockly fault set --delay 500ms
+
+  # Return 503 for every request
+  mockly fault set --status 503 --body '{"error":"service_unavailable"}'
+
+  # Return 429 for 30% of requests
+  mockly fault set --status 429 --error-rate 0.3
+
+  # Combine: 200ms latency + 500 errors 10% of the time
+  mockly fault set --delay 200ms --status 500 --error-rate 0.1`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, _ := config.Load(cfgFile)
+
+			fault := config.GlobalFault{
+				Enabled:        true,
+				StatusOverride: status,
+				Body:           body,
+				ErrorRate:      errorRate,
+			}
+			if delayStr != "" {
+				if err := fault.Delay.UnmarshalText([]byte(delayStr)); err != nil {
+					return err
+				}
+			}
+			if err := postJSON(fmt.Sprintf("http://localhost:%d/api/fault", cfg.Mockly.API.Port), fault); err != nil {
+				return err
+			}
+			fmt.Println("Global fault injection enabled.")
+			return nil
+		},
+	}
+	cmd.Flags().IntVar(&status, "status", 0, "HTTP status code to inject (0 = only inject delay)")
+	cmd.Flags().StringVar(&delayStr, "delay", "", "Latency to add to every request (e.g. 500ms, 2s)")
+	cmd.Flags().StringVar(&body, "body", "", "Response body to return when fault fires")
+	cmd.Flags().Float64Var(&errorRate, "error-rate", 0, "Fraction of requests to affect (0.0–1.0; default: all)")
+	return cmd
+}
+
+func faultClearCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "clear",
+		Short: "Disable global fault injection",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, _ := config.Load(cfgFile)
+			req, _ := http.NewRequest(http.MethodDelete,
+				fmt.Sprintf("http://localhost:%d/api/fault", cfg.Mockly.API.Port), nil)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
+			}
+			defer resp.Body.Close()
+			fmt.Println("Global fault injection cleared.")
+			return nil
+		},
+	}
+}
+
+func faultStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show current global fault configuration",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, _ := config.Load(cfgFile)
+			resp, err := http.Get(fmt.Sprintf("http://localhost:%d/api/fault", cfg.Mockly.API.Port))
+			if err != nil {
+				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
+			}
+			defer resp.Body.Close()
+			printResponse(resp)
+			return nil
+		},
+	}
+}
 
 func postJSON(url string, v interface{}) error {
 	data, err := json.Marshal(v)

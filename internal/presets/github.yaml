@@ -412,3 +412,84 @@ protocols:
               "message": "API rate limit exceeded for user ID 1.",
               "documentation_url": "https://docs.github.com/rest/overview/rate-limits"
             }
+
+# ── Scenarios ────────────────────────────────────────────────────────────────
+scenarios:
+
+  - id: github-auth-failed
+    name: Auth Failed
+    description: Core API endpoints return 401. Test your app behaviour when the GitHub token is invalid or expired.
+    patches:
+      - mock_id: get-user
+        status: 401
+        body: '{"message":"Bad credentials","documentation_url":"https://docs.github.com/rest"}'
+      - mock_id: list-user-repos
+        status: 401
+        body: '{"message":"Bad credentials","documentation_url":"https://docs.github.com/rest"}'
+      - mock_id: list-issues
+        status: 401
+        body: '{"message":"Bad credentials","documentation_url":"https://docs.github.com/rest"}'
+      - mock_id: list-pulls
+        status: 401
+        body: '{"message":"Bad credentials","documentation_url":"https://docs.github.com/rest"}'
+      - mock_id: list-workflow-runs
+        status: 401
+        body: '{"message":"Bad credentials","documentation_url":"https://docs.github.com/rest"}'
+
+  - id: github-rate-limited
+    name: Rate Limited
+    description: API endpoints return 403 rate limit exceeded. Test your retry and back-off logic.
+    patches:
+      - mock_id: get-user
+        status: 403
+        headers:
+          X-RateLimit-Limit: "60"
+          X-RateLimit-Remaining: "0"
+          X-RateLimit-Reset: "1700003600"
+        body: '{"message":"API rate limit exceeded for your IP. (But here is the good news: Authenticated requests get a higher rate limit. Check out the documentation for more details.)","documentation_url":"https://docs.github.com/rest/overview/rate-limits"}'
+      - mock_id: get-repo
+        status: 403
+        headers:
+          X-RateLimit-Remaining: "0"
+        body: '{"message":"API rate limit exceeded."}'
+      - mock_id: list-issues
+        status: 403
+        headers:
+          X-RateLimit-Remaining: "0"
+        body: '{"message":"API rate limit exceeded."}'
+      - mock_id: list-workflow-runs
+        status: 403
+        headers:
+          X-RateLimit-Remaining: "0"
+        body: '{"message":"API rate limit exceeded."}'
+
+  - id: github-server-error
+    name: GitHub Server Error
+    description: Repositories and issues endpoints return 500. Test your error handling when GitHub is having an incident.
+    patches:
+      - mock_id: get-repo
+        status: 500
+        body: '{"message":"Server Error"}'
+      - mock_id: list-issues
+        status: 500
+        body: '{"message":"Server Error"}'
+      - mock_id: create-issue
+        status: 500
+        body: '{"message":"Server Error"}'
+      - mock_id: list-workflow-runs
+        status: 500
+        body: '{"message":"Server Error"}'
+
+  - id: github-repo-not-found
+    name: Repository Not Found
+    description: Repository endpoints return 404. Simulates a missing or private repository your token cannot access.
+    patches:
+      - mock_id: get-repo
+        status: 404
+        body: '{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/repos#get-a-repository"}'
+      - mock_id: list-issues
+        status: 404
+        body: '{"message":"Not Found"}'
+      - mock_id: list-pulls
+        status: 404
+        body: '{"message":"Not Found"}'

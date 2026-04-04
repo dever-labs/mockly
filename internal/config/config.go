@@ -13,6 +13,7 @@ import (
 type Config struct {
 	Mockly    MocklyConfig    `yaml:"mockly" json:"mockly"`
 	Protocols ProtocolsConfig `yaml:"protocols" json:"protocols"`
+	Scenarios []Scenario      `yaml:"scenarios,omitempty" json:"scenarios,omitempty"`
 }
 
 type MocklyConfig struct {
@@ -133,6 +134,43 @@ type GRPCError struct {
 type StateCondition struct {
 	Key   string `yaml:"key" json:"key"`
 	Value string `yaml:"value" json:"value"`
+}
+
+// ---------------------------------------------------------------------------
+// Scenarios & Fault injection
+// ---------------------------------------------------------------------------
+
+// Scenario is a named set of mock patches that can be activated/deactivated
+// at runtime via the management API. Dependency teams ship these alongside
+// their preset configs to let consuming teams toggle error states, latency,
+// and other failure modes deterministically.
+type Scenario struct {
+	ID          string      `yaml:"id" json:"id"`
+	Name        string      `yaml:"name" json:"name"`
+	Description string      `yaml:"description" json:"description"`
+	Patches     []MockPatch `yaml:"patches" json:"patches"`
+}
+
+// MockPatch overrides specific response fields for a named mock when a
+// scenario is active. Only non-zero/non-nil fields are applied.
+type MockPatch struct {
+	MockID   string            `yaml:"mock_id" json:"mock_id"`
+	Status   int               `yaml:"status,omitempty" json:"status,omitempty"`
+	Headers  map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	Body     string            `yaml:"body,omitempty" json:"body,omitempty"`
+	Delay    *Duration         `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Disabled bool              `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+}
+
+// GlobalFault injects faults across all mock responses. Delay adds latency to
+// every request. StatusOverride replaces response status codes at the given
+// ErrorRate probability (0.0–1.0; omit or set to 0 to always override).
+type GlobalFault struct {
+	Enabled        bool     `yaml:"enabled" json:"enabled"`
+	StatusOverride int      `yaml:"status_override,omitempty" json:"status_override,omitempty"`
+	Delay          Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Body           string   `yaml:"body,omitempty" json:"body,omitempty"`
+	ErrorRate      float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
 }
 
 // Duration is a yaml-decodable time.Duration.

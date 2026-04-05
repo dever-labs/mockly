@@ -1,0 +1,17 @@
+{
+  "name": "mockly-driver-win32-x64",
+  "version": "0.1.0",
+  "description": "Mockly binary for win32-x64 (internal platform package for mockly-driver)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dever-labs/mockly.git",
+    "directory": "clients/node/packages/mockly-driver-win32-x64"
+  },
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["bin"],
+  "bin": {
+    "mockly": "./bin/mockly.exe"
+  }
+}

@@ -12,11 +12,19 @@ public static class MocklyInstaller
 
     internal static string? GetBinaryPath(string? binDir, IReadOnlyDictionary<string, string>? env)
     {
+        // 1. Explicit override via env var.
         var envPath = GetEnv("MOCKLY_BINARY_PATH", env);
         if (!string.IsNullOrEmpty(envPath) && File.Exists(envPath))
             return envPath;
 
         var exeName = BinaryName();
+
+        // 2. Binary bundled inside the NuGet package and copied to output by MSBuild targets.
+        var bundled = Path.Join(AppContext.BaseDirectory, exeName);
+        if (File.Exists(bundled))
+            return bundled;
+
+        // 3. Explicit binDir or conventional <AppBase>/bin (downloaded on a previous run).
         var dirs = new List<string?> { binDir, Path.Join(AppContext.BaseDirectory, "bin") };
         foreach (var dir in dirs)
         {

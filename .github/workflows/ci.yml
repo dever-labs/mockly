@@ -163,7 +163,125 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: gh release upload "${{ github.ref_name }}" dist/* --clobber
 
-  # ─── Docker image ────────────────────────────────────────────────────────────
+  # ─── Publish NuGet package ──────────────────────────────────────────────────
+  nuget-publish:
+    name: Publish NuGet
+    needs: [build, e2e]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # actions/checkout@v6.0.2
+
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Download all binaries
+        uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317 # actions/download-artifact@v6
+        with:
+          pattern: mockly-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Stage binaries into NuGet runtimes/ structure
+        run: |
+          RUNTIMES=clients/dotnet/src/Mockly.Driver/runtimes
+          cp dist/mockly-linux-amd64    $RUNTIMES/linux-x64/native/mockly
+          cp dist/mockly-linux-arm64    $RUNTIMES/linux-arm64/native/mockly
+          cp dist/mockly-darwin-amd64   $RUNTIMES/osx-x64/native/mockly
+          cp dist/mockly-darwin-arm64   $RUNTIMES/osx-arm64/native/mockly
+          cp dist/mockly-windows-amd64.exe $RUNTIMES/win-x64/native/mockly.exe
+          chmod +x $RUNTIMES/*/native/mockly
+
+      - name: Pack
+        run: |
+          dotnet pack clients/dotnet/src/Mockly.Driver/Mockly.Driver.csproj \
+            -c Release \
+            -o dist/nuget \
+            /p:Version=${{ github.ref_name }}
+
+      - name: Push to NuGet.org
+        run: |
+          dotnet nuget push dist/nuget/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json
+
+  # ─── Publish npm packages ────────────────────────────────────────────────────
+  npm-publish:
+    name: Publish npm
+    needs: [build, e2e]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # actions/checkout@v6.0.2
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # actions/setup-node@v6.3.0
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download all binaries
+        uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317 # actions/download-artifact@v6
+        with:
+          pattern: mockly-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Stage binaries into platform sub-packages
+        run: |
+          PKG=clients/node/packages
+          cp dist/mockly-linux-amd64       $PKG/mockly-driver-linux-x64/bin/mockly
+          cp dist/mockly-linux-arm64       $PKG/mockly-driver-linux-arm64/bin/mockly
+          cp dist/mockly-darwin-amd64      $PKG/mockly-driver-darwin-x64/bin/mockly
+          cp dist/mockly-darwin-arm64      $PKG/mockly-driver-darwin-arm64/bin/mockly
+          cp dist/mockly-windows-amd64.exe $PKG/mockly-driver-win32-x64/bin/mockly.exe
+          chmod +x $PKG/mockly-driver-linux-*/bin/mockly $PKG/mockly-driver-darwin-*/bin/mockly
+
+      - name: Set version in all packages
+        run: |
+          VERSION=${{ github.ref_name }}
+          for pkg in clients/node/packages/*/; do
+            node -e "
+              const fs = require('fs');
+              const p = '$pkg/package.json';
+              const j = JSON.parse(fs.readFileSync(p));
+              j.version = process.argv[1];
+              fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+            " "$VERSION"
+          done
+          node -e "
+            const fs = require('fs');
+            const p = 'clients/node/package.json';
+            const j = JSON.parse(fs.readFileSync(p));
+            j.version = process.argv[1];
+            for (const k of Object.keys(j.optionalDependencies ?? {})) {
+              j.optionalDependencies[k] = process.argv[1];
+            }
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+          " "$VERSION"
+
+      - name: Publish platform sub-packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for pkg in clients/node/packages/*/; do
+            npm publish "$pkg" --access public
+          done
+
+      - name: Build and publish main package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: clients/node
+        run: |
+          npm ci
+          npm run build
+          npm publish --access public
+
+
   docker:
     name: Docker Image
     needs: [build, e2e]

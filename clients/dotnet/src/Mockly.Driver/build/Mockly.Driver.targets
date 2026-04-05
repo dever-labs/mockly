@@ -1,0 +1,38 @@
+<Project>
+  <!--
+    Mockly.Driver MSBuild targets
+    Copies the platform-appropriate mockly binary into the test/app output directory
+    so Mockly.Driver can launch it without any download at test time.
+  -->
+  <PropertyGroup>
+    <!-- Detect OS -->
+    <_MocklyOS>linux</_MocklyOS>
+    <_MocklyOS Condition="$([MSBuild]::IsOSPlatform('OSX'))">osx</_MocklyOS>
+    <_MocklyOS Condition="$([MSBuild]::IsOSPlatform('Windows'))">win</_MocklyOS>
+
+    <!-- Detect architecture -->
+    <_MocklyArch>x64</_MocklyArch>
+    <_MocklyArch Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">arm64</_MocklyArch>
+
+    <!-- Compose the NuGet RID and binary filename -->
+    <_MocklyRID>$(_MocklyOS)-$(_MocklyArch)</_MocklyRID>
+    <_MocklyBin Condition="$([MSBuild]::IsOSPlatform('Windows'))">mockly.exe</_MocklyBin>
+    <_MocklyBin Condition="!$([MSBuild]::IsOSPlatform('Windows'))">mockly</_MocklyBin>
+
+    <!-- Path to the bundled binary inside this NuGet package -->
+    <_MocklyNativeSrc>$(MSBuildThisFileDirectory)..\runtimes\$(_MocklyRID)\native\$(_MocklyBin)</_MocklyNativeSrc>
+  </PropertyGroup>
+
+  <!-- Copy bundled binary to output dir at build time (works for dotnet test/run, not just publish) -->
+  <Target Name="CopyMocklyBundledBinary" AfterTargets="Build" Condition="Exists('$(_MocklyNativeSrc)')">
+    <Copy
+      SourceFiles="$(_MocklyNativeSrc)"
+      DestinationFolder="$(OutputPath)"
+      SkipUnchangedFiles="true" />
+    <Exec
+      Command="chmod +x &quot;$(OutputPath)$(_MocklyBin)&quot;"
+      Condition="!$([MSBuild]::IsOSPlatform('Windows'))"
+      IgnoreExitCode="true" />
+    <Message Text="Mockly.Driver: staged bundled binary ($(_MocklyRID)) → $(OutputPath)$(_MocklyBin)" Importance="low" />
+  </Target>
+</Project>

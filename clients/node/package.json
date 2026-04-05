@@ -50,6 +50,13 @@
   "dependencies": {
     "js-yaml": "^4.1.0"
   },
+  "optionalDependencies": {
+    "mockly-driver-linux-x64": "0.1.0",
+    "mockly-driver-linux-arm64": "0.1.0",
+    "mockly-driver-darwin-x64": "0.1.0",
+    "mockly-driver-darwin-arm64": "0.1.0",
+    "mockly-driver-win32-x64": "0.1.0"
+  },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",

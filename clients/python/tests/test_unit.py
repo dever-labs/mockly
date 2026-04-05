@@ -1,7 +1,6 @@
 """Unit tests for mockly-driver (no real binary required)."""
 
 import os
-import tempfile
 
 import pytest
 
@@ -192,7 +191,6 @@ def test_write_config_empty_list_omits_scenarios():
 # ---------------------------------------------------------------------------
 
 import http.server
-import json
 import threading
 from mockly_driver._server import MocklyServer
 from mockly_driver._types import Mock, MockRequest, MockResponse, FaultConfig

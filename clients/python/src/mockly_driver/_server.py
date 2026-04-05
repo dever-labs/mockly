@@ -8,8 +8,6 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
-from typing import Optional
-
 from ._install import get_binary_path, install
 from ._types import FaultConfig, Mock, Scenario
 

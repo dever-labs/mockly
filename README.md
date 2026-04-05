@@ -826,6 +826,143 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 
 ---
 
+## Client Libraries
+
+Mockly ships official clients that manage the process lifecycle, port allocation, and the management API for you — so tests stay clean and portable.
+
+| Language | Package | Install |
+|---|---|---|
+| **Go** | `github.com/dever-labs/mockly/clients/go` | `go get github.com/dever-labs/mockly/clients/go` |
+| **Node.js / TypeScript** | `@dever-labs/mockly-driver` | `npm i -D @dever-labs/mockly-driver` |
+| **Java** | `io.github.dever-labs:mockly-driver` | See Maven/Gradle below |
+| **.NET / C#** | `Mockly.Driver` | `dotnet add package Mockly.Driver` |
+| **Python** | `mockly-driver` | `pip install mockly-driver` |
+| **Rust** | `mockly-driver` | `mockly-driver = "0.4"` in `[dev-dependencies]` |
+
+All clients:
+- Automatically find or install the Mockly binary for the current platform
+- Allocate two free ports atomically (no TOCTOU races)
+- Retry startup up to 3 times on port conflicts
+- Expose the same concepts: `addMock`, `activateScenario`, `setFault`, `reset`, `stop`
+
+### Go
+
+```go
+import mocklydriver "github.com/dever-labs/mockly/clients/go"
+
+server, err := mocklydriver.Ensure(mocklydriver.Options{}, mocklydriver.InstallOptions{})
+defer server.Stop()
+
+server.AddMock(mocklydriver.Mock{
+    ID:       "get-user",
+    Request:  mocklydriver.Request{Method: "GET", Path: "/users/1"},
+    Response: mocklydriver.Response{Status: 200, Body: `{"id":1}`},
+})
+// server.HTTPBase = "http://127.0.0.1:<port>"
+```
+
+[→ Full Go docs](docs/clients/go.md)
+
+### Node.js / TypeScript
+
+```ts
+import { MocklyServer } from '@dever-labs/mockly-driver'
+
+const server = await MocklyServer.ensure()
+await server.addMock({
+    id: 'get-user',
+    request: { method: 'GET', path: '/users/1' },
+    response: { status: 200, body: '{"id":1}' },
+})
+// server.httpBase = "http://127.0.0.1:<port>"
+await server.stop()
+```
+
+[→ Full Node.js docs](docs/clients/node.md)
+
+### Java
+
+```xml
+<dependency>
+  <groupId>io.github.dever-labs</groupId>
+  <artifactId>mockly-driver</artifactId>
+  <version>0.4.7</version>
+  <scope>test</scope>
+</dependency>
+```
+
+```java
+try (MocklyServer server = MocklyServer.ensure(MocklyConfig.builder().build())) {
+    server.addMock(Mock.builder("get-user",
+        MockRequest.builder("GET", "/users/1").build(),
+        MockResponse.builder(200).body("{\"id\":1}").build()
+    ).build());
+    // server.httpBase = "http://127.0.0.1:<port>"
+}
+```
+
+[→ Full Java docs](docs/clients/java.md)
+
+### .NET / C#
+
+```sh
+dotnet add package Mockly.Driver
+```
+
+```csharp
+await using var server = await MocklyServer.CreateAsync();
+await server.AddMockAsync(new Mock {
+    Id = "get-user",
+    Request  = new MockRequest { Method = "GET", Path = "/users/1" },
+    Response = new MockResponse { Status = 200, Body = """{"id":1}""" },
+});
+// server.HttpBase = "http://127.0.0.1:<port>"
+```
+
+[→ Full .NET docs](docs/clients/dotnet.md)
+
+### Python
+
+```sh
+pip install mockly-driver
+```
+
+```python
+from mockly_driver import MocklyServer, Mock, MockRequest, MockResponse
+
+server = MocklyServer.ensure()
+server.add_mock(Mock(
+    id="get-user",
+    request=MockRequest(method="GET", path="/users/1"),
+    response=MockResponse(status=200, body='{"id":1}'),
+))
+# server.http_base = "http://127.0.0.1:<port>"
+server.stop()
+```
+
+[→ Full Python docs](docs/clients/python.md)
+
+### Rust
+
+```toml
+[dev-dependencies]
+mockly-driver = "0.4"
+```
+
+```rust
+let mut server = MocklyServer::ensure(ServerOptions::default(), Default::default()).unwrap();
+server.add_mock(&Mock {
+    id: "get-user".into(),
+    request: Request { method: "GET".into(), path: "/users/1".into(), ..Default::default() },
+    response: Response { status: 200, body: Some(r#"{"id":1}"#.into()), ..Default::default() },
+}).unwrap();
+// server.http_base = "http://127.0.0.1:<port>"
+```
+
+[→ Full Rust docs](docs/clients/rust.md)
+
+---
+
 ## CI Integration
 
 Mockly is a single static binary with no runtime dependencies — ideal for CI.

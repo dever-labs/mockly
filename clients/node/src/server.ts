@@ -6,7 +6,7 @@ import yaml from 'js-yaml'
 import type { HttpMock, Scenario, FaultConfig, MocklyServerOptions } from './types.js'
 import type { InstallOptions } from './install.js'
 import { install, getBinaryPath } from './install.js'
-import { getFreePort, sleep } from './utils.js'
+import { getFreePorts, sleep } from './utils.js'
 
 /**
  * Controls a Mockly server process for use in integration tests.
@@ -61,7 +61,8 @@ export class MocklyServer {
    * Throws immediately if the binary cannot be found — call `ensure()` instead
    * if you want automatic installation.
    *
-   * Ports are allocated sequentially to avoid TOCTOU races.
+   * Ports are allocated atomically (both held open simultaneously) to avoid
+   * TOCTOU races where another process could claim a port between allocations.
    * If startup fails due to a port conflict, create() retries up to 3 times
    * with freshly allocated ports before giving up.
    */
@@ -70,8 +71,7 @@ export class MocklyServer {
     let lastError: Error | undefined
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      const httpPort = await getFreePort()
-      const apiPort = await getFreePort()
+      const [httpPort, apiPort] = await getFreePorts(2)
       const server = new MocklyServer(httpPort, apiPort)
       try {
         await server._start(opts.scenarios ?? [])

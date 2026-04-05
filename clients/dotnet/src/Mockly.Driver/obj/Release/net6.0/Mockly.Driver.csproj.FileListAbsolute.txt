@@ -1,0 +1,12 @@
+C:\Users\caspe\AppData\Local\Temp\mockly\clients\dotnet\src\Mockly.Driver\bin\Release\net6.0\Mockly.Driver.deps.json
+C:\Users\caspe\AppData\Local\Temp\mockly\clients\dotnet\src\Mockly.Driver\bin\Release\net6.0\Mockly.Driver.dll
+C:\Users\caspe\AppData\Local\Temp\mockly\clients\dotnet\src\Mockly.Driver\bin\Release\net6.0\Mockly.Driver.pdb
+C:\Users\caspe\AppData\Local\Temp\mockly\clients\dotnet\src\Mockly.Driver\obj\Release\net6.0\Mockly.Driver.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\caspe\AppData\Local\Temp\mockly\clients\dotnet\src\Mockly.Driver\obj\Release\net6.0\Mockly.Driver.AssemblyInfoInputs.cache
+C:\Users\caspe\AppData\Local\Temp\mockly\clients\dotnet\src\Mockly.Driver\obj\Release\net6.0\Mockly.Driver.AssemblyInfo.cs
+C:\Users\caspe\AppData\Local\Temp\mockly\clients\dotnet\src\Mockly.Driver\obj\Release\net6.0\Mockly.Driver.csproj.CoreCompileInputs.cache
+C:\Users\caspe\AppData\Local\Temp\mockly\clients\dotnet\src\Mockly.Driver\obj\Release\net6.0\Mockly.Driver.sourcelink.json
+C:\Users\caspe\AppData\Local\Temp\mockly\clients\dotnet\src\Mockly.Driver\obj\Release\net6.0\Mockly.Driver.dll
+C:\Users\caspe\AppData\Local\Temp\mockly\clients\dotnet\src\Mockly.Driver\obj\Release\net6.0\refint\Mockly.Driver.dll
+C:\Users\caspe\AppData\Local\Temp\mockly\clients\dotnet\src\Mockly.Driver\obj\Release\net6.0\Mockly.Driver.pdb
+C:\Users\caspe\AppData\Local\Temp\mockly\clients\dotnet\src\Mockly.Driver\obj\Release\net6.0\ref\Mockly.Driver.dll

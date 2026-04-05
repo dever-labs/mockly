@@ -27,3 +27,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stdlib-only runtime — no third-party dependencies.
 - pytest unit tests covering port allocation, binary discovery, and install guards.
 
+

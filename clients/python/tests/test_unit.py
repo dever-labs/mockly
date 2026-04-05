@@ -149,7 +149,8 @@ def test_write_config_returns_existing_path():
 def test_write_config_contains_port_keys():
     path = _write_config(8080, 9090, None)
     try:
-        content = open(path).read()
+        with open(path) as f:
+            content = f.read()
         assert "port:" in content
     finally:
         os.unlink(path)
@@ -158,7 +159,8 @@ def test_write_config_contains_port_keys():
 def test_write_config_contains_correct_ports():
     path = _write_config(7777, 8888, None)
     try:
-        content = open(path).read()
+        with open(path) as f:
+            content = f.read()
         assert "7777" in content
         assert "8888" in content
     finally:
@@ -168,7 +170,8 @@ def test_write_config_contains_correct_ports():
 def test_write_config_no_scenarios_section_when_empty():
     path = _write_config(8080, 9090, None)
     try:
-        content = open(path).read()
+        with open(path) as f:
+            content = f.read()
         assert "scenarios:" not in content
     finally:
         os.unlink(path)
@@ -177,7 +180,8 @@ def test_write_config_no_scenarios_section_when_empty():
 def test_write_config_empty_list_omits_scenarios():
     path = _write_config(8080, 9090, [])
     try:
-        content = open(path).read()
+        with open(path) as f:
+            content = f.read()
         assert "scenarios:" not in content
     finally:
         os.unlink(path)

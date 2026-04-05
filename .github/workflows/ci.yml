@@ -211,10 +211,12 @@ jobs:
 
       - name: Pack
         run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
           dotnet pack clients/dotnet/src/Mockly.Driver/Mockly.Driver.csproj \
             -c Release \
             -o dist/nuget \
-            /p:Version=${{ github.ref_name }}
+            /p:Version="$VERSION"
 
       - name: Push to NuGet.org
         run: |

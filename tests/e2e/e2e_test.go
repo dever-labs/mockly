@@ -78,26 +78,23 @@ func freePort(t *testing.T) int {
 
 // startMockly writes a config, starts the mockly binary, and returns the API
 // base URL and HTTP mock base URL. The process is killed when the test ends.
-func startMockly(t *testing.T, cfgYAML string) (apiBase, httpBase string) {
+//
+// cfgFmt is a fmt format string. The first %d is replaced with the allocated
+// HTTP port so callers can embed `port: %d` under their http: block without
+// producing a duplicate top-level `protocols:` key.
+func startMockly(t *testing.T, cfgFmt string) (apiBase, httpBase string) {
 	t.Helper()
 
 	apiPort := freePort(t)
 	httpPort := freePort(t)
 
-	// Inject the free ports into the config so there are no conflicts between
-	// parallel test runs.
-	portedCfg := fmt.Sprintf(`
-mockly:
-  api:
-    port: %d
-protocols:
-  http:
-    port: %d
-`, apiPort, httpPort) + cfgYAML
+	// Inject the HTTP port into the caller's YAML, then prepend the api port.
+	cfgYAML := fmt.Sprintf(cfgFmt, httpPort)
+	fullCfg := fmt.Sprintf("mockly:\n  api:\n    port: %d\n", apiPort) + cfgYAML
 
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "mockly.yaml")
-	if err := os.WriteFile(cfgPath, []byte(portedCfg), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(fullCfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -119,8 +116,6 @@ protocols:
 	httpBase = fmt.Sprintf("http://127.0.0.1:%d", httpPort)
 
 	waitForHTTP(t, apiBase+"/api/protocols", 10*time.Second)
-
-	t.Setenv("E2E_HTTP_BASE", httpBase)
 	return apiBase, httpBase
 }
 
@@ -173,6 +168,7 @@ func TestE2E_StartAndProtocolList(t *testing.T) {
 protocols:
   http:
     enabled: true
+    port: %d
 `)
 	var protocols []map[string]interface{}
 	mustGetJSON(t, apiBase+"/api/protocols", &protocols)
@@ -195,6 +191,7 @@ func TestE2E_HTTP_MockAndRequest(t *testing.T) {
 protocols:
   http:
     enabled: true
+    port: %d
     mocks:
       - id: hello
         request:
@@ -234,6 +231,7 @@ func TestE2E_HTTP_CreateMockViaAPI(t *testing.T) {
 protocols:
   http:
     enabled: true
+    port: %d
 `)
 
 	// Create a mock via the management API.
@@ -264,6 +262,7 @@ func TestE2E_ScenarioActivation(t *testing.T) {
 protocols:
   http:
     enabled: true
+    port: %d
     mocks:
       - id: token
         request:
@@ -312,6 +311,7 @@ func TestE2E_FaultInjection(t *testing.T) {
 protocols:
   http:
     enabled: true
+    port: %d
     mocks:
       - id: ok
         request:
@@ -355,6 +355,7 @@ func TestE2E_Reset(t *testing.T) {
 protocols:
   http:
     enabled: true
+    port: %d
 `)
 
 	// Create a mock, then reset.

@@ -128,8 +128,8 @@ func Install(opts InstallOptions) (string, error) {
 		return "", fmt.Errorf("creating binary file %q: %w", dest, err)
 	}
 	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		os.Remove(dest)
+		_ = f.Close()
+		_ = os.Remove(dest)
 		return "", fmt.Errorf("writing binary to %q: %w", dest, err)
 	}
 	if err := f.Close(); err != nil {

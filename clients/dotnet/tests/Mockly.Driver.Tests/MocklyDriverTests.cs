@@ -13,10 +13,9 @@ public class MocklyDriverTests
     [Fact]
     public void GetFreePort_ReturnsValidPort()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
+        using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        var port = ((IPEndPoint)socket.LocalEndPoint!).Port;
 
         Assert.InRange(port, 1024, 65535);
     }
@@ -289,7 +288,7 @@ public class MocklyDriverTests
     public async Task AddMockAsync_PostsToCorrectEndpoint()
     {
         var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.Created };
-        var server = CreateTestServer(handler);
+        await using var server = CreateTestServer(handler);
         var mock = new Mock("m1", new MockRequest("GET", "/test"), new MockResponse(200));
 
         await server.AddMockAsync(mock);
@@ -304,7 +303,7 @@ public class MocklyDriverTests
     public async Task AddMockAsync_ThrowsOnErrorStatus()
     {
         var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError };
-        var server = CreateTestServer(handler);
+        await using var server = CreateTestServer(handler);
         var mock = new Mock("m2", new MockRequest("GET", "/fail"), new MockResponse(200));
 
         await Assert.ThrowsAsync<HttpRequestException>(() => server.AddMockAsync(mock));
@@ -314,7 +313,7 @@ public class MocklyDriverTests
     public async Task DeleteMockAsync_DeletesCorrectEndpoint()
     {
         var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.NoContent };
-        var server = CreateTestServer(handler);
+        await using var server = CreateTestServer(handler);
 
         await server.DeleteMockAsync("test-id");
 
@@ -328,7 +327,7 @@ public class MocklyDriverTests
     public async Task DeleteMockAsync_ThrowsOnErrorStatus()
     {
         var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.NotFound };
-        var server = CreateTestServer(handler);
+        await using var server = CreateTestServer(handler);
 
         await Assert.ThrowsAsync<HttpRequestException>(() => server.DeleteMockAsync("no-such-id"));
     }
@@ -337,7 +336,7 @@ public class MocklyDriverTests
     public async Task ResetAsync_PostsToResetEndpoint()
     {
         var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.OK };
-        var server = CreateTestServer(handler);
+        await using var server = CreateTestServer(handler);
 
         await server.ResetAsync();
 
@@ -350,7 +349,7 @@ public class MocklyDriverTests
     public async Task ActivateScenarioAsync_PostsToCorrectEndpoint()
     {
         var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.OK };
-        var server = CreateTestServer(handler);
+        await using var server = CreateTestServer(handler);
 
         await server.ActivateScenarioAsync("sc1");
 
@@ -364,7 +363,7 @@ public class MocklyDriverTests
     public async Task DeactivateScenarioAsync_PostsToCorrectEndpoint()
     {
         var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.OK };
-        var server = CreateTestServer(handler);
+        await using var server = CreateTestServer(handler);
 
         await server.DeactivateScenarioAsync("sc1");
 
@@ -378,7 +377,7 @@ public class MocklyDriverTests
     public async Task SetFaultAsync_PostsToFaultEndpoint()
     {
         var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.OK };
-        var server = CreateTestServer(handler);
+        await using var server = CreateTestServer(handler);
         var fault = new FaultConfig(true, "100ms", null, 0.3);
 
         await server.SetFaultAsync(fault);
@@ -394,7 +393,7 @@ public class MocklyDriverTests
     public async Task ClearFaultAsync_DeletesFaultEndpoint()
     {
         var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.OK };
-        var server = CreateTestServer(handler);
+        await using var server = CreateTestServer(handler);
 
         await server.ClearFaultAsync();
 

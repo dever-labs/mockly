@@ -16,14 +16,14 @@ public sealed class MocklyServer : IAsyncDisposable
     };
 
     private readonly HttpClient _http;
-    private readonly System.Diagnostics.Process _process;
+    private readonly System.Diagnostics.Process? _process;
 
     public int HttpPort { get; }
     public int ApiPort { get; }
     public string HttpBase { get; }
     public string ApiBase { get; }
 
-    private MocklyServer(System.Diagnostics.Process process, int httpPort, int apiPort, HttpClient http)
+    private MocklyServer(System.Diagnostics.Process? process, int httpPort, int apiPort, HttpClient http)
     {
         _process = process;
         _http = http;
@@ -115,7 +115,7 @@ public sealed class MocklyServer : IAsyncDisposable
     public async Task StopAsync()
     {
         _http.Dispose();
-        if (!_process.HasExited)
+        if (_process is { HasExited: false })
         {
             try
             {
@@ -125,7 +125,7 @@ public sealed class MocklyServer : IAsyncDisposable
             catch (InvalidOperationException) { }
             catch (Win32Exception) { }
         }
-        _process.Dispose();
+        _process?.Dispose();
     }
 
     public ValueTask DisposeAsync() => new(StopAsync());
@@ -153,7 +153,7 @@ public sealed class MocklyServer : IAsyncDisposable
 
     private async Task PostAsync(string path, object? body)
     {
-        HttpContent content = body != null
+        using HttpContent content = body != null
             ? new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json")
             : new StringContent(string.Empty, Encoding.UTF8, "application/json");
 
@@ -175,14 +175,11 @@ public sealed class MocklyServer : IAsyncDisposable
         }
     }
 
-    private static async Task<int> GetFreePortAsync()
+    private static Task<int> GetFreePortAsync()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        await Task.CompletedTask;
-        return port;
+        using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        return Task.FromResult(((IPEndPoint)socket.LocalEndPoint!).Port);
     }
 
     private static string WriteConfig(int apiPort, int httpPort, IReadOnlyList<Scenario>? scenarios)

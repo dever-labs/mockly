@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/dever-labs/mockly/security/advisories/new
+    about: Please report security vulnerabilities privately, not as public issues.
+  - name: Question / discussion
+    url: https://github.com/dever-labs/mockly/discussions
+    about: Ask questions and share ideas in Discussions.

@@ -1,0 +1,65 @@
+name: Bug Report
+description: Something isn't working as expected
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please fill in as much detail as possible.
+
+  - type: input
+    id: version
+    attributes:
+      label: Mockly version
+      placeholder: "e.g. v0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux (amd64)
+        - Linux (arm64)
+        - macOS (amd64)
+        - macOS (arm64)
+        - Windows (amd64)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: mockly.yaml (relevant section)
+      description: Paste the relevant part of your config. Remove any secrets.
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `mockly start -c mockly.yaml`
+        2. Send `curl http://localhost:8080/...`
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include full error output / logs if available
+    validations:
+      required: true

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { createServer } from 'http'
 import type { AddressInfo } from 'net'
 import { existsSync, readFileSync, rmSync } from 'fs'

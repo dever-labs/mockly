@@ -70,7 +70,7 @@ class MyServiceTest {
 
 ```xml
 <dependency>
-    <groupId>io.mockly</groupId>
+    <groupId>io.github.dever-labs</groupId>
     <artifactId>mockly-driver</artifactId>
     <version>0.1.0</version>
     <scope>test</scope>

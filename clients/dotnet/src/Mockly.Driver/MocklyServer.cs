@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -77,12 +78,12 @@ public sealed class MocklyServer : IAsyncDisposable
                     || ex.Message.Contains("address already in use", StringComparison.OrdinalIgnoreCase))
                 {
                     http.Dispose();
-                    try { process.Kill(); } catch { }
+                    try { process.Kill(); } catch (InvalidOperationException) { } catch (Win32Exception) { }
                     process.Dispose();
                     continue;
                 }
                 http.Dispose();
-                try { process.Kill(); } catch { }
+                try { process.Kill(); } catch (InvalidOperationException) { } catch (Win32Exception) { }
                 process.Dispose();
                 throw new InvalidOperationException(
                     $"Mockly failed to start: {ex.Message}\nStderr: {stderrStr}", ex);
@@ -91,7 +92,7 @@ public sealed class MocklyServer : IAsyncDisposable
             {
                 var stderrStr = stderr.ToString();
                 http.Dispose();
-                try { process.Kill(); } catch { }
+                try { process.Kill(); } catch (InvalidOperationException) { } catch (Win32Exception) { }
                 process.Dispose();
                 throw new InvalidOperationException(
                     $"Mockly failed to start after 3 attempts: {ex.Message}\nStderr: {stderrStr}", ex);
@@ -121,7 +122,8 @@ public sealed class MocklyServer : IAsyncDisposable
                 _process.Kill();
                 await _process.WaitForExitAsync();
             }
-            catch { }
+            catch (InvalidOperationException) { }
+            catch (Win32Exception) { }
         }
         _process.Dispose();
     }
@@ -231,7 +233,8 @@ protocols:
                 var resp = await http.GetAsync("/api/protocols");
                 if (resp.IsSuccessStatusCode) return;
             }
-            catch { }
+            catch (HttpRequestException) { }
+            catch (TaskCanceledException) { }
             await Task.Delay(50);
         }
         throw new TimeoutException($"Mockly did not become ready within {maxWait.TotalSeconds}s");

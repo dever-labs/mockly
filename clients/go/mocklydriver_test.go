@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGetFreePort(t *testing.T) {
@@ -383,5 +384,13 @@ func TestClearFault(t *testing.T) {
 	}
 	if gotPath != "/api/fault" {
 		t.Errorf("expected /api/fault, got %s", gotPath)
+	}
+}
+
+func TestSleep(t *testing.T) {
+	start := time.Now()
+	sleep(10 * time.Millisecond)
+	if elapsed := time.Since(start); elapsed < 10*time.Millisecond {
+		t.Errorf("sleep(10ms) returned too quickly: elapsed %v", elapsed)
 	}
 }

@@ -1,6 +1,7 @@
 package mocklydriver
 
 import (
+	"fmt"
 	"net"
 	"regexp"
 	"strings"
@@ -14,8 +15,16 @@ func getFreePort() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
+	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = ln.Close()
+		return 0, fmt.Errorf("listener address is not a *net.TCPAddr: %T", ln.Addr())
+	}
+	port := tcpAddr.Port
+	if err := ln.Close(); err != nil {
+		// Close error is non-fatal: the port has already been obtained.
+		_ = err
+	}
 	return port, nil
 }
 

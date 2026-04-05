@@ -405,7 +405,7 @@ func defaults() Config {
 func Load(path string) (*Config, error) {
 	cfg := defaults()
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is user-supplied config file, intentional
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &cfg, nil
@@ -427,7 +427,7 @@ func Save(path string, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("marshalling config: %w", err)
 	}
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 func applyDefaults(cfg *Config) {

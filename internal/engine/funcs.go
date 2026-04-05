@@ -11,6 +11,12 @@ import (
 	"time"
 )
 
+// rng is a package-level PRNG used exclusively for generating mock/fake data.
+// Cryptographic randomness is not required here — the only goal is variety in
+// generated test data. #nosec G404
+var rng = rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404 -- mock data generation does not require crypto randomness
+var rngMu sync.Mutex
+
 // BuildFuncMap returns the complete set of template functions available in
 // mock response bodies. Functions are safe for concurrent use.
 func BuildFuncMap() template.FuncMap {
@@ -93,15 +99,31 @@ const (
 	charsetHex           = "0123456789abcdef"
 )
 
+// rngIntn returns a non-negative random int in [0,n). Safe for concurrent use.
+func rngIntn(n int) int {
+	rngMu.Lock()
+	v := rng.Intn(n)
+	rngMu.Unlock()
+	return v
+}
+
+// rngFloat64 returns a random float64 in [0.0,1.0). Safe for concurrent use.
+func rngFloat64() float64 {
+	rngMu.Lock()
+	v := rng.Float64()
+	rngMu.Unlock()
+	return v
+}
+
 func fnRandInt(min, max int) (string, error) {
 	if min > max {
 		return "", fmt.Errorf("rand_int: min (%d) > max (%d)", min, max)
 	}
-	return strconv.Itoa(min + rand.Intn(max-min+1)), nil //nolint:gosec
+	return strconv.Itoa(min + rngIntn(max-min+1)), nil
 }
 
 func fnRandFloat(min, max float64, decimals int) string {
-	v := min + rand.Float64()*(max-min) //nolint:gosec
+	v := min + rngFloat64()*(max-min)
 	return strconv.FormatFloat(v, 'f', decimals, 64)
 }
 
@@ -143,13 +165,13 @@ func fnRandString(length int, args ...string) (string, error) {
 	}
 	b := make([]byte, length)
 	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))] //nolint:gosec
+		b[i] = charset[rngIntn(len(charset))]
 	}
 	return string(b), nil
 }
 
 func fnRandBool() string {
-	if rand.Intn(2) == 0 { //nolint:gosec
+	if rngIntn(2) == 0 {
 		return "false"
 	}
 	return "true"
@@ -159,7 +181,7 @@ func fnPick(options ...string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("pick: requires at least one option")
 	}
-	return options[rand.Intn(len(options))], nil //nolint:gosec
+	return options[rngIntn(len(options))], nil
 }
 
 // ---------------------------------------------------------------------------
@@ -218,7 +240,7 @@ var (
 )
 
 func randPick(list []string) string {
-	return list[rand.Intn(len(list))] //nolint:gosec
+	return list[rngIntn(len(list))]
 }
 
 func fnFake(kind string) (string, error) {
@@ -235,10 +257,10 @@ func fnFake(kind string) (string, error) {
 		return fmt.Sprintf("%s.%s@%s", first, last, randPick(fakeEmailDomains)), nil
 	case "username":
 		first := strings.ToLower(randPick(fakeFirstNames))
-		n := 10 + rand.Intn(90) //nolint:gosec
+		n := 10 + rngIntn(90)
 		return fmt.Sprintf("%s%d", first, n), nil
 	case "phone":
-		return fmt.Sprintf("+1-555-%04d", rand.Intn(10000)), nil //nolint:gosec
+		return fmt.Sprintf("+1-555-%04d", rngIntn(10000)), nil
 	case "company":
 		return randPick(fakeCompanyPrefix) + " " + randPick(fakeCompanySuffix), nil
 	case "city":
@@ -246,14 +268,14 @@ func fnFake(kind string) (string, error) {
 	case "country":
 		return randPick(fakeCountries), nil
 	case "street":
-		n := 1 + rand.Intn(999) //nolint:gosec
+		n := 1 + rngIntn(999)
 		return fmt.Sprintf("%d %s", n, randPick(fakeStreets)), nil
 	case "zip":
-		return fmt.Sprintf("%05d", rand.Intn(100000)), nil //nolint:gosec
+		return fmt.Sprintf("%05d", rngIntn(100000)), nil
 	case "ip":
-		return fmt.Sprintf("192.168.%d.%d", rand.Intn(256), 1+rand.Intn(254)), nil //nolint:gosec
+		return fmt.Sprintf("192.168.%d.%d", rngIntn(256), 1+rngIntn(254)), nil
 	case "ipv6":
-		return fmt.Sprintf("2001:db8::%04x:%04x", rand.Intn(0x10000), rand.Intn(0x10000)), nil //nolint:gosec
+		return fmt.Sprintf("2001:db8::%04x:%04x", rngIntn(0x10000), rngIntn(0x10000)), nil
 	case "url":
 		path := randPick(fakeWords)
 		tld := randPick(fakeTLDs)
@@ -264,7 +286,7 @@ func fnFake(kind string) (string, error) {
 	case "word":
 		return randPick(fakeWords), nil
 	case "sentence":
-		n := 5 + rand.Intn(6) //nolint:gosec
+		n := 5 + rngIntn(6)
 		return fnLorem(n), nil
 	default:
 		return "", fmt.Errorf("fake: unknown kind %q — valid kinds: name, first_name, last_name, email, username, phone, company, city, country, street, zip, ip, ipv6, url, useragent, word, sentence", kind)
@@ -299,7 +321,7 @@ func fnLorem(n int) string {
 	}
 	words := make([]string, n)
 	for i := range words {
-		words[i] = fakeWords[rand.Intn(len(fakeWords))] //nolint:gosec
+		words[i] = fakeWords[rngIntn(len(fakeWords))]
 	}
 	return strings.Join(words, " ")
 }

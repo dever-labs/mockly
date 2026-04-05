@@ -25,7 +25,7 @@ func New(initial []config.Scenario) *Store {
 	s := &Store{
 		scenarios: make(map[string]config.Scenario),
 		active:    make(map[string]bool),
-		rng:       rand.New(rand.NewSource(time.Now().UnixNano())), //nolint:gosec
+		rng:       rand.New(rand.NewSource(time.Now().UnixNano())), // #nosec G404 -- error rate RNG does not need crypto randomness
 	}
 	for _, sc := range initial {
 		if sc.ID == "" {

@@ -258,7 +258,9 @@ func addHTTPCmd() *cobra.Command {
 			apiAddr := fmt.Sprintf("http://localhost:%d", cfg.Mockly.API.Port)
 
 			statusCode := 200
-			fmt.Sscan(status, &statusCode)
+			if _, err := fmt.Sscan(status, &statusCode); err != nil {
+				return fmt.Errorf("invalid status code %q: %w", status, err)
+			}
 
 			var delay config.Duration
 			if delayStr != "" {
@@ -417,7 +419,7 @@ Examples:
 			if _, err := tmpFile.Write(data); err != nil {
 				return fmt.Errorf("writing temp file: %w", err)
 			}
-			tmpFile.Close()
+			tmpFile.Close() // #nosec G104 -- best-effort close before config.Load reads the file
 
 			cfg, err := config.Load(tmpFile.Name())
 			if err != nil {
@@ -514,7 +516,7 @@ func scenarioActivateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load(cfgFile)
 			url := fmt.Sprintf("http://localhost:%d/api/scenarios/%s/activate", cfg.Mockly.API.Port, args[0])
-			resp, err := http.Post(url, "application/json", nil)
+			resp, err := http.Post(url, "application/json", nil) // #nosec G107 -- URL constructed from trusted config
 			if err != nil {
 				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
 			}
@@ -652,7 +654,7 @@ func postJSON(url string, v interface{}) error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.Post(url, "application/json", strings.NewReader(string(data)))
+	resp, err := http.Post(url, "application/json", strings.NewReader(string(data))) // #nosec G107 -- URL from trusted config
 	if err != nil {
 		return err
 	}

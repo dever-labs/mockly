@@ -136,7 +136,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Block until context is cancelled, then cleanly shut down.
 	<-ctx.Done()
-	broker.Close()
+	_ = broker.Close()
 	return nil
 }
 
@@ -254,7 +254,17 @@ func (h *mockHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet
 		if responseTopic == "" {
 			responseTopic = topic + "/response"
 		}
-		broker.Publish(responseTopic, []byte(resp.Payload), resp.Retain, resp.QoS) //nolint:errcheck
+		if err := broker.Publish(responseTopic, []byte(resp.Payload), resp.Retain, resp.QoS); err != nil {
+			// Non-fatal: log and continue — this is a mock server best-effort publish.
+			h.srv.log.Log(logger.Entry{
+				Protocol: "mqtt",
+				Method:   "PUBLISH_ERR",
+				Path:     responseTopic,
+				Status:   0,
+				Body:     fmt.Sprintf("publish failed: %v", err),
+			})
+			return
+		}
 		h.srv.log.Log(logger.Entry{
 			Protocol:  "mqtt",
 			Method:    "PUBLISH_RESP",

@@ -124,8 +124,9 @@ func (s *Server) unknownServiceHandler(_ interface{}, stream grpc.ServerStream) 
 		}
 
 		if mock.Error != nil {
-			s.logEntry(method, shortMethod, int(codes.Code(mock.Error.Code)), start, mock.ID)
-		return status.Error(codes.Code(mock.Error.Code), mock.Error.Message)
+			code := safeGRPCCode(mock.Error.Code)
+			s.logEntry(method, shortMethod, int(code), start, mock.ID)
+			return status.Error(code, mock.Error.Message)
 		}
 
 		body, err := json.Marshal(mock.Response)
@@ -172,6 +173,15 @@ func methodShortName(full string) string {
 		}
 	}
 	return full
+}
+
+// safeGRPCCode converts an int to a gRPC status code without overflow.
+// Valid gRPC codes are 0–16; anything outside that range maps to Unknown (2).
+func safeGRPCCode(n int) codes.Code {
+	if n < 0 || n > 16 {
+		return codes.Unknown
+	}
+	return codes.Code(n)
 }
 
 // StatusInfo returns JSON-serialisable info about this server.

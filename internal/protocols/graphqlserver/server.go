@@ -56,7 +56,7 @@ func (s *Server) Start(ctx context.Context) error {
 	r.HandleFunc(s.cfg.Path, s.handleGraphQL)
 
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
-	s.server = &http.Server{Addr: addr, Handler: r}
+	s.server = &http.Server{Addr: addr, Handler: r, ReadHeaderTimeout: 5 * time.Second}
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -120,7 +120,8 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 	if !matched {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"errors":[{"message":"no mock matched for operation %q"}]}`, req.OperationName)
+		safeOp, _ := json.Marshal(req.OperationName)
+		fmt.Fprintf(w, `{"errors":[{"message":"no mock matched for operation %s"}]}`, safeOp)
 		s.log.Log(logger.Entry{
 			Protocol: "graphql",
 			Method:   opType,

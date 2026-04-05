@@ -143,7 +143,7 @@ func New(
 func (s *Server) Start(ctx context.Context) error {
 	r := s.buildRouter()
 	addr := fmt.Sprintf(":%d", s.cfg.Mockly.API.Port)
-	s.server = &http.Server{Addr: addr, Handler: r}
+	s.server = &http.Server{Addr: addr, Handler: r, ReadHeaderTimeout: 5 * time.Second}
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -1260,7 +1260,7 @@ func spaHandler(files http.FileSystem) http.Handler {
 			fs.ServeHTTP(w, &r2)
 			return
 		}
-		f.Close()
+		_ = f.Close()
 		fs.ServeHTTP(w, r)
 	})
 }

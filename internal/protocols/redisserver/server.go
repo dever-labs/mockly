@@ -77,7 +77,7 @@ func (s *Server) handleCommand(conn redcon.Conn, cmd redcon.Command) {
 		return
 	case "QUIT":
 		conn.WriteString("OK")
-		conn.Close()
+		_ = conn.Close()
 		return
 	case "SELECT", "FLUSHDB", "FLUSHALL":
 		conn.WriteString("OK")

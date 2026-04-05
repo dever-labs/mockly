@@ -64,7 +64,7 @@ func (s *Server) Start(ctx context.Context) error {
 	r.HandleFunc("/*", s.handleDynamic)
 
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
-	s.srv = &http.Server{Addr: addr, Handler: r}
+	s.srv = &http.Server{Addr: addr, Handler: r, ReadHeaderTimeout: 5 * time.Second}
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {

@@ -52,7 +52,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		ln.Close()
+		_ = ln.Close()
 	}()
 
 	for {
@@ -74,7 +74,7 @@ func (s *Server) handleConn(conn net.Conn) {
 
 	buf := make([]byte, 65536)
 	for {
-		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		n, err := conn.Read(buf)
 		if err != nil {
 			return
@@ -98,7 +98,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		}
 
 		resp := decodePayload(mock.Response)
-		conn.Write(resp)
+		_, _ = conn.Write(resp)
 
 		s.log.Log(logger.Entry{
 			Protocol:  "tcp",

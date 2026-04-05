@@ -225,6 +225,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write  # required for provenance attestations
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # actions/checkout@v6.0.2
 
@@ -278,7 +279,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           for pkg in clients/node/packages/*/; do
-            npm publish "$pkg" --access public
+            npm publish "$pkg" --access public --provenance
           done
 
       - name: Build and publish main package
@@ -288,7 +289,7 @@ jobs:
         run: |
           npm ci
           npm run build
-          npm publish --access public
+          npm publish --access public --provenance
 
 
   docker:

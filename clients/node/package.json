@@ -1,0 +1,49 @@
+{
+  "name": "mockly-node",
+  "version": "0.1.0",
+  "description": "Node.js client for Mockly — start/stop servers and manage HTTP mocks in tests",
+  "keywords": ["mock", "testing", "http", "integration-test", "mockly", "test-server"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dever-labs/mockly.git",
+    "directory": "clients/node"
+  },
+  "bugs": {
+    "url": "https://github.com/dever-labs/mockly/issues"
+  },
+  "homepage": "https://github.com/dever-labs/mockly/tree/main/clients/node#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "mockly-node-install": "./bin/install.mjs"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}

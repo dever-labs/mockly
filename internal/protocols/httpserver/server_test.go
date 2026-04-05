@@ -68,7 +68,10 @@ func TestHTTPServer_BasicGET(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+if err != nil {
+t.Fatalf("reading response body: %v", err)
+}
 	if string(body) != `[{"id":1}]` {
 		t.Errorf("unexpected body: %q", body)
 	}
@@ -160,7 +163,10 @@ func TestHTTPServer_ScenarioPatch_OverridesStatus(t *testing.T) {
 	if r2.StatusCode != 503 {
 		t.Errorf("after activation: want 503, got %d", r2.StatusCode)
 	}
-	body, _ := io.ReadAll(r2.Body)
+	body, err := io.ReadAll(r2.Body)
+if err != nil {
+t.Fatalf("reading response body: %v", err)
+}
 	if !strings.Contains(string(body), "down") {
 		t.Errorf("expected 'down' in body, got %q", body)
 	}
@@ -250,7 +256,10 @@ func TestHTTPServer_TemplateResponse(t *testing.T) {
 		t.Fatalf("GET /time: %v", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+if err != nil {
+t.Fatalf("reading response body: %v", err)
+}
 
 	var m map[string]string
 	if err := json.Unmarshal(body, &m); err != nil {
@@ -331,7 +340,10 @@ func TestHTTPServer_QueryParams(t *testing.T) {
 		t.Fatalf("GET /users?role=admin: %v", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+if err != nil {
+t.Fatalf("reading response body: %v", err)
+}
 	if !strings.Contains(string(body), `"admin"`) {
 		t.Errorf("expected admin response, got %q", body)
 	}
@@ -341,7 +353,10 @@ func TestHTTPServer_QueryParams(t *testing.T) {
 		t.Fatalf("GET /users?role=user: %v", err)
 	}
 	defer resp2.Body.Close()
-	body2, _ := io.ReadAll(resp2.Body)
+	body2, err := io.ReadAll(resp2.Body)
+if err != nil {
+t.Fatalf("reading response body: %v", err)
+}
 	if !strings.Contains(string(body2), `"other"`) {
 		t.Errorf("expected fallback response, got %q", body2)
 	}
@@ -421,7 +436,10 @@ func TestHTTPServer_Sequence_Loop(t *testing.T) {
 	expected := []string{`"a"`, `"b"`, `"a"`, `"b"`}
 	for i, want := range expected {
 		resp, _ := http.Get(base + "/cycle")
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+if err != nil {
+t.Fatalf("reading response body: %v", err)
+}
 		resp.Body.Close()
 		if strings.TrimSpace(string(body)) != want {
 			t.Errorf("call %d: want %q, got %q", i+1, want, body)

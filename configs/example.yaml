@@ -36,6 +36,20 @@ protocols:
             Content-Type: application/json
           body: '{"id":1,"name":"Alice"}'
 
+      # Query parameter matching
+      - id: search-users-admin
+        request:
+          method: GET
+          path: /api/users
+          query:
+            role: admin           # exact match
+            page: "*"             # wildcard: any value
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: '[{"id":1,"name":"Alice","role":"admin"}]'
+
       - id: create-user
         request:
           method: POST
@@ -46,6 +60,18 @@ protocols:
             Content-Type: application/json
           body: '{"id":3,"name":"Charlie"}'
           delay: 50ms                     # simulate slow endpoint
+
+      # JSON body field matching
+      - id: create-admin-user
+        request:
+          method: POST
+          path: /api/users
+          body_json:
+            "role": "admin"               # top-level field
+            "org.tier": "enterprise"      # nested: {"org":{"tier":"enterprise"}}
+        response:
+          status: 201
+          body: '{"id":4,"role":"admin"}'
 
       - id: not-found
         request:
@@ -74,6 +100,48 @@ protocols:
         response:
           status: 401
           body: '{"error":"unauthorized"}'
+
+      # Response sequence — return different responses on successive calls
+      # Useful for simulating transient failures or retry flows
+      - id: flaky-service
+        request:
+          method: GET
+          path: /api/flaky
+        sequence:
+          - status: 503
+            body: '{"error":"temporarily unavailable"}'
+          - status: 503
+            body: '{"error":"temporarily unavailable"}'
+          - status: 200
+            body: '{"data":"recovered"}'
+        sequence_exhausted: hold_last   # hold_last (default) | loop | not_found
+        response:
+          status: 200
+          body: '{"data":"recovered"}'
+
+      # Per-mock fault injection — independent of the global fault
+      - id: slow-search
+        request:
+          method: GET
+          path: /api/search
+        fault:
+          delay: 2s                       # add 2s of latency
+        response:
+          status: 200
+          body: '{"results":[]}'
+
+      # Per-mock fault with probabilistic error rate
+      - id: payment-gateway
+        request:
+          method: POST
+          path: /api/payments
+        fault:
+          status_override: 502
+          body: '{"error":"bad gateway"}'
+          error_rate: 0.2                 # fail 20% of requests
+        response:
+          status: 200
+          body: '{"ok":true}'
 
   # ─── WebSocket ──────────────────────────────────────────────────────────────
   websocket:
@@ -121,3 +189,105 @@ protocols:
             error:
               code: 7      # PERMISSION_DENIED
               message: you do not have permission to delete users
+
+  # ─── GraphQL ────────────────────────────────────────────────────────────────
+  graphql:
+    enabled: true
+    port: 8082
+    path: /graphql
+    mocks:
+      - id: get-user-gql
+        operation_type: query
+        operation_name: GetUser
+        response:
+          user:
+            id: "1"
+            name: Alice
+
+      - id: create-post-gql
+        operation_type: mutation
+        operation_name: CreatePost
+        response:
+          createPost:
+            id: "{{uuid}}"
+            title: Hello
+
+  # ─── TCP ────────────────────────────────────────────────────────────────────
+  tcp:
+    enabled: true
+    port: 8083
+    mocks:
+      - id: ping-pong
+        match: "PING\r\n"
+        response: "+PONG\r\n"
+
+  # ─── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    enabled: true
+    port: 6379
+    mocks:
+      - id: get-session
+        command: GET
+        key: "session:*"
+        response:
+          type: bulk
+          value: '{"userId":"abc","roles":["user"]}'
+
+      - id: auth-ok
+        command: AUTH
+        response:
+          type: string
+          value: "OK"
+
+  # ─── SMTP ───────────────────────────────────────────────────────────────────
+  smtp:
+    enabled: true
+    port: 2525
+    domain: mockly.local
+    rules:
+      - id: reject-spam
+        from: "*@spam.example.com"
+        action: reject
+        message: "550 spam not accepted"
+      - id: accept-all
+        action: accept
+
+  # ─── MQTT ───────────────────────────────────────────────────────────────────
+  mqtt:
+    enabled: true
+    port: 1883
+    mocks:
+      - id: sensor-ack
+        topic: "sensors/+"
+        response:
+          topic: "sensors/ack"
+          payload: '{"ok":true}'
+          qos: 1
+
+# ─── Scenarios ──────────────────────────────────────────────────────────────
+# Pre-defined failure modes; activate/deactivate via CLI or Management API.
+scenarios:
+  - id: auth-down
+    name: Auth Service Down
+    description: All authenticated endpoints return 503
+    patches:
+      - mock_id: get-profile-authenticated
+        status: 503
+        body: '{"error":"auth unavailable"}'
+
+  - id: payment-failure
+    name: Payment Gateway Failure
+    description: All payment requests return 502
+    patches:
+      - mock_id: payment-gateway
+        status: 502
+        body: '{"error":"payment service unavailable"}'
+
+  - id: slow-everything
+    name: High Latency
+    description: Add 3s latency to user endpoints
+    patches:
+      - mock_id: get-users
+        delay: 3s
+      - mock_id: get-user-by-id
+        delay: 3s

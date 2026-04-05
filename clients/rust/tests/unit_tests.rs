@@ -13,7 +13,7 @@ mod tests {
     #[test]
     fn get_free_port_returns_valid_port() {
         let port = get_free_port().expect("should allocate a free port");
-        assert!(port > 0, "port must be non-zero");
+        assert!(port >= 1024, "port must be in the unprivileged range (>= 1024), got {port}");
     }
 
     #[test]

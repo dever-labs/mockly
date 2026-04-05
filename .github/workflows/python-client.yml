@@ -1,0 +1,33 @@
+name: Python client CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'clients/python/**'
+  pull_request:
+    paths:
+      - 'clients/python/**'
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/python
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4.2.2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dev dependencies
+        run: pip install pytest
+
+      - name: Test
+        run: pytest

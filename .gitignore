@@ -32,3 +32,15 @@ mockly.yaml
 clients/node/node_modules/
 clients/node/dist/
 clients/node/bin/
+
+# Python client
+clients/python/.pytest_cache/
+clients/python/__pycache__/
+clients/python/src/**/__pycache__/
+clients/python/*.egg-info/
+clients/python/dist/
+clients/python/.venv/
+
+# Python cache (all locations)
+**/__pycache__/
+**/*.pyc

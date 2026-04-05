@@ -23,7 +23,6 @@ func getFreePort() (int, error) {
 	port := tcpAddr.Port
 	if err := ln.Close(); err != nil {
 		// Close error is non-fatal: the port has already been obtained.
-		_ = err
 	}
 	return port, nil
 }

@@ -1,5 +1,6 @@
 package io.mockly.driver;
 
+import com.sun.net.httpserver.HttpServer;
 import io.mockly.driver.model.FaultConfig;
 import io.mockly.driver.model.Mock;
 import io.mockly.driver.model.MockRequest;
@@ -8,10 +9,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -243,5 +249,249 @@ class MocklyDriverTest {
         assertEquals("v1.2.3", cfg.getVersion());
         assertEquals("custom-bin", cfg.getBinDir());
         assertEquals(5000, cfg.getStartupTimeoutMs());
+    }
+
+    // -------------------------------------------------------------------------
+    // isPortConflict (via reflection)
+    // -------------------------------------------------------------------------
+
+    private static boolean invokeIsPortConflict(String msg) throws Exception {
+        Method m = MocklyServer.class.getDeclaredMethod("isPortConflict", String.class);
+        m.setAccessible(true);
+        return (Boolean) m.invoke(null, msg);
+    }
+
+    @Test
+    void isPortConflictReturnsTrueForAddressAlreadyInUse() throws Exception {
+        assertTrue(invokeIsPortConflict("address already in use"));
+    }
+
+    @Test
+    void isPortConflictReturnsTrueForEADDRINUSE() throws Exception {
+        assertTrue(invokeIsPortConflict("EADDRINUSE"));
+    }
+
+    @Test
+    void isPortConflictReturnsTrueForBindAlreadyInUse() throws Exception {
+        assertTrue(invokeIsPortConflict("bind: already in use"));
+    }
+
+    @Test
+    void isPortConflictReturnsFalseForConnectionRefused() throws Exception {
+        assertFalse(invokeIsPortConflict("connection refused"));
+    }
+
+    @Test
+    void isPortConflictReturnsFalseForEmptyString() throws Exception {
+        assertFalse(invokeIsPortConflict(""));
+    }
+
+    @Test
+    void isPortConflictReturnsFalseForTimeout() throws Exception {
+        assertFalse(invokeIsPortConflict("timeout"));
+    }
+
+    // -------------------------------------------------------------------------
+    // writeConfig (via reflection)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void writeConfigCreatesFileWithCorrectPorts() throws Exception {
+        Method m = MocklyServer.class.getDeclaredMethod("writeConfig", int.class, int.class);
+        m.setAccessible(true);
+        Path configPath = (Path) m.invoke(null, 8080, 8081);
+        try {
+            assertTrue(Files.exists(configPath), "Config file should be created");
+            String content = Files.readString(configPath);
+            assertTrue(content.contains("8080"), "Config should contain http port 8080");
+            assertTrue(content.contains("8081"), "Config should contain api port 8081");
+            assertTrue(content.contains("protocols:"), "Config should contain protocols section");
+            assertTrue(content.contains("mockly:"), "Config should contain mockly section");
+            assertTrue(content.contains("http:"), "Config should contain http section");
+        } finally {
+            Files.deleteIfExists(configPath);
+        }
+    }
+
+    @Test
+    void writeConfigFileIsValidYamlStructure() throws Exception {
+        Method m = MocklyServer.class.getDeclaredMethod("writeConfig", int.class, int.class);
+        m.setAccessible(true);
+        Path configPath = (Path) m.invoke(null, 7070, 7071);
+        try {
+            String content = Files.readString(configPath);
+            // Verify ports appear on their own lines as YAML values
+            assertTrue(content.lines().anyMatch(l -> l.trim().equals("port: 7070")),
+                    "File should have a line 'port: 7070'");
+            assertTrue(content.lines().anyMatch(l -> l.trim().equals("port: 7071")),
+                    "File should have a line 'port: 7071'");
+            assertTrue(content.contains("enabled: true"), "HTTP should be enabled by default");
+        } finally {
+            Files.deleteIfExists(configPath);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // HTTP API methods — via embedded HttpServer
+    // -------------------------------------------------------------------------
+
+    /** Builds a MocklyServer wired to a fake API server on the given port. */
+    private static MocklyServer createTestServer(int apiPort) throws Exception {
+        // Start a trivial process that exits immediately so stop() is a no-op.
+        ProcessBuilder pb = MocklyInstaller.isWindows()
+                ? new ProcessBuilder("cmd", "/c", "echo", "done")
+                : new ProcessBuilder("sh", "-c", "echo done");
+        pb.redirectErrorStream(true);
+        Process dummyProcess = pb.start();
+        dummyProcess.waitFor();
+
+        Constructor<MocklyServer> ctor = MocklyServer.class.getDeclaredConstructor(
+                Process.class, Path.class, int.class, int.class);
+        ctor.setAccessible(true);
+        // httpPort=8080 is unused by the HTTP-method tests; apiPort controls apiBase.
+        return ctor.newInstance(dummyProcess, null, 8080, apiPort);
+    }
+
+    /** Starts a single-handler HttpServer that always responds with the given status. */
+    private static HttpServer startFakeServer(int status,
+                                              List<String> capturedPaths,
+                                              List<String> capturedMethods) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/", exchange -> {
+            capturedPaths.add(exchange.getRequestURI().getPath());
+            capturedMethods.add(exchange.getRequestMethod());
+            // Drain the request body before responding to avoid connection-reset errors
+            // when the client is still sending a body (e.g. JSON for setFault/addMock).
+            exchange.getRequestBody().readAllBytes();
+            exchange.sendResponseHeaders(status, -1);
+            exchange.close();
+        });
+        server.start();
+        return server;
+    }
+
+    @Test
+    void addMockSendsPostToCorrectEndpoint() throws Exception {
+        List<String> paths = new ArrayList<>();
+        List<String> methods = new ArrayList<>();
+        HttpServer fakeServer = startFakeServer(201, paths, methods);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            Mock mock = Mock.builder("t",
+                    MockRequest.builder("GET", "/p").build(),
+                    MockResponse.builder(200).build()).build();
+            server.addMock(mock);
+            assertEquals("/api/mocks/http", paths.get(0));
+            assertEquals("POST", methods.get(0));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void addMockThrowsOnErrorResponse() throws Exception {
+        List<String> paths = new ArrayList<>();
+        List<String> methods = new ArrayList<>();
+        HttpServer fakeServer = startFakeServer(500, paths, methods);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            Mock mock = Mock.builder("t",
+                    MockRequest.builder("GET", "/p").build(),
+                    MockResponse.builder(200).build()).build();
+            assertThrows(IOException.class, () -> server.addMock(mock));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void deleteMockSendsDeleteToCorrectEndpoint() throws Exception {
+        List<String> paths = new ArrayList<>();
+        List<String> methods = new ArrayList<>();
+        HttpServer fakeServer = startFakeServer(204, paths, methods);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            server.deleteMock("my-id");
+            assertEquals("/api/mocks/http/my-id", paths.get(0));
+            assertEquals("DELETE", methods.get(0));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void resetSendsPostToCorrectEndpoint() throws Exception {
+        List<String> paths = new ArrayList<>();
+        List<String> methods = new ArrayList<>();
+        HttpServer fakeServer = startFakeServer(200, paths, methods);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            server.reset();
+            assertEquals("/api/reset", paths.get(0));
+            assertEquals("POST", methods.get(0));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void activateScenarioSendsPostToCorrectEndpoint() throws Exception {
+        List<String> paths = new ArrayList<>();
+        List<String> methods = new ArrayList<>();
+        HttpServer fakeServer = startFakeServer(200, paths, methods);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            server.activateScenario("sc1");
+            assertEquals("/api/scenarios/sc1/activate", paths.get(0));
+            assertEquals("POST", methods.get(0));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void deactivateScenarioSendsPostToCorrectEndpoint() throws Exception {
+        List<String> paths = new ArrayList<>();
+        List<String> methods = new ArrayList<>();
+        HttpServer fakeServer = startFakeServer(200, paths, methods);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            server.deactivateScenario("sc1");
+            assertEquals("/api/scenarios/sc1/deactivate", paths.get(0));
+            assertEquals("POST", methods.get(0));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void setFaultSendsPostToCorrectEndpoint() throws Exception {
+        List<String> paths = new ArrayList<>();
+        List<String> methods = new ArrayList<>();
+        HttpServer fakeServer = startFakeServer(200, paths, methods);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            FaultConfig fault = FaultConfig.builder("delay").delay("100ms").build();
+            server.setFault(fault);
+            assertEquals("/api/fault", paths.get(0));
+            assertEquals("POST", methods.get(0));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void clearFaultSendsDeleteToCorrectEndpoint() throws Exception {
+        List<String> paths = new ArrayList<>();
+        List<String> methods = new ArrayList<>();
+        HttpServer fakeServer = startFakeServer(200, paths, methods);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            server.clearFault();
+            assertEquals("/api/fault", paths.get(0));
+            assertEquals("DELETE", methods.get(0));
+        } finally {
+            fakeServer.stop(0);
+        }
     }
 }

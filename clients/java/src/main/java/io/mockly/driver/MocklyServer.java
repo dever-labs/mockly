@@ -259,6 +259,14 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
+    static boolean isPortConflict(String msg) {
+        if (msg == null) return false;
+        String lower = msg.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("address already in use")
+                || lower.contains("eaddrinuse")
+                || lower.contains("bind: already in use");
+    }
+
     private void waitReady(int maxMs) throws IOException, InterruptedException {
         long deadline = System.currentTimeMillis() + maxMs;
         IOException lastException = null;

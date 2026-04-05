@@ -22,7 +22,7 @@ jobs:
           cache: true
 
       - name: Run tests
-        run: go test ./internal/... -race -coverprofile=coverage.txt
+        run: go test ./internal/... -race
 
   # ─── UI build ───────────────────────────────────────────────────────────────
   ui:

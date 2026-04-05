@@ -146,7 +146,7 @@ public class MocklyServer implements AutoCloseable {
 
     /** Deactivates a scenario by ID. */
     public void deactivateScenario(String id) throws IOException, InterruptedException {
-        HttpResponse<String> resp = post("/api/scenarios/" + id + "/deactivate", "");
+        HttpResponse<String> resp = delete("/api/scenarios/" + id + "/activate");
         if (resp.statusCode() != 200) {
             throw new IOException("deactivateScenario failed: HTTP " + resp.statusCode() + " — " + resp.body());
         }
@@ -191,8 +191,11 @@ public class MocklyServer implements AutoCloseable {
 
         IOException lastError = null;
         for (int attempt = 0; attempt < maxAttempts; attempt++) {
-            int httpPort = config.getHttpPort() > 0 ? config.getHttpPort() : getFreePort();
-            int apiPort  = config.getApiPort()  > 0 ? config.getApiPort()  : getFreePort();
+            int[] ports = (config.getHttpPort() > 0 && config.getApiPort() > 0)
+                    ? new int[]{config.getHttpPort(), config.getApiPort()}
+                    : getFreePorts(2);
+            int httpPort = config.getHttpPort() > 0 ? config.getHttpPort() : ports[0];
+            int apiPort  = config.getApiPort()  > 0 ? config.getApiPort()  : ports[1];
 
             try {
                 return doStart(binaryPath, config, httpPort, apiPort);
@@ -282,6 +285,32 @@ public class MocklyServer implements AutoCloseable {
         try (ServerSocket socket = new ServerSocket(0)) {
             socket.setReuseAddress(true);
             return socket.getLocalPort();
+        }
+    }
+
+    /**
+     * Allocates {@code n} free ports atomically by holding all sockets open
+     * simultaneously before closing them together. This prevents another process
+     * from claiming a port in the gap between sequential allocations.
+     */
+    private static int[] getFreePorts(int n) throws IOException {
+        ServerSocket[] sockets = new ServerSocket[n];
+        try {
+            for (int i = 0; i < n; i++) {
+                sockets[i] = new ServerSocket(0);
+                sockets[i].setReuseAddress(true);
+            }
+            int[] ports = new int[n];
+            for (int i = 0; i < n; i++) {
+                ports[i] = sockets[i].getLocalPort();
+            }
+            return ports;
+        } finally {
+            for (ServerSocket s : sockets) {
+                if (s != null) {
+                    try { s.close(); } catch (IOException ignored) { }
+                }
+            }
         }
     }
 

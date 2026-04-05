@@ -38,7 +38,8 @@ class MocklyDriverTest {
             socket.setReuseAddress(true);
             port = socket.getLocalPort();
         }
-        assertTrue(port > 0 && port <= 65535, "Port should be in valid range, got: " + port);
+        assertTrue(port >= 1024 && port <= 65535,
+                "Port should be in unprivileged range [1024, 65535], got: " + port);
     }
 
     // -------------------------------------------------------------------------
@@ -478,15 +479,15 @@ class MocklyDriverTest {
     }
 
     @Test
-    void deactivateScenarioSendsPostToCorrectEndpoint() throws Exception {
+    void deactivateScenarioSendsDeleteToCorrectEndpoint() throws Exception {
         List<String> paths = new ArrayList<>();
         List<String> methods = new ArrayList<>();
         HttpServer fakeServer = startFakeServer(200, paths, methods);
         try {
             MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
             server.deactivateScenario("sc1");
-            assertEquals("/api/scenarios/sc1/deactivate", paths.get(0));
-            assertEquals("POST", methods.get(0));
+            assertEquals("/api/scenarios/sc1/activate", paths.get(0));
+            assertEquals("DELETE", methods.get(0));
         } finally {
             fakeServer.stop(0);
         }
@@ -499,7 +500,7 @@ class MocklyDriverTest {
         HttpServer fakeServer = startFakeServer(200, paths, methods);
         try {
             MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
-            FaultConfig fault = FaultConfig.builder("delay").delay("100ms").build();
+            FaultConfig fault = FaultConfig.builder(true).delay("100ms").build();
             server.setFault(fault);
             assertEquals("/api/fault", paths.get(0));
             assertEquals("POST", methods.get(0));

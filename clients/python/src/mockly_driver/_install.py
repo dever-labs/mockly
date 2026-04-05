@@ -8,7 +8,12 @@ import sys
 import urllib.error
 import urllib.request
 
-_DEFAULT_VERSION = "v0.1.0"
+try:
+    from importlib.metadata import version as _pkg_version
+    _DEFAULT_VERSION = "v" + _pkg_version("mockly-driver")
+except Exception:
+    _DEFAULT_VERSION = "v0.1.0"  # fallback when package metadata is unavailable
+
 _DEFAULT_BASE_URL = "https://github.com/dever-labs/mockly/releases/download"
 
 

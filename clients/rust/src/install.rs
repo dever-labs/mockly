@@ -1,7 +1,7 @@
 use crate::types::InstallOptions;
 use std::path::PathBuf;
 
-pub const DEFAULT_VERSION: &str = "v0.1.0";
+pub const DEFAULT_VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
 const GITHUB_BASE: &str = "https://github.com/dever-labs/mockly/releases/download";
 
 /// Returns the path to an existing Mockly binary, or `None` if not found.

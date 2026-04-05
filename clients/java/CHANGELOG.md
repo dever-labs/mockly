@@ -15,3 +15,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Model classes: `Mock`, `MockRequest`, `MockResponse`, `Scenario`, `ScenarioPatch`, `FaultConfig`.
 - Zero runtime dependencies — uses only the Java 11 standard library.
 - JUnit 5 test suite.
+

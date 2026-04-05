@@ -26,3 +26,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Environment variable support: `MOCKLY_BINARY_PATH`, `MOCKLY_VERSION`, `MOCKLY_DOWNLOAD_BASE_URL`, `MOCKLY_NO_INSTALL`, `HTTPS_PROXY`, `HTTP_PROXY`.
 - Stdlib-only runtime — no third-party dependencies.
 - pytest unit tests covering port allocation, binary discovery, and install guards.
+

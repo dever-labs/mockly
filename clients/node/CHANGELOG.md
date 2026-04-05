@@ -18,3 +18,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `npx mockly-install` CLI for CI setup steps.
 - Retry logic in `create()` on port-conflict errors (up to 3 attempts).
 - Stderr capture forwarded to startup error messages for easier debugging.
+

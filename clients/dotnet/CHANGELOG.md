@@ -14,3 +14,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Models: `Mock`, `MockRequest`, `MockResponse`, `Scenario`, `ScenarioPatch`, `FaultConfig`
 - Full async/await API with `IAsyncDisposable` support
 - Zero runtime dependencies (BCL only: `System.Text.Json`, `HttpClient`, `System.Net.Sockets`)
+

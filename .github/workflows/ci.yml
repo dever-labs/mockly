@@ -69,7 +69,7 @@ jobs:
           cache: false
 
       - name: Download UI artifact
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # actions/download-artifact@v6
+        uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317 # actions/download-artifact@v6
         with:
           name: ui-dist
           path: assets/dist/
@@ -109,7 +109,7 @@ jobs:
           cache: false
 
       - name: Download UI artifact
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # actions/download-artifact@v6
+        uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317 # actions/download-artifact@v6
         with:
           name: ui-dist
           path: assets/dist/
@@ -140,7 +140,7 @@ jobs:
       contents: write
     steps:
       - name: Download all binaries
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # actions/download-artifact@v6
+        uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317 # actions/download-artifact@v6
         with:
           pattern: mockly-*
           merge-multiple: true

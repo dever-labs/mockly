@@ -326,10 +326,6 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # actions/checkout@v6.0.2
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.12'
-
       - name: Set version
         run: |
           VERSION="${{ github.ref_name }}"
@@ -342,9 +338,12 @@ jobs:
           cd clients/python && hatch build
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.12.4
-        with:
-          packages-dir: clients/python/dist/
+        run: |
+          pip install twine
+          twine upload --non-interactive clients/python/dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 
   # ─── Publish Maven Central package ──────────────────────────────────────────
   java-publish:

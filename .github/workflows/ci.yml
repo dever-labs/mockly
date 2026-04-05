@@ -185,7 +185,12 @@ jobs:
 
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+            11.0.x
+          dotnet-quality: preview
 
       - name: Download all binaries
         uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317 # actions/download-artifact@v6

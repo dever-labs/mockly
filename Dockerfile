@@ -15,7 +15,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 # Embed the pre-built UI
-COPY --from=ui-builder /app/ui/dist ./assets/dist
+COPY --from=ui-builder /app/assets/dist ./assets/dist
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /mockly ./cmd/mockly
 
 # ── Stage 3: Final image ──────────────────────────────────────────────────────

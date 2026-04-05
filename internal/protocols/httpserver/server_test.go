@@ -139,7 +139,10 @@ func TestHTTPServer_ScenarioPatch_OverridesStatus(t *testing.T) {
 	base := startTestServer(t, mocks, sc)
 
 	// Without scenario: 200
-	r1, _ := http.Post(base+"/token", "application/json", nil)
+	r1, err := http.Post(base+"/token", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /token: %v", err)
+	}
 	r1.Body.Close()
 	if r1.StatusCode != 200 {
 		t.Errorf("before activation: want 200, got %d", r1.StatusCode)
@@ -149,7 +152,10 @@ func TestHTTPServer_ScenarioPatch_OverridesStatus(t *testing.T) {
 	sc.Activate("auth-down")
 
 	// With scenario: 503
-	r2, _ := http.Post(base+"/token", "application/json", nil)
+	r2, err := http.Post(base+"/token", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /token (after activate): %v", err)
+	}
 	defer r2.Body.Close()
 	if r2.StatusCode != 503 {
 		t.Errorf("after activation: want 503, got %d", r2.StatusCode)
@@ -239,7 +245,10 @@ func TestHTTPServer_TemplateResponse(t *testing.T) {
 	}}
 	base := startTestServer(t, mocks, nil)
 
-	resp, _ := http.Get(base + "/time")
+	resp, err := http.Get(base + "/time")
+	if err != nil {
+		t.Fatalf("GET /time: %v", err)
+	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 
@@ -317,14 +326,20 @@ func TestHTTPServer_QueryParams(t *testing.T) {
 	}
 	base := startTestServer(t, mocks, nil)
 
-	resp, _ := http.Get(base + "/users?role=admin")
+	resp, err := http.Get(base + "/users?role=admin")
+	if err != nil {
+		t.Fatalf("GET /users?role=admin: %v", err)
+	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), `"admin"`) {
 		t.Errorf("expected admin response, got %q", body)
 	}
 
-	resp2, _ := http.Get(base + "/users?role=user")
+	resp2, err := http.Get(base + "/users?role=user")
+	if err != nil {
+		t.Fatalf("GET /users?role=user: %v", err)
+	}
 	defer resp2.Body.Close()
 	body2, _ := io.ReadAll(resp2.Body)
 	if !strings.Contains(string(body2), `"other"`) {
@@ -347,13 +362,19 @@ func TestHTTPServer_BodyJSON(t *testing.T) {
 	}
 	base := startTestServer(t, mocks, nil)
 
-	resp, _ := http.Post(base+"/pay", "application/json", strings.NewReader(`{"currency":"GBP","amount":100}`))
+	resp, err := http.Post(base+"/pay", "application/json", strings.NewReader(`{"currency":"GBP","amount":100}`))
+	if err != nil {
+		t.Fatalf("POST /pay GBP: %v", err)
+	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Errorf("expected 200 for GBP, got %d", resp.StatusCode)
 	}
 
-	resp2, _ := http.Post(base+"/pay", "application/json", strings.NewReader(`{"currency":"USD","amount":100}`))
+	resp2, err := http.Post(base+"/pay", "application/json", strings.NewReader(`{"currency":"USD","amount":100}`))
+	if err != nil {
+		t.Fatalf("POST /pay USD: %v", err)
+	}
 	defer resp2.Body.Close()
 	if resp2.StatusCode != 422 {
 		t.Errorf("expected 422 for USD, got %d", resp2.StatusCode)

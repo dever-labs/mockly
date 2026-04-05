@@ -187,7 +187,10 @@ func TestAPI_HTTP_CRUD(t *testing.T) {
 	}
 
 	// List mocks.
-	resp2, _ := http.Get(base + "/api/mocks/http")
+	resp2, err := http.Get(base + "/api/mocks/http")
+	if err != nil {
+		t.Fatalf("GET /api/mocks/http: %v", err)
+	}
 	defer resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		t.Errorf("list: want 200, got %d", resp2.StatusCode)
@@ -325,7 +328,10 @@ func TestAPI_State_SetGet(t *testing.T) {
 	}
 
 	// Get all state keys.
-	resp2, _ := http.Get(base + "/api/state")
+	resp2, err := http.Get(base + "/api/state")
+	if err != nil {
+		t.Fatalf("GET /api/state: %v", err)
+	}
 	defer resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		t.Errorf("get state: want 200, got %d", resp2.StatusCode)
@@ -340,7 +346,10 @@ func TestAPI_State_SetGet(t *testing.T) {
 func TestAPI_Logs(t *testing.T) {
 	base, _, _, _ := startAPI(t)
 
-	resp, _ := http.Get(base + "/api/logs")
+	resp, err := http.Get(base + "/api/logs")
+	if err != nil {
+		t.Fatalf("GET /api/logs: %v", err)
+	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Errorf("GET /api/logs: want 200, got %d", resp.StatusCode)

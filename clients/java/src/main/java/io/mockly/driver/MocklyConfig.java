@@ -1,7 +1,10 @@
 package io.mockly.driver;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+
+import io.mockly.driver.model.Scenario;
 
 /**
  * Configuration for starting a MocklyServer instance.
@@ -14,6 +17,7 @@ public class MocklyConfig {
     private final String binDir;
     private final int startupTimeoutMs;
     private final List<String> extraArgs;
+    private final List<Scenario> scenarios;
 
     private MocklyConfig(Builder builder) {
         this.binaryPath = builder.binaryPath;
@@ -23,6 +27,7 @@ public class MocklyConfig {
         this.binDir = builder.binDir;
         this.startupTimeoutMs = builder.startupTimeoutMs;
         this.extraArgs = builder.extraArgs;
+        this.scenarios = Collections.unmodifiableList(new ArrayList<>(builder.scenarios));
     }
 
     /** Explicit path to the mockly binary. If null, auto-resolved. */
@@ -39,6 +44,8 @@ public class MocklyConfig {
     public int getStartupTimeoutMs() { return startupTimeoutMs; }
     /** Additional CLI arguments passed to `mockly start`. */
     public List<String> getExtraArgs() { return extraArgs; }
+    /** Scenarios to include in the startup config. */
+    public List<Scenario> getScenarios() { return scenarios; }
 
     public static Builder builder() {
         return new Builder();
@@ -52,6 +59,7 @@ public class MocklyConfig {
         private String binDir = "bin";
         private int startupTimeoutMs = 10_000;
         private final List<String> extraArgs = new ArrayList<>();
+        private final List<Scenario> scenarios = new ArrayList<>();
 
         public Builder binaryPath(String binaryPath) {
             this.binaryPath = binaryPath;
@@ -87,6 +95,16 @@ public class MocklyConfig {
 
         public Builder extraArg(String arg) {
             extraArgs.add(arg);
+            return this;
+        }
+
+        public Builder scenario(Scenario scenario) {
+            scenarios.add(scenario);
+            return this;
+        }
+
+        public Builder scenarios(List<Scenario> scenarios) {
+            this.scenarios.addAll(scenarios);
             return this;
         }
 

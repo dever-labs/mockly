@@ -243,6 +243,7 @@ func (s *Server) buildRouter() http.Handler {
 		r.Delete("/api/scenarios/{id}", s.deleteScenario)
 		r.Post("/api/scenarios/{id}/activate", s.activateScenario)
 		r.Delete("/api/scenarios/{id}/activate", s.deactivateScenario)
+		r.Post("/api/scenarios/{id}/deactivate", s.deactivateScenario)
 
 		// Global fault injection
 		r.Get("/api/fault", s.getFault)

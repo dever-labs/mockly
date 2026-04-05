@@ -5,6 +5,8 @@ import io.mockly.driver.model.FaultConfig;
 import io.mockly.driver.model.Mock;
 import io.mockly.driver.model.MockRequest;
 import io.mockly.driver.model.MockResponse;
+import io.mockly.driver.model.Scenario;
+import io.mockly.driver.model.ScenarioPatch;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -200,15 +202,17 @@ class MocklyDriverTest {
 
     @Test
     void toJsonFaultConfig() {
-        FaultConfig fault = FaultConfig.builder("delay")
+        FaultConfig fault = FaultConfig.builder(true)
                 .delay("200ms")
-                .probability(0.5)
+                .statusOverride(503)
+                .errorRate(0.5)
                 .build();
 
         String json = MocklyServer.toJson(fault);
-        assertTrue(json.contains("\"type\":\"delay\""));
-        assertTrue(json.contains("\"delay\":\"200ms\""));
-        assertTrue(json.contains("\"probability\":0.5"));
+        assertTrue(json.contains("\"enabled\":true"), "JSON should contain enabled:true");
+        assertTrue(json.contains("\"delay\":\"200ms\""), "JSON should contain delay");
+        assertTrue(json.contains("\"status_override\":503"), "JSON should contain status_override");
+        assertTrue(json.contains("\"error_rate\":0.5"), "JSON should contain error_rate");
     }
 
     @Test
@@ -232,16 +236,19 @@ class MocklyDriverTest {
         assertEquals(0, cfg.getApiPort(), "Default apiPort should be 0 (auto)");
         assertEquals(MocklyInstaller.DEFAULT_VERSION, cfg.getVersion());
         assertTrue(cfg.getStartupTimeoutMs() > 0);
+        assertTrue(cfg.getScenarios().isEmpty(), "Default scenarios should be empty");
     }
 
     @Test
     void mocklyConfigBuilderSetsValues() {
+        Scenario sc = Scenario.builder("sc-1", "Test Scenario").build();
         MocklyConfig cfg = MocklyConfig.builder()
                 .httpPort(9000)
                 .apiPort(9001)
                 .version("v1.2.3")
                 .binDir("custom-bin")
                 .startupTimeoutMs(5000)
+                .scenario(sc)
                 .build();
 
         assertEquals(9000, cfg.getHttpPort());
@@ -249,6 +256,8 @@ class MocklyDriverTest {
         assertEquals("v1.2.3", cfg.getVersion());
         assertEquals("custom-bin", cfg.getBinDir());
         assertEquals(5000, cfg.getStartupTimeoutMs());
+        assertEquals(1, cfg.getScenarios().size(), "Should have one scenario");
+        assertEquals("sc-1", cfg.getScenarios().get(0).getId());
     }
 
     // -------------------------------------------------------------------------
@@ -297,9 +306,9 @@ class MocklyDriverTest {
 
     @Test
     void writeConfigCreatesFileWithCorrectPorts() throws Exception {
-        Method m = MocklyServer.class.getDeclaredMethod("writeConfig", int.class, int.class);
+        Method m = MocklyServer.class.getDeclaredMethod("writeConfig", int.class, int.class, List.class);
         m.setAccessible(true);
-        Path configPath = (Path) m.invoke(null, 8080, 8081);
+        Path configPath = (Path) m.invoke(null, 8080, 8081, List.of());
         try {
             assertTrue(Files.exists(configPath), "Config file should be created");
             String content = Files.readString(configPath);
@@ -315,17 +324,36 @@ class MocklyDriverTest {
 
     @Test
     void writeConfigFileIsValidYamlStructure() throws Exception {
-        Method m = MocklyServer.class.getDeclaredMethod("writeConfig", int.class, int.class);
+        Method m = MocklyServer.class.getDeclaredMethod("writeConfig", int.class, int.class, List.class);
         m.setAccessible(true);
-        Path configPath = (Path) m.invoke(null, 7070, 7071);
+        Path configPath = (Path) m.invoke(null, 7070, 7071, List.of());
         try {
             String content = Files.readString(configPath);
-            // Verify ports appear on their own lines as YAML values
             assertTrue(content.lines().anyMatch(l -> l.trim().equals("port: 7070")),
                     "File should have a line 'port: 7070'");
             assertTrue(content.lines().anyMatch(l -> l.trim().equals("port: 7071")),
                     "File should have a line 'port: 7071'");
             assertTrue(content.contains("enabled: true"), "HTTP should be enabled by default");
+        } finally {
+            Files.deleteIfExists(configPath);
+        }
+    }
+
+    @Test
+    void writeConfigIncludesScenarios() throws Exception {
+        Method m = MocklyServer.class.getDeclaredMethod("writeConfig", int.class, int.class, List.class);
+        m.setAccessible(true);
+        ScenarioPatch patch = ScenarioPatch.builder("mock-1").status(404).delay("100ms").build();
+        Scenario scenario = Scenario.builder("sc-1", "Error Scenario").patch(patch).build();
+        Path configPath = (Path) m.invoke(null, 6060, 6061, List.of(scenario));
+        try {
+            String content = Files.readString(configPath);
+            assertTrue(content.contains("scenarios:"), "Config should have scenarios section");
+            assertTrue(content.contains("sc-1"), "Config should include scenario id");
+            assertTrue(content.contains("Error Scenario"), "Config should include scenario name");
+            assertTrue(content.contains("mock-1"), "Config should include patch mock_id");
+            assertTrue(content.contains("status: 404"), "Config should include patch status");
+            assertTrue(content.contains("delay:"), "Config should include patch delay");
         } finally {
             Files.deleteIfExists(configPath);
         }

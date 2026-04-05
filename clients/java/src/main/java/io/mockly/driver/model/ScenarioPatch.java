@@ -1,37 +1,53 @@
 package io.mockly.driver.model;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
-/** Represents a partial update to a scenario (e.g. add/remove mocks). */
+/** Overrides a mock's behaviour when a scenario is active. */
 public class ScenarioPatch {
-    private final List<Mock> addMocks;
-    private final List<String> removeMockIds;
+    private final String mockId;
+    private final Integer status;
+    private final String body;
+    private final String delay;
 
     private ScenarioPatch(Builder builder) {
-        this.addMocks = Collections.unmodifiableList(new ArrayList<>(builder.addMocks));
-        this.removeMockIds = Collections.unmodifiableList(new ArrayList<>(builder.removeMockIds));
+        this.mockId = builder.mockId;
+        this.status = builder.status;
+        this.body = builder.body;
+        this.delay = builder.delay;
     }
 
-    public List<Mock> getAddMocks() { return addMocks; }
-    public List<String> getRemoveMockIds() { return removeMockIds; }
+    public String getMockId() { return mockId; }
+    /** HTTP status override. May be null (unchanged). */
+    public Integer getStatus() { return status; }
+    /** Response body override. May be null (unchanged). */
+    public String getBody() { return body; }
+    /** Delay override, e.g. "200ms". May be null (unchanged). */
+    public String getDelay() { return delay; }
 
-    public static Builder builder() {
-        return new Builder();
+    public static Builder builder(String mockId) {
+        return new Builder(mockId);
     }
 
     public static class Builder {
-        private final List<Mock> addMocks = new ArrayList<>();
-        private final List<String> removeMockIds = new ArrayList<>();
+        private final String mockId;
+        private Integer status;
+        private String body;
+        private String delay;
 
-        public Builder addMock(Mock mock) {
-            addMocks.add(mock);
+        private Builder(String mockId) {
+            this.mockId = mockId;
+        }
+
+        public Builder status(int status) {
+            this.status = status;
             return this;
         }
 
-        public Builder removeMockId(String id) {
-            removeMockIds.add(id);
+        public Builder body(String body) {
+            this.body = body;
+            return this;
+        }
+
+        public Builder delay(String delay) {
+            this.delay = delay;
             return this;
         }
 

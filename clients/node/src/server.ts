@@ -130,7 +130,8 @@ export class MocklyServer {
 
   /** Deactivates a previously activated scenario. */
   async deactivateScenario(id: string): Promise<void> {
-    await fetch(`${this.apiBase}/api/scenarios/${id}/activate`, { method: 'DELETE' })
+    const res = await this._post(`/api/scenarios/${id}/deactivate`, null)
+    if (!res.ok) throw new Error(`deactivateScenario(${id}) failed: HTTP ${res.status}`)
   }
 
   /**

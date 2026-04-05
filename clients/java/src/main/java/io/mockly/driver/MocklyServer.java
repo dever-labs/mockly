@@ -4,6 +4,8 @@ import io.mockly.driver.model.FaultConfig;
 import io.mockly.driver.model.Mock;
 import io.mockly.driver.model.MockRequest;
 import io.mockly.driver.model.MockResponse;
+import io.mockly.driver.model.Scenario;
+import io.mockly.driver.model.ScenarioPatch;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -208,7 +210,7 @@ public class MocklyServer implements AutoCloseable {
     private static MocklyServer doStart(String binaryPath, MocklyConfig config, int httpPort, int apiPort)
             throws IOException, InterruptedException {
 
-        Path configFile = writeConfig(httpPort, apiPort);
+        Path configFile = writeConfig(httpPort, apiPort, config.getScenarios());
 
         List<String> cmd = new ArrayList<>();
         cmd.add(binaryPath);
@@ -238,18 +240,42 @@ public class MocklyServer implements AutoCloseable {
         return server;
     }
 
-    private static Path writeConfig(int httpPort, int apiPort) throws IOException {
-        String yaml = "mockly:\n"
-                + "  api:\n"
-                + "    port: " + apiPort + "\n"
-                + "protocols:\n"
-                + "  http:\n"
-                + "    enabled: true\n"
-                + "    port: " + httpPort + "\n";
+    private static Path writeConfig(int httpPort, int apiPort, List<Scenario> scenarios) throws IOException {
+        StringBuilder yaml = new StringBuilder();
+        yaml.append("mockly:\n  api:\n    port: ").append(apiPort)
+            .append("\nprotocols:\n  http:\n    enabled: true\n    port: ").append(httpPort).append("\n");
+
+        if (scenarios != null && !scenarios.isEmpty()) {
+            yaml.append("scenarios:\n");
+            for (Scenario s : scenarios) {
+                yaml.append("  - id: ").append(yamlStr(s.getId())).append("\n");
+                yaml.append("    name: ").append(yamlStr(s.getName())).append("\n");
+                if (!s.getPatches().isEmpty()) {
+                    yaml.append("    patches:\n");
+                    for (ScenarioPatch p : s.getPatches()) {
+                        yaml.append("      - mock_id: ").append(yamlStr(p.getMockId())).append("\n");
+                        if (p.getStatus() != null) {
+                            yaml.append("        status: ").append(p.getStatus()).append("\n");
+                        }
+                        if (p.getBody() != null) {
+                            yaml.append("        body: ").append(yamlStr(p.getBody())).append("\n");
+                        }
+                        if (p.getDelay() != null) {
+                            yaml.append("        delay: ").append(yamlStr(p.getDelay())).append("\n");
+                        }
+                    }
+                }
+            }
+        }
 
         Path tmp = Files.createTempFile("mockly-config-", ".yaml");
-        Files.writeString(tmp, yaml);
+        Files.writeString(tmp, yaml.toString());
         return tmp;
+    }
+
+    /** Minimal YAML single-quote escaper. */
+    private static String yamlStr(String s) {
+        return "'" + s.replace("'", "''") + "'";
     }
 
     private static int getFreePort() throws IOException {
@@ -366,15 +392,15 @@ public class MocklyServer implements AutoCloseable {
 
     static String toJson(FaultConfig fault) {
         StringBuilder sb = new StringBuilder("{");
-        sb.append("\"type\":").append(jsonString(fault.getType()));
-        if (fault.getProbability() != null) {
-            sb.append(",\"probability\":").append(fault.getProbability());
-        }
+        sb.append("\"enabled\":").append(fault.isEnabled());
         if (fault.getDelay() != null) {
             sb.append(",\"delay\":").append(jsonString(fault.getDelay()));
         }
-        if (fault.getStatusCode() != null) {
-            sb.append(",\"statusCode\":").append(fault.getStatusCode());
+        if (fault.getStatusOverride() != null) {
+            sb.append(",\"status_override\":").append(fault.getStatusOverride());
+        }
+        if (fault.getErrorRate() != null) {
+            sb.append(",\"error_rate\":").append(fault.getErrorRate());
         }
         sb.append("}");
         return sb.toString();

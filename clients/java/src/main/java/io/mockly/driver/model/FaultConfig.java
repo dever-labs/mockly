@@ -1,45 +1,39 @@
 package io.mockly.driver.model;
 
-/** Configuration for injecting a network fault into the mock server. */
+/** Global fault injection configuration. */
 public class FaultConfig {
-    private final String type;
-    private final Double probability;
+    private final boolean enabled;
     private final String delay;
-    private final Integer statusCode;
+    private final Integer statusOverride;
+    private final Double errorRate;
 
     private FaultConfig(Builder builder) {
-        this.type = builder.type;
-        this.probability = builder.probability;
+        this.enabled = builder.enabled;
         this.delay = builder.delay;
-        this.statusCode = builder.statusCode;
+        this.statusOverride = builder.statusOverride;
+        this.errorRate = builder.errorRate;
     }
 
-    /** Fault type, e.g. "delay", "error", "reset". */
-    public String getType() { return type; }
-    /** Probability between 0.0 and 1.0. May be null (meaning always). */
-    public Double getProbability() { return probability; }
-    /** Delay string, e.g. "200ms". May be null. */
+    public boolean isEnabled() { return enabled; }
+    /** Artificial delay added to every request, e.g. "200ms". May be null. */
     public String getDelay() { return delay; }
-    /** HTTP status code to return on error fault. May be null. */
-    public Integer getStatusCode() { return statusCode; }
+    /** HTTP status code to return instead of the matched mock's status. May be null. */
+    public Integer getStatusOverride() { return statusOverride; }
+    /** Probability (0.0–1.0) that the fault fires; 0 means always. May be null. */
+    public Double getErrorRate() { return errorRate; }
 
-    public static Builder builder(String type) {
-        return new Builder(type);
+    public static Builder builder(boolean enabled) {
+        return new Builder(enabled);
     }
 
     public static class Builder {
-        private final String type;
-        private Double probability;
+        private final boolean enabled;
         private String delay;
-        private Integer statusCode;
+        private Integer statusOverride;
+        private Double errorRate;
 
-        private Builder(String type) {
-            this.type = type;
-        }
-
-        public Builder probability(double probability) {
-            this.probability = probability;
-            return this;
+        private Builder(boolean enabled) {
+            this.enabled = enabled;
         }
 
         public Builder delay(String delay) {
@@ -47,8 +41,13 @@ public class FaultConfig {
             return this;
         }
 
-        public Builder statusCode(int statusCode) {
-            this.statusCode = statusCode;
+        public Builder statusOverride(int statusOverride) {
+            this.statusOverride = statusOverride;
+            return this;
+        }
+
+        public Builder errorRate(double errorRate) {
+            this.errorRate = errorRate;
             return this;
         }
 

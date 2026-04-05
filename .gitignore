@@ -49,8 +49,8 @@ clients/python/.venv/
 clients/java/target/
 
 # .NET client
-clients/dotnet/*/bin/
-clients/dotnet/*/obj/
+clients/dotnet/**/bin/
+clients/dotnet/**/obj/
 
 # Rust client
 clients/rust/target/

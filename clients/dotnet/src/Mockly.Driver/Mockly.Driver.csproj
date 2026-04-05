@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <PackageId>Mockly.Driver</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>dever-labs</Authors>
+    <Description>C# client for Mockly — start/stop servers and manage HTTP mocks in tests</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/dever-labs/mockly/tree/main/clients/dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/dever-labs/mockly</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>mock testing http integration-test mockly</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Mockly.Driver.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

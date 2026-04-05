@@ -44,3 +44,13 @@ clients/python/.venv/
 # Python cache (all locations)
 **/__pycache__/
 **/*.pyc
+
+# Java client
+clients/java/target/
+
+# .NET client
+clients/dotnet/*/bin/
+clients/dotnet/*/obj/
+
+# Rust client
+clients/rust/target/

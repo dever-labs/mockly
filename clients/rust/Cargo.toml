@@ -1,0 +1,19 @@
+[package]
+name = "mockly-driver"
+version = "0.1.0"
+edition = "2021"
+description = "Rust client for Mockly — start/stop servers and manage HTTP mocks in tests"
+license = "MIT"
+repository = "https://github.com/dever-labs/mockly"
+homepage = "https://github.com/dever-labs/mockly/tree/main/clients/rust"
+keywords = ["mock", "testing", "http", "integration-test", "mockly"]
+categories = ["development-tools::testing"]
+readme = "README.md"
+
+[dependencies]
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+
+[dev-dependencies]

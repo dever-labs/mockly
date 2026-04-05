@@ -27,3 +27,8 @@ Thumbs.db
 
 # Config (user-specific, not example)
 mockly.yaml
+
+# Node client
+clients/node/node_modules/
+clients/node/dist/
+clients/node/bin/

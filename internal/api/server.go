@@ -348,7 +348,7 @@ func (s *Server) updateHTTPMock(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteHTTPMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.http.GetMocks()
-	filtered := mocks[:0]
+	filtered := make([]config.HTTPMock, 0, len(mocks))
 	for _, m := range mocks {
 		if m.ID != id {
 			filtered = append(filtered, m)
@@ -451,7 +451,7 @@ func (s *Server) updateWSMock(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteWSMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.ws.GetMocks()
-	filtered := mocks[:0]
+	filtered := make([]config.WebSocketMock, 0, len(mocks))
 	for _, m := range mocks {
 		if m.ID != id {
 			filtered = append(filtered, m)
@@ -544,7 +544,7 @@ func (s *Server) updateGRPCMock(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteGRPCMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.grpc.GetMocks()
-	filtered := mocks[:0]
+	filtered := make([]config.GRPCMock, 0, len(mocks))
 	for _, m := range mocks {
 		if m.ID != id {
 			filtered = append(filtered, m)
@@ -743,7 +743,7 @@ func (s *Server) updateGraphQLMock(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteGraphQLMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.graphql.GetMocks()
-	filtered := mocks[:0]
+	filtered := make([]config.GraphQLMock, 0, len(mocks))
 	for _, m := range mocks {
 		if m.ID != id {
 			filtered = append(filtered, m)
@@ -801,7 +801,7 @@ func (s *Server) updateTCPMock(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteTCPMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.tcp.GetMocks()
-	filtered := mocks[:0]
+	filtered := make([]config.TCPMock, 0, len(mocks))
 	for _, m := range mocks {
 		if m.ID != id {
 			filtered = append(filtered, m)
@@ -859,7 +859,7 @@ func (s *Server) updateRedisMock(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteRedisMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.redis.GetMocks()
-	filtered := mocks[:0]
+	filtered := make([]config.RedisMock, 0, len(mocks))
 	for _, m := range mocks {
 		if m.ID != id {
 			filtered = append(filtered, m)
@@ -993,7 +993,7 @@ func (s *Server) updateMQTTMock(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteMQTTMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.mqtt.GetMocks()
-	filtered := mocks[:0]
+	filtered := make([]config.MQTTMock, 0, len(mocks))
 	for _, m := range mocks {
 		if m.ID != id {
 			filtered = append(filtered, m)

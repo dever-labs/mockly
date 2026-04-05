@@ -17,11 +17,11 @@ public static class MocklyInstaller
             return envPath;
 
         var exeName = BinaryName();
-        var dirs = new List<string?> { binDir, Path.Combine(AppContext.BaseDirectory, "bin") };
+        var dirs = new List<string?> { binDir, Path.Join(AppContext.BaseDirectory, "bin") };
         foreach (var dir in dirs)
         {
             if (dir == null) continue;
-            var candidate = Path.Combine(dir, exeName);
+            var candidate = Path.Join(dir, exeName);
             if (File.Exists(candidate)) return candidate;
         }
         return null;
@@ -57,10 +57,10 @@ public static class MocklyInstaller
         var asset = GetAssetName();
         var url = $"{baseUrl.TrimEnd('/')}/{version}/{asset}";
 
-        var binDir = opts.BinDir ?? Path.Combine(AppContext.BaseDirectory, "bin");
+        var binDir = opts.BinDir ?? Path.Join(AppContext.BaseDirectory, "bin");
         Directory.CreateDirectory(binDir);
 
-        var dest = Path.Combine(binDir, BinaryName());
+        var dest = Path.Join(binDir, BinaryName());
         await DownloadFileAsync(url, dest);
 
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))

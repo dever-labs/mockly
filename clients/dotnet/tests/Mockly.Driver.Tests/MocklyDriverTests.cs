@@ -26,7 +26,7 @@ public class MocklyDriverTests
     {
         var env = new Dictionary<string, string>(); // no MOCKLY_BINARY_PATH
         var result = MocklyInstaller.GetBinaryPath(
-            Path.Combine(Path.GetTempPath(), "mockly-nonexistent-" + Guid.NewGuid()),
+            Path.Join(Path.GetTempPath(), "mockly-nonexistent-" + Guid.NewGuid()),
             env);
         Assert.Null(result);
     }
@@ -34,11 +34,11 @@ public class MocklyDriverTests
     [Fact]
     public void GetBinaryPath_FindsBinaryInBinDir()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "mockly-test-" + Guid.NewGuid());
+        var dir = Path.Join(Path.GetTempPath(), "mockly-test-" + Guid.NewGuid());
         Directory.CreateDirectory(dir);
         var exeName = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
             System.Runtime.InteropServices.OSPlatform.Windows) ? "mockly.exe" : "mockly";
-        var binaryPath = Path.Combine(dir, exeName);
+        var binaryPath = Path.Join(dir, exeName);
         File.WriteAllText(binaryPath, "fake");
 
         try
@@ -60,7 +60,7 @@ public class MocklyDriverTests
         {
             ["MOCKLY_NO_INSTALL"] = "1"
         };
-        var opts = new InstallOptions(BinDir: Path.Combine(Path.GetTempPath(), "mockly-nope-" + Guid.NewGuid()));
+        var opts = new InstallOptions(BinDir: Path.Join(Path.GetTempPath(), "mockly-nope-" + Guid.NewGuid()));
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => MocklyInstaller.InstallAsync(opts, env));
         Assert.Contains("MOCKLY_NO_INSTALL", ex.Message);
@@ -69,7 +69,7 @@ public class MocklyDriverTests
     [Fact]
     public async Task Install_ReturnsStagedBinary_WhenPathSet()
     {
-        var tmpFile = Path.Combine(Path.GetTempPath(), "fake-mockly-" + Guid.NewGuid());
+        var tmpFile = Path.Join(Path.GetTempPath(), "fake-mockly-" + Guid.NewGuid());
         File.WriteAllText(tmpFile, "fake binary");
         try
         {

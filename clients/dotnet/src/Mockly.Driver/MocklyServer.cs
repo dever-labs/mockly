@@ -216,7 +216,7 @@ protocols:
     port: {httpPort}
 {scenariosYaml}";
 
-        var tmpPath = Path.Combine(Path.GetTempPath(), $"mockly-config-{Guid.NewGuid():N}.yaml");
+        var tmpPath = Path.Join(Path.GetTempPath(), $"mockly-config-{Guid.NewGuid():N}.yaml");
         File.WriteAllText(tmpPath, yaml);
         return tmpPath;
     }

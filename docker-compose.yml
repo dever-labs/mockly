@@ -1,0 +1,16 @@
+# docker-compose.yml — quick local start for Mockly
+# Mount your config and run: docker compose up
+services:
+  mockly:
+    image: ghcr.io/dever-labs/mockly:latest
+    # Or build locally:
+    # build: .
+    ports:
+      - "8080:8080"   # HTTP mock server
+      - "9090:9090"   # Management API + Web UI
+      - "5025:5025"   # SMTP (if enabled)
+      - "1883:1883"   # MQTT (if enabled)
+      - "6380:6380"   # Redis mock (if enabled)
+    volumes:
+      - ./mockly.yaml:/config/mockly.yaml:ro
+    restart: unless-stopped

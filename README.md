@@ -576,18 +576,101 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 
 ---
 
-## Testing with Mockly
+## CI Integration
 
-The typical pattern when a dependency team ships a Mockly config:
+Mockly is a single static binary with no runtime dependencies — ideal for CI.
 
-1. They deliver a YAML file alongside their service versioned in their repo.
-2. Your CI pipeline runs `mockly start --config their-service.yaml`.
-3. Your tests point at Mockly's port instead of the real service.
-4. To test error handling, activate the relevant scenario:
-   ```sh
-   curl -X POST http://localhost:9091/api/scenarios/payment-timeout/activate
-   ```
-5. After the test, deactivate or call `POST /api/reset` to return to defaults.
+### GitHub Actions (composite action)
+
+```yaml
+steps:
+  - uses: actions/checkout@v5
+
+  - name: Start Mockly
+    uses: dever-labs/mockly/.github/actions/setup-mockly@v0.1.0
+    with:
+      version: v0.1.0          # pin to a specific version
+      config: mockly.yaml      # path to your config
+      api-port: 9090           # management API port (default)
+
+  - name: Run tests
+    run: npm test
+```
+
+The action automatically:
+- Downloads the right binary for the runner OS/arch
+- Starts mockly in the background
+- Waits up to 30 s for the server to be ready
+- Kills the process after the job completes
+
+---
+
+### GitLab CI
+
+Include the template and extend the `.mockly-start` job:
+
+```yaml
+include:
+  - remote: 'https://raw.githubusercontent.com/dever-labs/mockly/main/.gitlab/mockly.yml'
+
+integration-tests:
+  extends: .mockly-start
+  variables:
+    MOCKLY_VERSION: "v0.1.0"
+    MOCKLY_CONFIG: "mockly.yaml"
+  script:
+    - ./run-tests.sh
+```
+
+Or run it as a Docker service (no binary install needed):
+
+```yaml
+integration-tests:
+  image: alpine:3.21
+  services:
+    - name: ghcr.io/dever-labs/mockly:latest
+      alias: mockly
+      variables:
+        # mount config via CI artifacts or inline
+  variables:
+    MOCKLY_URL: http://mockly:9090
+  script:
+    - apk add --no-cache curl
+    - curl "$MOCKLY_URL/api/protocols"
+    - ./run-tests.sh
+```
+
+---
+
+### Any CI (install script)
+
+```sh
+# Install latest release
+curl -sSfL https://raw.githubusercontent.com/dever-labs/mockly/main/install.sh | bash
+
+# Or pin to a version
+MOCKLY_VERSION=v0.1.0 \
+  curl -sSfL https://raw.githubusercontent.com/dever-labs/mockly/main/install.sh | bash
+
+# Start in background and wait for ready
+mockly start -c mockly.yaml &
+until curl -sf http://localhost:9090/api/protocols; do sleep 1; done
+```
+
+---
+
+### Docker
+
+```sh
+# Run with your local config
+docker run --rm \
+  -v "$PWD/mockly.yaml:/config/mockly.yaml:ro" \
+  -p 8080:8080 -p 9090:9090 \
+  ghcr.io/dever-labs/mockly:latest
+
+# Or with docker compose
+docker compose up
+```
 
 ---
 
@@ -629,15 +712,6 @@ make dev          # hot-reload with air
 
 MIT
 
-
----
-
-## Features
-
-| Feature | Details |
-|---|---|
-| **Protocols** | HTTP, WebSocket, gRPC |
-| **Request matching** | Exact path, prefix wildcard (`/api/*`), regex (`re:^/users/\d+$`) |
 | **Response control** | Status code, headers, body, artificial delay |
 | **Template responses** | Go template syntax in response bodies (`{{now}}`, `{{.body}}`, etc.) |
 | **State conditions** | Fire a mock only when a runtime state variable matches |

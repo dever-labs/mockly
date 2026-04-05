@@ -1,0 +1,104 @@
+name: Setup Mockly
+description: Install and start the Mockly multi-protocol mock server
+author: dever-labs
+
+branding:
+  icon: server
+  color: blue
+
+inputs:
+  version:
+    description: Mockly release version to install (e.g. v0.1.0). Defaults to latest.
+    required: false
+    default: latest
+  config:
+    description: Path to the mockly.yaml config file
+    required: false
+    default: mockly.yaml
+  start:
+    description: Start mockly after installing
+    required: false
+    default: "true"
+  api-port:
+    description: Port for the management API (overrides config)
+    required: false
+    default: "9090"
+
+outputs:
+  api-url:
+    description: Base URL of the Mockly management API
+    value: ${{ steps.start.outputs.api-url }}
+  version:
+    description: Installed Mockly version
+    value: ${{ steps.install.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install mockly
+      id: install
+      shell: bash
+      env:
+        MOCKLY_VERSION: ${{ inputs.version }}
+      run: |
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64)  ARCH="amd64" ;;
+          aarch64) ARCH="arm64" ;;
+          arm64)   ARCH="arm64" ;;
+          *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
+        esac
+
+        if [ "$MOCKLY_VERSION" = "latest" ]; then
+          MOCKLY_VERSION=$(curl -sSfL \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/dever-labs/mockly/releases/latest" \
+            | grep '"tag_name"' | sed -E 's/.*"tag_name": "(.*)".*/\1/')
+        fi
+
+        BINARY="mockly-${OS}-${ARCH}"
+        URL="https://github.com/dever-labs/mockly/releases/download/${MOCKLY_VERSION}/${BINARY}"
+
+        echo "Downloading mockly ${MOCKLY_VERSION} (${OS}/${ARCH})..."
+        curl -sSfL "$URL" -o "$RUNNER_TEMP/mockly"
+        chmod +x "$RUNNER_TEMP/mockly"
+        echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+        echo "version=${MOCKLY_VERSION}" >> "$GITHUB_OUTPUT"
+        echo "mockly ${MOCKLY_VERSION} installed"
+
+    - name: Start mockly
+      id: start
+      if: ${{ inputs.start == 'true' }}
+      shell: bash
+      env:
+        MOCKLY_CONFIG: ${{ inputs.config }}
+        MOCKLY_API_PORT: ${{ inputs.api-port }}
+      run: |
+        mockly start -c "$MOCKLY_CONFIG" --api-port "$MOCKLY_API_PORT" &
+        echo $! > "$RUNNER_TEMP/mockly.pid"
+
+        API_URL="http://localhost:${MOCKLY_API_PORT}"
+        echo "api-url=${API_URL}" >> "$GITHUB_OUTPUT"
+
+        echo "Waiting for mockly to be ready at ${API_URL}/api/protocols..."
+        for i in $(seq 1 30); do
+          if curl -sf "${API_URL}/api/protocols" > /dev/null 2>&1; then
+            echo "mockly is ready (${i}s)"
+            break
+          fi
+          if [ "$i" -eq 30 ]; then
+            echo "mockly did not start within 30s"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Stop mockly (post)
+      if: ${{ always() && inputs.start == 'true' }}
+      shell: bash
+      run: |
+        if [ -f "$RUNNER_TEMP/mockly.pid" ]; then
+          kill "$(cat "$RUNNER_TEMP/mockly.pid")" 2>/dev/null || true
+        fi

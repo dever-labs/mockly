@@ -1,0 +1,85 @@
+# Mockly GitLab CI templates
+#
+# Include in your .gitlab-ci.yml:
+#
+#   include:
+#     - remote: 'https://raw.githubusercontent.com/dever-labs/mockly/main/.gitlab/mockly.yml'
+#
+# Then extend one of the hidden jobs below.
+#
+# Variables you can set per-job:
+#   MOCKLY_VERSION   - release tag to install (default: latest)
+#   MOCKLY_CONFIG    - path to config file     (default: mockly.yaml)
+#   MOCKLY_API_PORT  - management API port     (default: 9090)
+
+# ── Install only ─────────────────────────────────────────────────────────────
+# Use when you want to manage start/stop yourself.
+#
+# Example:
+#   my-job:
+#     extends: .mockly-install
+#     script:
+#       - mockly start -c mockly.yaml &
+#       - sleep 2
+#       - ./run-tests.sh
+.mockly-install:
+  variables:
+    MOCKLY_VERSION: "latest"
+  before_script:
+    - |
+      OS="linux"
+      ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+
+      if [ "$MOCKLY_VERSION" = "latest" ]; then
+        MOCKLY_VERSION=$(curl -sSfL \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/dever-labs/mockly/releases/latest" \
+          | grep '"tag_name"' | sed -E 's/.*"tag_name": "(.*)".*/\1/')
+      fi
+
+      echo "Installing mockly ${MOCKLY_VERSION} (${OS}/${ARCH})..."
+      curl -sSfL \
+        "https://github.com/dever-labs/mockly/releases/download/${MOCKLY_VERSION}/mockly-${OS}-${ARCH}" \
+        -o /usr/local/bin/mockly
+      chmod +x /usr/local/bin/mockly
+      echo "mockly ${MOCKLY_VERSION} installed"
+
+# ── Install + start + wait + stop ─────────────────────────────────────────────
+# Installs mockly, starts it before your script, and stops it after.
+#
+# Example:
+#   integration-tests:
+#     extends: .mockly-start
+#     variables:
+#       MOCKLY_CONFIG: configs/keycloak/mockly.yaml
+#     script:
+#       - ./run-tests.sh
+.mockly-start:
+  variables:
+    MOCKLY_VERSION: "latest"
+    MOCKLY_CONFIG: "mockly.yaml"
+    MOCKLY_API_PORT: "9090"
+  before_script:
+    - !reference [.mockly-install, before_script]
+    - |
+      mockly start -c "$MOCKLY_CONFIG" --api-port "$MOCKLY_API_PORT" &
+      echo $! > /tmp/mockly.pid
+
+      echo "Waiting for mockly to be ready on port ${MOCKLY_API_PORT}..."
+      for i in $(seq 1 30); do
+        if curl -sf "http://localhost:${MOCKLY_API_PORT}/api/protocols" > /dev/null 2>&1; then
+          echo "mockly is ready (${i}s)"
+          break
+        fi
+        if [ "$i" -eq 30 ]; then
+          echo "mockly did not start within 30s" >&2
+          exit 1
+        fi
+        sleep 1
+      done
+  after_script:
+    - |
+      if [ -f /tmp/mockly.pid ]; then
+        kill "$(cat /tmp/mockly.pid)" 2>/dev/null || true
+        echo "mockly stopped"
+      fi

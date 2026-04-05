@@ -58,7 +58,17 @@ protocols:
           status: 201
           headers:
             Content-Type: application/json
-          body: '{"id":3,"name":"Charlie"}'
+          # Template functions: uuid, fake, rand_int, now, seq
+          body: |
+            {
+              "id": "{{uuid}}",
+              "seq_id": {{seq "user-id"}},
+              "name": "{{fake "name"}}",
+              "email": "{{fake "email"}}",
+              "role": "{{pick "user" "moderator" "viewer"}}",
+              "age": {{rand_int 18 65}},
+              "created_at": "{{now}}"
+            }
           delay: 50ms                     # simulate slow endpoint
 
       # JSON body field matching

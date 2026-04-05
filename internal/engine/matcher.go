@@ -241,11 +241,7 @@ func renderTemplate(tmpl string, headers map[string]string, body string) (string
 	if !strings.Contains(tmpl, "{{") {
 		return tmpl, nil
 	}
-	t, err := template.New("response").Funcs(template.FuncMap{
-		"now":   func() string { return time.Now().Format(time.RFC3339) },
-		"upper": strings.ToUpper,
-		"lower": strings.ToLower,
-	}).Parse(tmpl)
+	t, err := template.New("response").Funcs(BuildFuncMap()).Parse(tmpl)
 	if err != nil {
 		return "", fmt.Errorf("parsing template: %w", err)
 	}

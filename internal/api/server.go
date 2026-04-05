@@ -16,6 +16,7 @@ import (
 	"context"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/protocols/mqttserver"
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
@@ -1067,6 +1068,7 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 	s.store.Reset()
 	s.log.Clear()
 	s.scenarios.ClearFault()
+	engine.ResetSequences()
 	for _, id := range s.scenarios.ActiveIDs() {
 		s.scenarios.Deactivate(id)
 	}

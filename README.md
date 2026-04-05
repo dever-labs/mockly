@@ -177,12 +177,60 @@ scenarios:
 
 Response bodies are rendered as Go templates. Built-in functions:
 
-| Function | Description |
-|---|---|
-| `{{now}}` | Current UTC time in RFC3339 |
-| `{{uuid}}` | Random UUID |
-| `{{.body}}` | Incoming request body |
-| `{{state "key"}}` | Value from runtime state store |
+| Function | Example | Description |
+|---|---|---|
+| `{{now}}` | `2024-01-15T10:30:00Z` | Current UTC time (RFC3339) |
+| `{{date "2006-01-02"}}` | `2024-01-15` | Current date in Go format |
+| `{{date_add "2006-01-02" "-7d"}}` | `2024-01-08` | Date with duration offset |
+| `{{uuid}}` | `550e8400-e29b-41d4-a716-446655440000` | Random UUID v4 |
+| `{{rand_int 1 100}}` | `42` | Random integer in [min, max] |
+| `{{rand_float 0.0 1.0 2}}` | `0.73` | Random float with N decimal places |
+| `{{rand_string 8}}` | `aB3xKp7m` | Random alphanumeric string |
+| `{{rand_string 8 "hex"}}` | `3f9a1c2b` | Charset: `alpha`, `lower`, `upper`, `numeric`, `hex`, `alphanumeric`, or custom |
+| `{{rand_bool}}` | `true` | Random boolean |
+| `{{pick "a" "b" "c"}}` | `b` | Randomly pick one of the given values |
+| `{{fake "name"}}` | `Alice Smith` | Fake full name |
+| `{{fake "email"}}` | `alice.smith@example.com` | Fake email |
+| `{{fake "phone"}}` | `+1-555-0142` | Fake phone number |
+| `{{fake "company"}}` | `Apex Labs` | Fake company name |
+| `{{fake "city"}}` | `Berlin` | Fake city |
+| `{{fake "country"}}` | `Germany` | Fake country |
+| `{{fake "street"}}` | `42 Main St` | Fake street address |
+| `{{fake "zip"}}` | `10115` | Fake postal code |
+| `{{fake "ip"}}` | `192.168.1.42` | Fake IPv4 |
+| `{{fake "ipv6"}}` | `2001:db8::1a2b:3c4d` | Fake IPv6 |
+| `{{fake "url"}}` | `https://apex.io/api/lorem` | Fake URL |
+| `{{fake "username"}}` | `alice42` | Fake username |
+| `{{fake "useragent"}}` | `Mozilla/5.0 …` | Random User-Agent string |
+| `{{fake "word"}}` | `lorem` | Single lorem ipsum word |
+| `{{fake "sentence"}}` | `lorem ipsum dolor sit amet` | Short lorem ipsum phrase |
+| `{{seq "counter"}}` | `1`, `2`, `3`, … | Auto-incrementing integer per named counter |
+| `{{lorem 5}}` | `lorem ipsum dolor sit amet` | N lorem ipsum words |
+| `{{upper "hello"}}` | `HELLO` | Uppercase string |
+| `{{lower "WORLD"}}` | `world` | Lowercase string |
+| `{{.body}}` | *(request body)* | Incoming request body |
+| `{{.headers.X-Foo}}` | *(header value)* | Incoming request header |
+| `{{state "key"}}` | *(state value)* | Value from runtime state store |
+
+**Sequence counters** (`{{seq "name"}}`) are reset to zero by `POST /api/reset` or `mockly reset`.
+
+Example — generate a realistic user object on every request:
+
+```yaml
+response:
+  status: 200
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "id": "{{uuid}}",
+      "name": "{{fake "name"}}",
+      "email": "{{fake "email"}}",
+      "role": "{{pick "user" "admin" "viewer"}}",
+      "score": {{rand_float 0 100 1}},
+      "created_at": "{{now}}"
+    }
+```
 
 ---
 

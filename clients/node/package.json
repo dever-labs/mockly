@@ -1,5 +1,5 @@
 {
-  "name": "mockly-driver",
+  "name": "@dever-labs/mockly-driver",
   "version": "0.1.0",
   "description": "Node.js client for Mockly — start/stop servers and manage HTTP mocks in tests",
   "keywords": [
@@ -51,11 +51,11 @@
     "js-yaml": "^4.1.0"
   },
   "optionalDependencies": {
-    "mockly-driver-linux-x64": "0.1.0",
-    "mockly-driver-linux-arm64": "0.1.0",
-    "mockly-driver-darwin-x64": "0.1.0",
-    "mockly-driver-darwin-arm64": "0.1.0",
-    "mockly-driver-win32-x64": "0.1.0"
+    "@dever-labs/mockly-driver-linux-x64": "0.1.0",
+    "@dever-labs/mockly-driver-linux-arm64": "0.1.0",
+    "@dever-labs/mockly-driver-darwin-x64": "0.1.0",
+    "@dever-labs/mockly-driver-darwin-arm64": "0.1.0",
+    "@dever-labs/mockly-driver-win32-x64": "0.1.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

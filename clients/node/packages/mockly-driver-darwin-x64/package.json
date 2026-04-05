@@ -1,5 +1,5 @@
 {
-  "name": "mockly-driver-darwin-x64",
+  "name": "@dever-labs/mockly-driver-darwin-x64",
   "version": "0.1.0",
   "description": "Mockly binary for darwin-x64 (internal platform package for mockly-driver)",
   "license": "MIT",

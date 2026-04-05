@@ -148,11 +148,11 @@ export async function install(opts: InstallOptions = {}): Promise<string> {
 
 /** Maps `${process.platform}-${process.arch}` to the platform sub-package name. */
 const PLATFORM_PACKAGES: Record<string, string> = {
-  'linux-x64':    'mockly-driver-linux-x64',
-  'linux-arm64':  'mockly-driver-linux-arm64',
-  'darwin-x64':   'mockly-driver-darwin-x64',
-  'darwin-arm64': 'mockly-driver-darwin-arm64',
-  'win32-x64':    'mockly-driver-win32-x64',
+  'linux-x64':    '@dever-labs/mockly-driver-linux-x64',
+  'linux-arm64':  '@dever-labs/mockly-driver-linux-arm64',
+  'darwin-x64':   '@dever-labs/mockly-driver-darwin-x64',
+  'darwin-arm64': '@dever-labs/mockly-driver-darwin-arm64',
+  'win32-x64':    '@dever-labs/mockly-driver-win32-x64',
 }
 
 /**

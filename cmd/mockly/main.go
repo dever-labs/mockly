@@ -168,7 +168,7 @@ func runServers(cfg *config.Config) error {
 		fmt.Printf("→ MQTT broker       on :%d\n", cfg.Protocols.MQTT.Port)
 	}
 
-	apiSrv := api.New(&cfg.Mockly, store, sc, log, httpSrv, wsSrv, grpcSrv, graphqlSrv, tcpSrv, redisSrv, smtpSrv, mqttSrv)
+	apiSrv := api.New(cfg, store, sc, log, httpSrv, wsSrv, grpcSrv, graphqlSrv, tcpSrv, redisSrv, smtpSrv, mqttSrv)
 
 	if cfg.Mockly.UI.Enabled {
 		apiSrv.AttachUI(assets.DistFS())

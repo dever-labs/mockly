@@ -100,8 +100,8 @@ func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store) 
 	port := ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
 
-	cfg := &config.MocklyConfig{}
-	cfg.API.Port = port
+	cfg := &config.Config{}
+	cfg.Mockly.API.Port = port
 
 	sc := scenarios.New(nil)
 	store := state.New()

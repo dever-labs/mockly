@@ -89,7 +89,7 @@ type MQTTProtocol interface {
 
 // Server is the management API HTTP server.
 type Server struct {
-	cfg       *config.MocklyConfig
+	cfg       *config.Config
 	store     *state.Store
 	scenarios *scenarios.Store
 	log       *logger.Logger
@@ -107,7 +107,7 @@ type Server struct {
 
 // New creates a management API Server.
 func New(
-	cfg *config.MocklyConfig,
+	cfg *config.Config,
 	store *state.Store,
 	sc *scenarios.Store,
 	log *logger.Logger,
@@ -139,7 +139,7 @@ func New(
 // Start begins listening. Blocks until ctx is cancelled.
 func (s *Server) Start(ctx context.Context) error {
 	r := s.buildRouter()
-	addr := fmt.Sprintf(":%d", s.cfg.API.Port)
+	addr := fmt.Sprintf(":%d", s.cfg.Mockly.API.Port)
 	s.server = &http.Server{Addr: addr, Handler: r}
 
 	ln, err := net.Listen("tcp", addr)
@@ -1062,12 +1062,69 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 	for _, id := range s.scenarios.ActiveIDs() {
 		s.scenarios.Deactivate(id)
 	}
+
+	// Restore each protocol's mocks to the values from the original config.
+	if s.http != nil {
+		var mocks []config.HTTPMock
+		if s.cfg.Protocols.HTTP != nil {
+			mocks = s.cfg.Protocols.HTTP.Mocks
+		}
+		s.http.SetMocks(mocks)
+	}
+	if s.ws != nil {
+		var mocks []config.WebSocketMock
+		if s.cfg.Protocols.WebSocket != nil {
+			mocks = s.cfg.Protocols.WebSocket.Mocks
+		}
+		s.ws.SetMocks(mocks)
+	}
+	if s.grpc != nil {
+		var mocks []config.GRPCMock
+		if s.cfg.Protocols.GRPC != nil {
+			for _, svc := range s.cfg.Protocols.GRPC.Services {
+				mocks = append(mocks, svc.Mocks...)
+			}
+		}
+		s.grpc.SetMocks(mocks)
+	}
+	if s.graphql != nil {
+		var mocks []config.GraphQLMock
+		if s.cfg.Protocols.GraphQL != nil {
+			mocks = s.cfg.Protocols.GraphQL.Mocks
+		}
+		s.graphql.SetMocks(mocks)
+	}
+	if s.tcp != nil {
+		var mocks []config.TCPMock
+		if s.cfg.Protocols.TCP != nil {
+			mocks = s.cfg.Protocols.TCP.Mocks
+		}
+		s.tcp.SetMocks(mocks)
+	}
+	if s.redis != nil {
+		var mocks []config.RedisMock
+		if s.cfg.Protocols.Redis != nil {
+			mocks = s.cfg.Protocols.Redis.Mocks
+		}
+		s.redis.SetMocks(mocks)
+	}
 	if s.smtp != nil {
+		var rules []config.SMTPRule
+		if s.cfg.Protocols.SMTP != nil {
+			rules = s.cfg.Protocols.SMTP.Rules
+		}
+		s.smtp.SetRules(rules)
 		s.smtp.GetInbox().Clear()
 	}
 	if s.mqtt != nil {
+		var mocks []config.MQTTMock
+		if s.cfg.Protocols.MQTT != nil {
+			mocks = s.cfg.Protocols.MQTT.Mocks
+		}
+		s.mqtt.SetMocks(mocks)
 		s.mqtt.GetMessageStore().Clear()
 	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})
 }
 

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -27,31 +28,55 @@ type Server struct {
 	store     *state.Store
 	scenarios *scenarios.Store
 	log       *logger.Logger
-	mocks     []config.HTTPMock
-	server    *http.Server
+
+	mu         sync.RWMutex
+	mocks      []config.HTTPMock
+	callCounts map[string]int64 // mock ID → total call count (for sequences + API)
+
+	server *http.Server
 }
 
 // New creates a Server. The mocks slice is taken from cfg initially but can
 // be replaced at runtime via SetMocks.
 func New(cfg *config.HTTPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
 	s := &Server{
-		cfg:       cfg,
-		store:     store,
-		scenarios: sc,
-		log:       log,
-		mocks:     append([]config.HTTPMock(nil), cfg.Mocks...),
+		cfg:        cfg,
+		store:      store,
+		scenarios:  sc,
+		log:        log,
+		mocks:      append([]config.HTTPMock(nil), cfg.Mocks...),
+		callCounts: make(map[string]int64),
 	}
 	return s
 }
 
-// SetMocks replaces the current mock list (called by the management API).
+// SetMocks replaces the current mock list and resets all call counts.
 func (s *Server) SetMocks(mocks []config.HTTPMock) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.mocks = append([]config.HTTPMock(nil), mocks...)
+	s.callCounts = make(map[string]int64)
 }
 
 // GetMocks returns the current mock list.
 func (s *Server) GetMocks() []config.HTTPMock {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return append([]config.HTTPMock(nil), s.mocks...)
+}
+
+// CallCount returns how many times the mock with the given ID has been called.
+func (s *Server) CallCount(mockID string) int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.callCounts[mockID]
+}
+
+// ResetCallCounts zeroes all call counters.
+func (s *Server) ResetCallCounts() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.callCounts = make(map[string]int64)
 }
 
 // Start begins listening. It blocks until ctx is cancelled.
@@ -92,13 +117,22 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		hdrs[k] = strings.Join(v, ", ")
 	}
 
-	// Global fault: inject latency on every request before processing.
+	query := make(map[string]string, len(r.URL.Query()))
+	for k, v := range r.URL.Query() {
+		query[k] = v[0]
+	}
+
+	// Global fault: inject latency before processing.
 	fault := s.scenarios.GetFault()
 	if fault != nil && fault.Enabled && fault.Delay.Duration > 0 {
 		time.Sleep(fault.Delay.Duration)
 	}
 
-	result, matched := engine.HTTPMatch(s.mocks, r.Method, r.URL.Path, hdrs, string(body), s.store)
+	s.mu.RLock()
+	mocks := s.mocks
+	s.mu.RUnlock()
+
+	result, matched := engine.HTTPMatch(mocks, r.Method, r.URL.Path, query, hdrs, string(body), s.store)
 
 	status := http.StatusNotFound
 	respBody := `{"error":"no mock matched"}`
@@ -112,6 +146,84 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		respHdrs = result.Headers
 		matchedID = result.MockID
 		delay = result.Delay
+
+		// Increment call counter and select sequence response if configured.
+		s.mu.Lock()
+		s.callCounts[matchedID]++
+		callN := s.callCounts[matchedID] // 1-based
+		s.mu.Unlock()
+
+		// Find the matched mock for sequence + per-mock fault.
+		var matchedMock *config.HTTPMock
+		for i := range mocks {
+			if mocks[i].ID == matchedID {
+				matchedMock = &mocks[i]
+				break
+			}
+		}
+
+		if matchedMock != nil && len(matchedMock.Sequence) > 0 {
+			idx := int(callN) - 1 // 0-based
+			seq := matchedMock.Sequence
+			switch {
+			case idx < len(seq):
+				entry := seq[idx]
+				if entry.Status != 0 {
+					status = entry.Status
+				}
+				if entry.Body != "" {
+					rendered, err := func() (string, error) { return entry.Body, nil }()
+					if err == nil {
+						respBody = rendered
+					}
+				}
+				for k, v := range entry.Headers {
+					respHdrs[k] = v
+				}
+				if entry.Delay.Duration > 0 {
+					delay = entry.Delay.Duration
+				}
+			default:
+				exhausted := matchedMock.SequenceExhausted
+				if exhausted == "" {
+					exhausted = "hold_last"
+				}
+				switch exhausted {
+				case "loop":
+					loopIdx := (idx) % len(seq)
+					entry := seq[loopIdx]
+					if entry.Status != 0 {
+						status = entry.Status
+					}
+					if entry.Body != "" {
+						respBody = entry.Body
+					}
+					for k, v := range entry.Headers {
+						respHdrs[k] = v
+					}
+					if entry.Delay.Duration > 0 {
+						delay = entry.Delay.Duration
+					}
+				case "not_found":
+					status = http.StatusNotFound
+					respBody = `{"error":"sequence exhausted"}`
+				default: // hold_last
+					entry := seq[len(seq)-1]
+					if entry.Status != 0 {
+						status = entry.Status
+					}
+					if entry.Body != "" {
+						respBody = entry.Body
+					}
+					for k, v := range entry.Headers {
+						respHdrs[k] = v
+					}
+					if entry.Delay.Duration > 0 {
+						delay = entry.Delay.Duration
+					}
+				}
+			}
+		}
 
 		// Apply the first active scenario patch for this mock (if any).
 		if patch := s.scenarios.PatchFor(matchedID); patch != nil {
@@ -135,10 +247,23 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+
+		// Per-mock fault (applied after scenario patches).
+		if matchedMock != nil && matchedMock.Fault != nil {
+			mf := matchedMock.Fault
+			if mf.Delay.Duration > 0 {
+				delay += mf.Delay.Duration
+			}
+			if mf.StatusOverride != 0 && s.scenarios.RollFault(mf.ErrorRate) {
+				status = mf.StatusOverride
+				if mf.Body != "" {
+					respBody = mf.Body
+				}
+			}
+		}
 	}
 
 	// Global fault: probabilistically override status/body (chaos testing).
-	// This applies even to matched mocks, after scenario patches.
 	if fault != nil && fault.Enabled && fault.StatusOverride != 0 && s.scenarios.RollFault(fault.ErrorRate) {
 		status = fault.StatusOverride
 		if fault.Body != "" {
@@ -170,6 +295,8 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 // StatusInfo returns JSON-serialisable info about this server.
 func (s *Server) StatusInfo() map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return map[string]interface{}{
 		"protocol": "http",
 		"enabled":  s.cfg.Enabled,
@@ -180,5 +307,8 @@ func (s *Server) StatusInfo() map[string]interface{} {
 
 // MarshalMocks returns the mock list as JSON bytes.
 func (s *Server) MarshalMocks() ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return json.Marshal(s.mocks)
 }
+

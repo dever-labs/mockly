@@ -8,6 +8,11 @@ import (
 	"github.com/dever-labs/mockly/internal/state"
 )
 
+// helper to call HTTPMatch with nil query/headers for brevity in existing tests.
+func match(mocks []config.HTTPMock, method, path string, store *state.Store) (engine.MatchResult, bool) {
+	return engine.HTTPMatch(mocks, method, path, nil, nil, "", store)
+}
+
 func TestHTTPMatch_ExactPath(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "m1",
@@ -15,7 +20,7 @@ func TestHTTPMatch_ExactPath(t *testing.T) {
 		Response: config.HTTPResponse{Status: 200, Body: `[]`},
 	}}
 
-	result, ok := engine.HTTPMatch(mocks, "GET", "/api/users", nil, "", nil)
+	result, ok := match(mocks, "GET", "/api/users", nil)
 	if !ok {
 		t.Fatal("expected match")
 	}
@@ -29,11 +34,11 @@ func TestHTTPMatch_ExactPath(t *testing.T) {
 
 func TestHTTPMatch_NoMatch(t *testing.T) {
 	mocks := []config.HTTPMock{{
-		ID:      "m1",
-		Request: config.HTTPRequest{Method: "GET", Path: "/api/users"},
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/api/users"},
 		Response: config.HTTPResponse{Status: 200},
 	}}
-	_, ok := engine.HTTPMatch(mocks, "POST", "/api/users", nil, "", nil)
+	_, ok := match(mocks, "POST", "/api/users", nil)
 	if ok {
 		t.Fatal("expected no match for wrong method")
 	}
@@ -41,11 +46,11 @@ func TestHTTPMatch_NoMatch(t *testing.T) {
 
 func TestHTTPMatch_WildcardPath(t *testing.T) {
 	mocks := []config.HTTPMock{{
-		ID:      "m1",
-		Request: config.HTTPRequest{Method: "GET", Path: "/api/*"},
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/api/*"},
 		Response: config.HTTPResponse{Status: 200},
 	}}
-	_, ok := engine.HTTPMatch(mocks, "GET", "/api/users/123", nil, "", nil)
+	_, ok := match(mocks, "GET", "/api/users/123", nil)
 	if !ok {
 		t.Fatal("expected match for wildcard path")
 	}
@@ -53,15 +58,15 @@ func TestHTTPMatch_WildcardPath(t *testing.T) {
 
 func TestHTTPMatch_RegexPath(t *testing.T) {
 	mocks := []config.HTTPMock{{
-		ID:      "m1",
-		Request: config.HTTPRequest{Method: "GET", Path: `re:^/api/users/\d+$`},
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: `re:^/api/users/\d+$`},
 		Response: config.HTTPResponse{Status: 200},
 	}}
-	_, ok := engine.HTTPMatch(mocks, "GET", "/api/users/42", nil, "", nil)
+	_, ok := match(mocks, "GET", "/api/users/42", nil)
 	if !ok {
 		t.Fatal("expected regex match")
 	}
-	_, no := engine.HTTPMatch(mocks, "GET", "/api/users/abc", nil, "", nil)
+	_, no := match(mocks, "GET", "/api/users/abc", nil)
 	if no {
 		t.Fatal("expected no regex match for non-numeric id")
 	}
@@ -70,22 +75,20 @@ func TestHTTPMatch_RegexPath(t *testing.T) {
 func TestHTTPMatch_StateCondition(t *testing.T) {
 	store := state.New()
 	mocks := []config.HTTPMock{{
-		ID:      "m-auth",
-		Request: config.HTTPRequest{Method: "GET", Path: "/me"},
+		ID:       "m-auth",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/me"},
 		Response: config.HTTPResponse{Status: 200, Body: `{"user":"alice"}`},
-		State:   &config.StateCondition{Key: "authenticated", Value: "true"},
+		State:    &config.StateCondition{Key: "authenticated", Value: "true"},
 	}}
 
-	// Should not match when state not set
-	_, ok := engine.HTTPMatch(mocks, "GET", "/me", nil, "", store)
+	_, ok := match(mocks, "GET", "/me", store)
 	if ok {
 		t.Fatal("expected no match when state condition not met")
 	}
 
 	store.Set("authenticated", "true")
 
-	// Should match now
-	result, ok := engine.HTTPMatch(mocks, "GET", "/me", nil, "", store)
+	result, ok := match(mocks, "GET", "/me", store)
 	if !ok {
 		t.Fatal("expected match after state set")
 	}
@@ -96,16 +99,88 @@ func TestHTTPMatch_StateCondition(t *testing.T) {
 
 func TestHTTPMatch_Template(t *testing.T) {
 	mocks := []config.HTTPMock{{
-		ID:      "m1",
-		Request: config.HTTPRequest{Method: "GET", Path: "/time"},
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/time"},
 		Response: config.HTTPResponse{Status: 200, Body: `{"time":"{{now}}"}`},
 	}}
-	result, ok := engine.HTTPMatch(mocks, "GET", "/time", nil, "", nil)
+	result, ok := match(mocks, "GET", "/time", nil)
 	if !ok {
 		t.Fatal("expected match")
 	}
 	if result.Body == `{"time":"{{now}}"}` {
 		t.Fatal("template was not rendered")
+	}
+}
+
+func TestHTTPMatch_QueryParams(t *testing.T) {
+	mocks := []config.HTTPMock{
+		{
+			ID:       "admin",
+			Request:  config.HTTPRequest{Method: "GET", Path: "/users", Query: map[string]string{"role": "admin"}},
+			Response: config.HTTPResponse{Status: 200, Body: `{"role":"admin"}`},
+		},
+		{
+			ID:       "any",
+			Request:  config.HTTPRequest{Method: "GET", Path: "/users"},
+			Response: config.HTTPResponse{Status: 200, Body: `{"role":"any"}`},
+		},
+	}
+
+	// Should match the admin mock specifically
+	q := map[string]string{"role": "admin"}
+	res, ok := engine.HTTPMatch(mocks, "GET", "/users", q, nil, "", nil)
+	if !ok || res.MockID != "admin" {
+		t.Fatalf("expected admin mock, got %q ok=%v", res.MockID, ok)
+	}
+
+	// No role → falls through to the wildcard mock
+	res2, ok2 := engine.HTTPMatch(mocks, "GET", "/users", nil, nil, "", nil)
+	if !ok2 || res2.MockID != "any" {
+		t.Fatalf("expected any mock, got %q ok=%v", res2.MockID, ok2)
+	}
+
+	// Wildcard value
+	mocks2 := []config.HTTPMock{{
+		ID:       "page",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/items", Query: map[string]string{"page": "*"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	_, ok3 := engine.HTTPMatch(mocks2, "GET", "/items", map[string]string{"page": "3"}, nil, "", nil)
+	if !ok3 {
+		t.Fatal("expected wildcard query match")
+	}
+}
+
+func TestHTTPMatch_BodyJSON(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "pay-gbp",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/pay", BodyJSON: map[string]string{"currency": "GBP", "user.role": "admin"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	// Matching body
+	body := `{"currency":"GBP","user":{"role":"admin"}}`
+	res, ok := engine.HTTPMatch(mocks, "POST", "/pay", nil, nil, body, nil)
+	if !ok || res.MockID != "pay-gbp" {
+		t.Fatalf("expected pay-gbp match, got %q ok=%v", res.MockID, ok)
+	}
+
+	// Wrong currency
+	body2 := `{"currency":"USD","user":{"role":"admin"}}`
+	_, ok2 := engine.HTTPMatch(mocks, "POST", "/pay", nil, nil, body2, nil)
+	if ok2 {
+		t.Fatal("expected no match for wrong currency")
+	}
+
+	// Wildcard JSON value
+	mocks2 := []config.HTTPMock{{
+		ID:       "any-user",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/users", BodyJSON: map[string]string{"id": "*"}},
+		Response: config.HTTPResponse{Status: 201},
+	}}
+	_, ok3 := engine.HTTPMatch(mocks2, "POST", "/users", nil, nil, `{"id":42}`, nil)
+	if !ok3 {
+		t.Fatal("expected wildcard body_json match")
 	}
 }
 
@@ -130,3 +205,4 @@ func TestWSMatch(t *testing.T) {
 		t.Fatal("expected no match")
 	}
 }
+

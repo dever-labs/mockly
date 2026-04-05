@@ -57,6 +57,25 @@ type HTTPMock struct {
 	Request  HTTPRequest     `yaml:"request" json:"request"`
 	Response HTTPResponse    `yaml:"response" json:"response"`
 	State    *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+
+	// Sequence returns a different HTTPResponse on each successive call.
+	// Once exhausted the behaviour is governed by SequenceExhausted:
+	//   "loop"      — restart from the first entry
+	//   "hold_last" — keep returning the last entry (default)
+	//   "not_found" — return 404
+	Sequence          []HTTPResponse `yaml:"sequence,omitempty" json:"sequence,omitempty"`
+	SequenceExhausted string         `yaml:"sequence_exhausted,omitempty" json:"sequence_exhausted,omitempty"`
+
+	// Fault overrides the response for this mock independently of the global fault.
+	Fault *MockFault `yaml:"fault,omitempty" json:"fault,omitempty"`
+}
+
+// MockFault injects latency or error responses for a specific mock.
+type MockFault struct {
+	Delay          Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	StatusOverride int      `yaml:"status_override,omitempty" json:"status_override,omitempty"`
+	Body           string   `yaml:"body,omitempty" json:"body,omitempty"`
+	ErrorRate      float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
 }
 
 type HTTPRequest struct {
@@ -64,6 +83,13 @@ type HTTPRequest struct {
 	Path    string            `yaml:"path" json:"path"`
 	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 	Body    string            `yaml:"body,omitempty" json:"body,omitempty"`
+
+	// Query matches URL query parameters (exact value or "*" wildcard).
+	Query map[string]string `yaml:"query,omitempty" json:"query,omitempty"`
+
+	// BodyJSON matches fields in a JSON request body using dot-notation paths.
+	// Example: {"user.role": "admin"} matches {"user":{"role":"admin"}}.
+	BodyJSON map[string]string `yaml:"body_json,omitempty" json:"body_json,omitempty"`
 }
 
 type HTTPResponse struct {

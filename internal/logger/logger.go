@@ -3,6 +3,7 @@
 package logger
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -85,6 +86,60 @@ func (l *Logger) Clear() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.entries = nil
+}
+
+// ClearByMockID removes all log entries that matched the given mock ID.
+func (l *Logger) ClearByMockID(mockID string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	filtered := l.entries[:0]
+	for _, e := range l.entries {
+		if e.MatchedID != mockID {
+			filtered = append(filtered, e)
+		}
+	}
+	l.entries = filtered
+}
+
+// EntriesByMockID returns all log entries that matched the given mock ID.
+func (l *Logger) EntriesByMockID(mockID string) []Entry {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	var out []Entry
+	for _, e := range l.entries {
+		if e.MatchedID == mockID {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// WaitFor blocks until at least count entries matching mockID exist in the log,
+// or until ctx is done. It returns the matching entries (up to that point) and
+// an error if the context expired before the count was reached.
+func (l *Logger) WaitFor(ctx context.Context, mockID string, count int) ([]Entry, error) {
+	// Fast path — already satisfied.
+	if entries := l.EntriesByMockID(mockID); len(entries) >= count {
+		return entries, nil
+	}
+
+	subID := fmt.Sprintf("wait-%s-%d", mockID, time.Now().UnixNano())
+	ch, cancel := l.Subscribe(subID)
+	defer cancel()
+
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return l.EntriesByMockID(mockID), ctx.Err()
+			}
+			if entries := l.EntriesByMockID(mockID); len(entries) >= count {
+				return entries, nil
+			}
+		case <-ctx.Done():
+			return l.EntriesByMockID(mockID), ctx.Err()
+		}
+	}
 }
 
 // Subscribe returns a channel that receives new log entries and a cancel func.

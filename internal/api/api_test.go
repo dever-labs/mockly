@@ -26,14 +26,22 @@ import (
 // ---------------------------------------------------------------------------
 
 type stubHTTP struct {
-	mocks []config.HTTPMock
+	mocks      []config.HTTPMock
+	callCounts map[string]int64
 }
 
 func (s *stubHTTP) StatusInfo() map[string]interface{} {
 	return map[string]interface{}{"protocol": "http", "enabled": true}
 }
-func (s *stubHTTP) GetMocks() []config.HTTPMock    { return s.mocks }
-func (s *stubHTTP) SetMocks(m []config.HTTPMock)   { s.mocks = m }
+func (s *stubHTTP) GetMocks() []config.HTTPMock  { return s.mocks }
+func (s *stubHTTP) SetMocks(m []config.HTTPMock) { s.mocks = m; s.callCounts = nil }
+func (s *stubHTTP) CallCount(mockID string) int64 {
+	if s.callCounts == nil {
+		return 0
+	}
+	return s.callCounts[mockID]
+}
+func (s *stubHTTP) ResetCallCounts() { s.callCounts = nil }
 
 type stubWS struct{}
 

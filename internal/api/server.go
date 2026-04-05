@@ -34,6 +34,8 @@ type HTTPProtocol interface {
 	ProtocolServer
 	GetMocks() []config.HTTPMock
 	SetMocks([]config.HTTPMock)
+	CallCount(mockID string) int64
+	ResetCallCounts()
 }
 
 // WSProtocol is the subset of wsserver.Server used by the API.
@@ -249,6 +251,12 @@ func (s *Server) buildRouter() http.Handler {
 		r.Get("/api/logs", s.getLogs)
 		r.Delete("/api/logs", s.clearLogs)
 		r.Get("/api/logs/stream", s.streamLogs)
+
+		// Call verification
+		r.Get("/api/calls/http/{mockId}", s.getHTTPCalls)
+		r.Delete("/api/calls/http/{mockId}", s.clearHTTPMockCalls)
+		r.Delete("/api/calls/http", s.clearAllHTTPCalls)
+		r.Post("/api/calls/http/{mockId}/wait", s.waitHTTPCalls)
 
 		r.Post("/api/reset", s.reset)
 	})
@@ -1069,7 +1077,7 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 		if s.cfg.Protocols.HTTP != nil {
 			mocks = s.cfg.Protocols.HTTP.Mocks
 		}
-		s.http.SetMocks(mocks)
+		s.http.SetMocks(mocks) // SetMocks also resets call counts
 	}
 	if s.ws != nil {
 		var mocks []config.WebSocketMock
@@ -1129,7 +1137,94 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Call verification
+// ---------------------------------------------------------------------------
+
+type callSummary struct {
+	MockID string         `json:"mock_id"`
+	Count  int64          `json:"count"`
+	Calls  []logger.Entry `json:"calls"`
+}
+
+func (s *Server) getHTTPCalls(w http.ResponseWriter, r *http.Request) {
+	if s.http == nil {
+		writeError(w, http.StatusServiceUnavailable, "http protocol not enabled")
+		return
+	}
+	mockID := chi.URLParam(r, "mockId")
+	writeJSON(w, http.StatusOK, callSummary{
+		MockID: mockID,
+		Count:  s.http.CallCount(mockID),
+		Calls:  s.log.EntriesByMockID(mockID),
+	})
+}
+
+func (s *Server) clearHTTPMockCalls(w http.ResponseWriter, r *http.Request) {
+	if s.http == nil {
+		writeError(w, http.StatusServiceUnavailable, "http protocol not enabled")
+		return
+	}
+	// Clear log entries for this specific mock by rebuilding without them.
+	mockID := chi.URLParam(r, "mockId")
+	s.log.ClearByMockID(mockID)
+	s.http.ResetCallCounts() // simplest: reset all counts (full reset per mock not tracked separately)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+func (s *Server) clearAllHTTPCalls(w http.ResponseWriter, r *http.Request) {
+	if s.http == nil {
+		writeError(w, http.StatusServiceUnavailable, "http protocol not enabled")
+		return
+	}
+	s.log.Clear()
+	s.http.ResetCallCounts()
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+// waitHTTPCalls blocks until a mock has been called at least N times,
+// or until the timeout expires.
+//
+//	POST /api/calls/http/{mockId}/wait
+//	Body: {"count": 3, "timeout": "5s"}
+func (s *Server) waitHTTPCalls(w http.ResponseWriter, r *http.Request) {
+	if s.http == nil {
+		writeError(w, http.StatusServiceUnavailable, "http protocol not enabled")
+		return
+	}
+	mockID := chi.URLParam(r, "mockId")
+
+	var req struct {
+		Count   int    `json:"count"`
+		Timeout string `json:"timeout"`
+	}
+	req.Count = 1
+	req.Timeout = "10s"
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	timeout, err := time.ParseDuration(req.Timeout)
+	if err != nil || timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	entries, err := s.log.WaitFor(ctx, mockID, req.Count)
+	if err != nil {
+		writeJSON(w, http.StatusRequestTimeout, map[string]interface{}{
+			"error":   "timeout waiting for calls",
+			"mock_id": mockID,
+			"want":    req.Count,
+			"got":     len(entries),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, callSummary{
+		MockID: mockID,
+		Count:  int64(len(entries)),
+		Calls:  entries,
+	})
+}
 // ---------------------------------------------------------------------------
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

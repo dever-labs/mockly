@@ -23,7 +23,7 @@ func sleep(d time.Duration) {
 	time.Sleep(d)
 }
 
-var portConflictRe = regexp.MustCompile(`(?i)address already in use|EADDRINUSE|bind`)
+var portConflictRe = regexp.MustCompile(`(?i)address already in use|EADDRINUSE`)
 
 func isPortConflict(msg string) bool {
 	return portConflictRe.MatchString(msg)

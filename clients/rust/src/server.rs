@@ -266,3 +266,42 @@ fn check_status(
         Err(format!("{} failed: expected HTTP {}, got {}", op, expected, status).into())
     }
 }
+
+/// Test helpers – accessible from integration tests via `mockly_driver::server::test_helpers`.
+#[doc(hidden)]
+pub mod test_helpers {
+    use super::{write_config, yaml_str, MocklyServer};
+    use crate::types::Scenario;
+    use tempfile::NamedTempFile;
+
+    pub fn yaml_str_for_test(s: &str) -> String {
+        yaml_str(s)
+    }
+
+    pub fn write_config_for_test(
+        http_port: u16,
+        api_port: u16,
+        scenarios: &[Scenario],
+    ) -> Result<NamedTempFile, Box<dyn std::error::Error>> {
+        write_config(http_port, api_port, scenarios)
+    }
+
+    /// Construct a `MocklyServer` with a no-op child process for unit testing.
+    /// The `http_port` is unused by API methods; only `api_port` matters.
+    pub fn new_server_for_test(http_port: u16, api_port: u16) -> MocklyServer {
+        use std::process::Command;
+        let proc = if cfg!(windows) {
+            Command::new("cmd").args(["/c", "exit 0"]).spawn().unwrap()
+        } else {
+            Command::new("sh").args(["-c", "exit 0"]).spawn().unwrap()
+        };
+        MocklyServer {
+            http_port,
+            api_port,
+            http_base: format!("http://127.0.0.1:{}", http_port),
+            api_base: format!("http://127.0.0.1:{}", api_port),
+            proc,
+            client: reqwest::blocking::Client::new(),
+        }
+    }
+}

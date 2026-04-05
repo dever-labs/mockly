@@ -1,5 +1,5 @@
 pub mod install;
-mod server;
+pub mod server;
 mod types;
 mod utils;
 

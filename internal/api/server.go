@@ -1256,7 +1256,8 @@ func spaHandler(files http.FileSystem) http.Handler {
 		if err != nil {
 			// Not found → serve index.html so the SPA can handle routing
 			r2 := *r
-			r2.URL = &*r.URL
+			urlCopy := *r.URL
+			r2.URL = &urlCopy
 			r2.URL.Path = "/"
 			fs.ServeHTTP(w, &r2)
 			return

@@ -3,6 +3,30 @@
 **Cross-platform, multi-protocol mock server** — HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, and MQTT in a single binary with a built-in web UI, REST management API, scenario system, and fault injection.
 
 [![CI](https://github.com/dever-labs/mockly/actions/workflows/ci.yml/badge.svg)](https://github.com/dever-labs/mockly/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/dever-labs/mockly)](https://github.com/dever-labs/mockly/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+---
+
+## Table of contents
+
+- [Features](#features)
+- [Quickstart](#quickstart)
+- [Configuration](#configuration)
+- [Protocols](#protocols)
+- [Component Testing](#component-testing)
+- [Scenarios](#scenarios)
+- [Fault Injection](#fault-injection)
+- [PATCH Mocks](#patch-mocks)
+- [Preset Configs](#preset-configs)
+- [CLI Reference](#cli-reference)
+- [Management API Reference](#management-api-reference)
+- [Client Libraries](#client-libraries)
+- [CI Integration](#ci-integration)
+- [Architecture](#architecture)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -974,9 +998,9 @@ steps:
   - uses: actions/checkout@v5
 
   - name: Start Mockly
-    uses: dever-labs/mockly/.github/actions/setup-mockly@v0.2.0
+    uses: dever-labs/mockly/.github/actions/setup-mockly@v0.4.7
     with:
-      version: v0.2.0          # pin to a specific version
+      version: v0.4.7          # pin to a specific version
       config: mockly.yaml      # path to your config
       api-port: 9090           # management API port (default)
 
@@ -1003,7 +1027,7 @@ include:
 integration-tests:
   extends: .mockly-start
   variables:
-    MOCKLY_VERSION: "v0.2.0"
+    MOCKLY_VERSION: "v0.4.7"
     MOCKLY_CONFIG: "mockly.yaml"
   script:
     - ./run-tests.sh
@@ -1072,10 +1096,10 @@ docker compose up
 │  │  CRUD mocks/rules  ·  scenarios  ·  fault  ·  state  ·  logs/SSE  │ │
 │  └─────────────────────────────────────────────────────────────────────┘ │
 │                                                                           │
-│  ┌──────┐ ┌─────────┐ ┌──────┐ ┌─────────┐ ┌─────┐ ┌───────┐ ┌──────┐ ┌──────┐ │
-│  │ HTTP │ │WebSocket│ │ gRPC │ │GraphQL  │ │ TCP │ │ Redis │ │ SMTP │ │ MQTT │ │
-│  │:8080 │ │ :8081   │ │:50051│ │ :8082   │ │:8083│ │ :6379 │ │:2525 │ │:1883 │ │
-│  └──────┘ └─────────┘ └──────┘ └─────────┘ └─────┘ └───────┘ └──────┘ └──────┘ │
+│  ┌──────┐ ┌─────────┐ ┌──────┐ ┌─────────┐ ┌─────┐ ┌───────┐ ┌──────┐ ┌──────┐  │
+│  │ HTTP │ │WebSocket│ │ gRPC │ │GraphQL  │ │ TCP │ │ Redis │ │ SMTP │ │ MQTT │  │
+│  │:8080 │ │ :8081   │ │:50051│ │ :8082   │ │:8083│ │ :6379 │ │:2525 │ │:1883 │  │
+│  └──────┘ └─────────┘ └──────┘ └─────────┘ └─────┘ └───────┘ └──────┘ └──────┘  │
 │                                                                           │
 │  Shared:  State Store  ·  Request Logger  ·  Scenario Store               │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -1093,9 +1117,22 @@ make lint         # run golangci-lint
 make dev          # hot-reload with air
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full setup instructions, commit conventions, and the PR process.
+
+---
+
+## Contributing
+
+Contributions are welcome — bug reports, feature requests, preset configs, and code.
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+By participating you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+For security issues, follow the process in [SECURITY.md](SECURITY.md) — **do not open a public issue**.
+
 ---
 
 ## License
 
-MIT
+Copyright © 2026 dever-labs. Released under the [MIT License](LICENSE).
 

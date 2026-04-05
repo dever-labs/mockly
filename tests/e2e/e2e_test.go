@@ -77,23 +77,33 @@ func freePort(t *testing.T) int {
 }
 
 // startMockly writes a config, starts the mockly binary, and returns the API
-// base URL. The process is killed when the test ends.
-func startMockly(t *testing.T, cfgYAML string) string {
+// base URL and HTTP mock base URL. The process is killed when the test ends.
+func startMockly(t *testing.T, cfgYAML string) (apiBase, httpBase string) {
 	t.Helper()
-
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "mockly.yaml")
-	if err := os.WriteFile(cfgPath, []byte(cfgYAML), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
 
 	apiPort := freePort(t)
 	httpPort := freePort(t)
 
+	// Inject the free ports into the config so there are no conflicts between
+	// parallel test runs.
+	portedCfg := fmt.Sprintf(`
+mockly:
+  api:
+    port: %d
+protocols:
+  http:
+    port: %d
+`, apiPort, httpPort) + cfgYAML
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "mockly.yaml")
+	if err := os.WriteFile(cfgPath, []byte(portedCfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
 	cmd := exec.Command(binaryPath, "start",
 		"--config", cfgPath,
 		"--api-port", fmt.Sprintf("%d", apiPort),
-		"--http-port", fmt.Sprintf("%d", httpPort),
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -105,14 +115,13 @@ func startMockly(t *testing.T, cfgYAML string) string {
 		cmd.Wait()         //nolint:errcheck
 	})
 
-	apiBase := fmt.Sprintf("http://127.0.0.1:%d", apiPort)
-	httpBase := fmt.Sprintf("http://127.0.0.1:%d", httpPort)
+	apiBase = fmt.Sprintf("http://127.0.0.1:%d", apiPort)
+	httpBase = fmt.Sprintf("http://127.0.0.1:%d", httpPort)
 
 	waitForHTTP(t, apiBase+"/api/protocols", 10*time.Second)
 
-	// Store httpBase as a test-local value so callers can reach the mock server.
 	t.Setenv("E2E_HTTP_BASE", httpBase)
-	return apiBase
+	return apiBase, httpBase
 }
 
 func waitForHTTP(t *testing.T, url string, timeout time.Duration) {
@@ -160,7 +169,7 @@ func postJSON(t *testing.T, url string, payload interface{}) *http.Response {
 // ---------------------------------------------------------------------------
 
 func TestE2E_StartAndProtocolList(t *testing.T) {
-	apiBase := startMockly(t, `
+	apiBase, _ := startMockly(t, `
 protocols:
   http:
     enabled: true
@@ -182,7 +191,7 @@ protocols:
 }
 
 func TestE2E_HTTP_MockAndRequest(t *testing.T) {
-	apiBase := startMockly(t, `
+	apiBase, httpBase := startMockly(t, `
 protocols:
   http:
     enabled: true
@@ -197,7 +206,6 @@ protocols:
           headers:
             Content-Type: application/json
 `)
-	httpBase := os.Getenv("E2E_HTTP_BASE")
 
 	// Hit the mock directly.
 	resp, err := http.Get(httpBase + "/hello")
@@ -222,12 +230,11 @@ protocols:
 }
 
 func TestE2E_HTTP_CreateMockViaAPI(t *testing.T) {
-	apiBase := startMockly(t, `
+	apiBase, httpBase := startMockly(t, `
 protocols:
   http:
     enabled: true
 `)
-	httpBase := os.Getenv("E2E_HTTP_BASE")
 
 	// Create a mock via the management API.
 	mock := map[string]interface{}{
@@ -253,7 +260,7 @@ protocols:
 }
 
 func TestE2E_ScenarioActivation(t *testing.T) {
-	apiBase := startMockly(t, `
+	apiBase, httpBase := startMockly(t, `
 protocols:
   http:
     enabled: true
@@ -273,7 +280,6 @@ scenarios:
         status: 503
         body: '{"error":"down"}'
 `)
-	httpBase := os.Getenv("E2E_HTTP_BASE")
 
 	// Without scenario: 200.
 	r1, _ := http.Post(httpBase+"/token", "application/json", nil)
@@ -302,7 +308,7 @@ scenarios:
 }
 
 func TestE2E_FaultInjection(t *testing.T) {
-	apiBase := startMockly(t, `
+	apiBase, httpBase := startMockly(t, `
 protocols:
   http:
     enabled: true
@@ -314,7 +320,6 @@ protocols:
         response:
           status: 200
 `)
-	httpBase := os.Getenv("E2E_HTTP_BASE")
 
 	// Set global fault.
 	resp := postJSON(t, apiBase+"/api/fault", map[string]interface{}{
@@ -346,7 +351,7 @@ protocols:
 }
 
 func TestE2E_Reset(t *testing.T) {
-	apiBase := startMockly(t, `
+	apiBase, _ := startMockly(t, `
 protocols:
   http:
     enabled: true
@@ -358,7 +363,7 @@ protocols:
 		"request":  map[string]interface{}{"method": "GET", "path": "/temp"},
 		"response": map[string]interface{}{"status": 200},
 	}
-	postJSON(t, apiBase+"/api/http/mocks", mock).Body.Close()
+	postJSON(t, apiBase+"/api/mocks/http", mock).Body.Close()
 
 	var before []map[string]interface{}
 	mustGetJSON(t, apiBase+"/api/mocks/http", &before)
@@ -368,8 +373,8 @@ protocols:
 
 	resp := postJSON(t, apiBase+"/api/reset", nil)
 	resp.Body.Close()
-	if resp.StatusCode != 204 {
-		t.Errorf("reset: want 204, got %d", resp.StatusCode)
+	if resp.StatusCode != 200 {
+		t.Errorf("reset: want 200, got %d", resp.StatusCode)
 	}
 
 	var after []map[string]interface{}

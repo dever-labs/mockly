@@ -8,7 +8,150 @@ on:
   release:
     types: [created]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
+  # ─── Unit + Integration tests ───────────────────────────────────────────────
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout@v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: false
+
+      - name: Run tests
+        run: go test ./internal/... -race
+
+  # ─── UI build ───────────────────────────────────────────────────────────────
+  ui:
+    name: UI Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout@v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI deps
+        run: npm ci
+        working-directory: ui
+
+      - name: Build UI
+        run: npm run build
+        working-directory: ui
+
+      - name: Upload UI artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: assets/dist/
+          retention-days: 1
+
+  # ─── E2E tests (requires built binary) ──────────────────────────────────────
+  e2e:
+    name: E2E Tests
+    needs: [test, ui]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout@v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: false
+
+      - name: Download UI artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: assets/dist/
+
+      - name: Run E2E tests
+        run: go test -tags e2e ./tests/e2e/... -v -timeout 120s
+
+  # ─── Cross-platform Go binaries ─────────────────────────────────────────────
+  build:
+    name: Build Binary (${{ matrix.goos }}-${{ matrix.goarch }})
+    needs: [test, ui]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: ""
+          - goos: linux
+            goarch: arm64
+            suffix: ""
+          - goos: darwin
+            goarch: amd64
+            suffix: ""
+          - goos: darwin
+            goarch: arm64
+            suffix: ""
+          - goos: windows
+            goarch: amd64
+            suffix: ".exe"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout@v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: false
+
+      - name: Download UI artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: assets/dist/
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          go build -ldflags="-s -w" \
+            -o dist/mockly-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }} \
+            ./cmd/mockly
+
+      - name: Upload binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        with:
+          name: mockly-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/
+
+  # ─── Release ────────────────────────────────────────────────────────────────
+  release:
+    name: Release
+    needs: [build, e2e]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        with:
+          pattern: mockly-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "${{ github.ref_name }}" dist/* --clobber
+
   # ─── Unit + Integration tests ───────────────────────────────────────────────
   test:
     name: Unit & Integration Tests

@@ -234,6 +234,11 @@ function downloadDirect(url: string, dest: string): Promise<void> {
           return
         }
         const ws = createWriteStream(dest)
+        res.on('error', (err) => {
+          // Ensure the write stream is cleaned up if the response stream errors.
+          ws.destroy()
+          reject(err)
+        })
         res.pipe(ws)
         ws.on('finish', resolve)
         ws.on('error', reject)
@@ -257,7 +262,7 @@ function downloadViaProxy(targetUrl: string, dest: string, proxyUrl: string): Pr
 
     const connectOpts: http.RequestOptions = {
       host: proxy.hostname,
-      port: parseInt(proxy.port) || 3128,
+      port: parseInt(proxy.port, 10) || 3128,
       method: 'CONNECT',
       path: `${target.hostname}:443`,
       headers: {},
@@ -295,19 +300,31 @@ function downloadViaProxy(targetUrl: string, dest: string, proxyUrl: string): Pr
             return
           }
           if (res.statusCode !== 200) {
+            tlsSocket.destroy()
             reject(new Error(`HTTP ${res.statusCode} from ${targetUrl} (via proxy ${proxyUrl})`))
             return
           }
           const ws = createWriteStream(dest)
           res.pipe(ws)
-          ws.on('finish', resolve)
+          res.on('error', (err) => {
+            tlsSocket.destroy()
+            ws.destroy()
+            reject(err)
+          })
+          ws.on('finish', () => {
+            tlsSocket.destroy()
+            resolve()
+          })
           ws.on('error', (err) => {
             tlsSocket.destroy()
             reject(err)
           })
         }
       )
-      req.on('error', reject)
+      req.on('error', (err) => {
+        tlsSocket.destroy()
+        reject(err)
+      })
       req.end()
     })
 

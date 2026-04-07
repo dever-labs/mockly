@@ -75,13 +75,9 @@ pub fn install(opts: InstallOptions) -> Result<PathBuf, Box<dyn std::error::Erro
     // 4. Download
     let version = opts
         .version
-        .as_deref()
-        .or_else(|| {
-            std::env::var("MOCKLY_VERSION")
-                .ok()
-                .map(|v| Box::leak(v.into_boxed_str()) as &str)
-        })
-        .unwrap_or(DEFAULT_VERSION);
+        .clone()
+        .or_else(|| std::env::var("MOCKLY_VERSION").ok())
+        .unwrap_or_else(|| DEFAULT_VERSION.to_owned());
 
     let base = opts
         .base_url
@@ -97,7 +93,10 @@ pub fn install(opts: InstallOptions) -> Result<PathBuf, Box<dyn std::error::Erro
         std::fs::create_dir_all(parent)?;
     }
 
-    let response = reqwest::blocking::get(&url)?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()?;
+    let response = client.get(&url).send()?;
     if !response.status().is_success() {
         return Err(format!(
             "Failed to download Mockly binary from {}: HTTP {}",
@@ -132,7 +131,7 @@ pub(crate) fn binary_name() -> String {
 fn get_asset_name() -> Result<String, Box<dyn std::error::Error>> {
     let os = match std::env::consts::OS {
         "linux" => "linux",
-        "macos" => "darwin",
+        "macos" => "macos",
         "windows" => "windows",
         other => return Err(format!("Unsupported OS: {}", other).into()),
     };

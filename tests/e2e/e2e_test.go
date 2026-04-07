@@ -72,7 +72,9 @@ func freePort(t *testing.T) int {
 		t.Fatalf("freePort: %v", err)
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
+	if err := ln.Close(); err != nil {
+		t.Fatalf("freePort close: %v", err)
+	}
 	return port
 }
 
@@ -108,8 +110,12 @@ func startMockly(t *testing.T, cfgFmt string) (apiBase, httpBase string) {
 		t.Fatalf("start mockly: %v", err)
 	}
 	t.Cleanup(func() {
-		cmd.Process.Kill() //nolint:errcheck
-		cmd.Wait()         //nolint:errcheck
+		if err := cmd.Process.Kill(); err != nil {
+			t.Logf("cleanup: failed to kill mockly process: %v", err)
+		}
+		if err := cmd.Wait(); err != nil {
+			t.Logf("cleanup: wait on mockly process returned error: %v", err)
+		}
 	})
 
 	apiBase = fmt.Sprintf("http://127.0.0.1:%d", apiPort)
@@ -139,7 +145,7 @@ func mustGetJSON(t *testing.T, url string, out interface{}) {
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("GET %s: status %d — %s", url, resp.StatusCode, body)
@@ -151,7 +157,10 @@ func mustGetJSON(t *testing.T, url string, out interface{}) {
 
 func postJSON(t *testing.T, url string, payload interface{}) *http.Response {
 	t.Helper()
-	b, _ := json.Marshal(payload)
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload for POST %s: %v", url, err)
+	}
 	resp, err := http.Post(url, "application/json", bytes.NewReader(b))
 	if err != nil {
 		t.Fatalf("POST %s: %v", url, err)

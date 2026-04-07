@@ -110,7 +110,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
 	body, _ := io.ReadAll(r.Body)
-	defer r.Body.Close()
+	defer r.Body.Close() //nolint:errcheck
 
 	hdrs := make(map[string]string, len(r.Header))
 	for k, v := range r.Header {
@@ -279,7 +279,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(k, v)
 	}
 	w.WriteHeader(status)
-	fmt.Fprint(w, respBody)
+	_, _ = fmt.Fprint(w, respBody)
 
 	s.log.Log(logger.Entry{
 		Protocol:  "http",

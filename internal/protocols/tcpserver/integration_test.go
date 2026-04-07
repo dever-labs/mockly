@@ -17,7 +17,7 @@ import (
 func newTCPServer(mocks []config.TCPMock) (*Server, int) {
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
+	_ = ln.Close()
 
 	cfg := &config.TCPConfig{Enabled: true, Port: port, Mocks: mocks}
 	return New(cfg, state.New(), logger.New(10)), port
@@ -34,7 +34,7 @@ func startTCP(t *testing.T, srv *Server) func() {
 	for time.Now().Before(deadline) {
 		conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", srv.cfg.Port))
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -48,9 +48,9 @@ func tcpRoundTrip(t *testing.T, port int, msg string) string {
 	if err != nil {
 		t.Fatalf("dial tcp: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	_, err = conn.Write([]byte(msg))
 	if err != nil {
 		t.Fatalf("write: %v", err)
@@ -116,10 +116,10 @@ func TestTCPServer_NoMatch_ConnectionClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
-	conn.Write([]byte("UNMATCHED_MESSAGE"))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_, _ = conn.Write([]byte("UNMATCHED_MESSAGE"))
 
 	buf := make([]byte, 128)
 	n, _ := conn.Read(buf)

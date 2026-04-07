@@ -70,7 +70,7 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 func (s *Server) handleConn(conn net.Conn) {
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	buf := make([]byte, 65536)
 	for {

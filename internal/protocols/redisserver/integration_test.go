@@ -18,7 +18,7 @@ import (
 func newRedisServer(mocks []config.RedisMock) (*Server, int) {
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
+	_ = ln.Close()
 
 	cfg := &config.RedisConfig{Enabled: true, Port: port, Mocks: mocks}
 	return New(cfg, state.New(), logger.New(10)), port
@@ -33,7 +33,7 @@ func startRedis(t *testing.T, srv *Server) func() {
 	for time.Now().Before(deadline) {
 		conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", srv.cfg.Port))
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -58,8 +58,8 @@ func respRoundTrip(t *testing.T, port int, cmd string) string {
 	if err != nil {
 		t.Fatalf("dial redis: %v", err)
 	}
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	defer conn.Close() //nolint:errcheck
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 
 	if _, err := conn.Write([]byte(cmd)); err != nil {
 		t.Fatalf("write: %v", err)

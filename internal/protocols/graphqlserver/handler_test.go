@@ -144,7 +144,7 @@ func TestHandleGraphQL_Mutation(t *testing.T) {
 	}
 	body, _ := io.ReadAll(rr.Body)
 	var resp map[string]interface{}
-	json.Unmarshal(body, &resp)
+	_ = json.Unmarshal(body, &resp)
 	if resp["data"] == nil {
 		t.Error("expected data in mutation response")
 	}
@@ -195,7 +195,7 @@ func TestHandleGraphQL_MockWithErrors(t *testing.T) {
 		t.Errorf("want 200, got %d", rr.Code)
 	}
 	var resp map[string]interface{}
-	json.Unmarshal(rr.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 	if resp["errors"] == nil {
 		t.Error("expected errors field in response")
 	}

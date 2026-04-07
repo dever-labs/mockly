@@ -237,7 +237,7 @@ func listCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			printResponse(resp)
 			return nil
 		},
@@ -309,7 +309,7 @@ func deleteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			fmt.Printf("Deleted mock %s.\n", id)
 			return nil
 		},
@@ -332,7 +332,7 @@ func statusCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			printResponse(resp)
 			return nil
 		},
@@ -356,7 +356,7 @@ func resetCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			fmt.Println("State and logs reset.")
 			return nil
 		},
@@ -414,12 +414,12 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("creating temp file: %w", err)
 			}
-			defer os.Remove(tmpFile.Name())
+			defer os.Remove(tmpFile.Name()) //nolint:errcheck
 
 			if _, err := tmpFile.Write(data); err != nil {
 				return fmt.Errorf("writing temp file: %w", err)
 			}
-			tmpFile.Close() // #nosec G104 -- best-effort close before config.Load reads the file
+			_ = tmpFile.Close() // best-effort close before config.Load reads the file
 
 			cfg, err := config.Load(tmpFile.Name())
 			if err != nil {
@@ -484,7 +484,7 @@ func scenarioListCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			printResponse(resp)
 			return nil
 		},
@@ -501,7 +501,7 @@ func scenarioActiveCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			printResponse(resp)
 			return nil
 		},
@@ -520,7 +520,7 @@ func scenarioActivateCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			if resp.StatusCode == http.StatusNotFound {
 				return fmt.Errorf("scenario %q not found", args[0])
 			}
@@ -543,7 +543,7 @@ func scenarioDeactivateCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			fmt.Printf("Scenario %q deactivated.\n", args[0])
 			return nil
 		},
@@ -625,7 +625,7 @@ func faultClearCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			fmt.Println("Global fault injection cleared.")
 			return nil
 		},
@@ -642,7 +642,7 @@ func faultStatusCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
 			}
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			printResponse(resp)
 			return nil
 		},
@@ -658,7 +658,7 @@ func postJSON(url string, v interface{}) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("API error %d", resp.StatusCode)
 	}

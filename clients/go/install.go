@@ -116,7 +116,7 @@ func Install(opts InstallOptions) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("downloading mockly from %s: %w", downloadURL, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("downloading mockly: server returned HTTP %d for %s", resp.StatusCode, downloadURL)

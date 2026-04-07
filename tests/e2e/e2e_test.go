@@ -139,7 +139,7 @@ func mustGetJSON(t *testing.T, url string, out interface{}) {
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("GET %s: status %d — %s", url, resp.StatusCode, body)
@@ -209,7 +209,7 @@ protocols:
 	if err != nil {
 		t.Fatalf("GET /hello: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
@@ -251,7 +251,7 @@ protocols:
 	if err != nil {
 		t.Fatalf("GET /dynamic: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp2.StatusCode)
 	}
@@ -296,7 +296,7 @@ scenarios:
 
 	// With scenario active: 503.
 	r2, _ := http.Post(httpBase+"/token", "application/json", nil)
-	defer r2.Body.Close()
+	defer r2.Body.Close() //nolint:errcheck
 	if r2.StatusCode != 503 {
 		t.Errorf("after activation: want 503, got %d", r2.StatusCode)
 	}

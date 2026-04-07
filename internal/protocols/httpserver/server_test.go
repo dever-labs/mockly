@@ -28,7 +28,7 @@ func startTestServer(t *testing.T, mocks []config.HTTPMock, sc *scenarios.Store)
 		t.Fatalf("failed to listen: %v", err)
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
+	_ = ln.Close()
 
 	cfg := &config.HTTPConfig{
 		Enabled: true,
@@ -63,7 +63,7 @@ func TestHTTPServer_BasicGET(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp.StatusCode)
@@ -84,7 +84,7 @@ func TestHTTPServer_NoMatchReturns404(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET error: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != 404 {
 		t.Errorf("want 404, got %d", resp.StatusCode)
@@ -101,7 +101,7 @@ func TestHTTPServer_WildcardPath(t *testing.T) {
 
 	for _, path := range []string{"/api/users", "/api/users/123", "/api/orders"} {
 		resp, _ := http.Get(base + path)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != 200 {
 			t.Errorf("path %s: want 200, got %d", path, resp.StatusCode)
 		}
@@ -120,7 +120,7 @@ func TestHTTPServer_POST_WithBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST error: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != 201 {
 		t.Errorf("want 201, got %d", resp.StatusCode)
@@ -146,7 +146,7 @@ func TestHTTPServer_ScenarioPatch_OverridesStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /token: %v", err)
 	}
-	r1.Body.Close()
+	_ = r1.Body.Close()
 	if r1.StatusCode != 200 {
 		t.Errorf("before activation: want 200, got %d", r1.StatusCode)
 	}
@@ -159,7 +159,7 @@ func TestHTTPServer_ScenarioPatch_OverridesStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /token (after activate): %v", err)
 	}
-	defer r2.Body.Close()
+	defer r2.Body.Close() //nolint:errcheck
 	if r2.StatusCode != 503 {
 		t.Errorf("after activation: want 503, got %d", r2.StatusCode)
 	}
@@ -186,7 +186,7 @@ func TestHTTPServer_ScenarioPatch_Disabled(t *testing.T) {
 
 	sc.Activate("hide")
 	resp, _ := http.Get(base + "/resource")
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Errorf("disabled mock should return 404, got %d", resp.StatusCode)
 	}
@@ -204,14 +204,14 @@ func TestHTTPServer_GlobalFault_StatusOverride(t *testing.T) {
 	sc.SetFault(&config.GlobalFault{Enabled: true, StatusOverride: 503, ErrorRate: 0})
 
 	resp, _ := http.Get(base + "/ok")
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 503 {
 		t.Errorf("global fault should override to 503, got %d", resp.StatusCode)
 	}
 
 	sc.ClearFault()
 	resp2, _ := http.Get(base + "/ok")
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		t.Errorf("after clear fault: want 200, got %d", resp2.StatusCode)
 	}
@@ -255,7 +255,7 @@ func TestHTTPServer_TemplateResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /time: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, err := io.ReadAll(resp.Body)
 if err != nil {
 t.Fatalf("reading response body: %v", err)
@@ -283,7 +283,7 @@ func waitForHTTP(t *testing.T, base string, timeout time.Duration) {
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(base + "/")
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -301,7 +301,7 @@ func startTestServerWithServer(t *testing.T, mocks []config.HTTPMock, sc *scenar
 		t.Fatalf("failed to listen: %v", err)
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
+	_ = ln.Close()
 
 	cfg := &config.HTTPConfig{Enabled: true, Port: port, Mocks: mocks}
 	if sc == nil {
@@ -339,7 +339,7 @@ func TestHTTPServer_QueryParams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /users?role=admin: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, err := io.ReadAll(resp.Body)
 if err != nil {
 t.Fatalf("reading response body: %v", err)
@@ -352,7 +352,7 @@ t.Fatalf("reading response body: %v", err)
 	if err != nil {
 		t.Fatalf("GET /users?role=user: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	body2, err := io.ReadAll(resp2.Body)
 if err != nil {
 t.Fatalf("reading response body: %v", err)
@@ -381,7 +381,7 @@ func TestHTTPServer_BodyJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /pay GBP: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("expected 200 for GBP, got %d", resp.StatusCode)
 	}
@@ -390,7 +390,7 @@ func TestHTTPServer_BodyJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /pay USD: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != 422 {
 		t.Errorf("expected 422 for USD, got %d", resp2.StatusCode)
 	}
@@ -413,7 +413,7 @@ func TestHTTPServer_Sequence_HoldLast(t *testing.T) {
 	codes := []int{503, 503, 200, 200, 200}
 	for i, want := range codes {
 		resp, _ := http.Get(base + "/data")
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != want {
 			t.Errorf("call %d: want %d, got %d", i+1, want, resp.StatusCode)
 		}
@@ -440,7 +440,7 @@ func TestHTTPServer_Sequence_Loop(t *testing.T) {
 if err != nil {
 t.Fatalf("reading response body: %v", err)
 }
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if strings.TrimSpace(string(body)) != want {
 			t.Errorf("call %d: want %q, got %q", i+1, want, body)
 		}
@@ -457,7 +457,7 @@ func TestHTTPServer_PerMockFault(t *testing.T) {
 	base := startTestServer(t, mocks, nil)
 
 	resp, _ := http.Get(base + "/fragile")
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 503 {
 		t.Errorf("expected per-mock fault to override to 503, got %d", resp.StatusCode)
 	}
@@ -477,7 +477,7 @@ func TestHTTPServer_CallCount(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		resp, _ := http.Get(base + "/counted")
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	if n := srv.CallCount("counted"); n != 3 {

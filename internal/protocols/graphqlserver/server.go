@@ -105,7 +105,7 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 	if req.OperationName == "IntrospectionQuery" || strings.Contains(req.Query, "__schema") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, minimalIntrospectionResponse)
+		_, _ = fmt.Fprint(w, minimalIntrospectionResponse)
 		return
 	}
 
@@ -121,7 +121,7 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		safeOp, _ := json.Marshal(req.OperationName)
-		fmt.Fprintf(w, `{"errors":[{"message":"no mock matched for operation %s"}]}`, safeOp)
+		_, _ = fmt.Fprintf(w, `{"errors":[{"message":"no mock matched for operation %s"}]}`, safeOp)
 		s.log.Log(logger.Entry{
 			Protocol: "graphql",
 			Method:   opType,
@@ -141,7 +141,7 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		if patch.Disabled {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"errors":[{"message":"mock disabled by active scenario"}]}`)
+			_, _ = fmt.Fprint(w, `{"errors":[{"message":"mock disabled by active scenario"}]}`)
 			return
 		}
 		if patch.Body != "" {
@@ -150,7 +150,7 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(httpStatus)
-			fmt.Fprint(w, patch.Body)
+			_, _ = fmt.Fprint(w, patch.Body)
 			return
 		}
 		if patch.Status != 0 {
@@ -167,7 +167,7 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		if fault.Body != "" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(httpStatus)
-			fmt.Fprint(w, fault.Body)
+			_, _ = fmt.Fprint(w, fault.Body)
 			return
 		}
 	}
@@ -190,7 +190,7 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
-	fmt.Fprint(w, string(respBytes))
+	_, _ = fmt.Fprint(w, string(respBytes))
 
 	s.log.Log(logger.Entry{
 		Protocol:  "graphql",

@@ -106,7 +106,7 @@ func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store) 
 		t.Fatalf("listen: %v", err)
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
+	_ = ln.Close()
 
 	cfg := &config.Config{}
 	cfg.Mockly.API.Port = port
@@ -152,7 +152,7 @@ func TestAPI_GetProtocols(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/protocols: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp.StatusCode)
@@ -178,7 +178,7 @@ func TestAPI_HTTP_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/mocks/http: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 201 {
 		t.Errorf("create: want 201, got %d", resp.StatusCode)
 	}
@@ -191,7 +191,7 @@ func TestAPI_HTTP_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/mocks/http: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != 200 {
 		t.Errorf("list: want 200, got %d", resp2.StatusCode)
 	}
@@ -208,7 +208,7 @@ func TestAPI_HTTP_CRUD(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPut, base+"/api/mocks/http/test-mock", bytes.NewReader(putBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp3, _ := http.DefaultClient.Do(req)
-	resp3.Body.Close()
+	_ = resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Errorf("update: want 200, got %d", resp3.StatusCode)
 	}
@@ -216,7 +216,7 @@ func TestAPI_HTTP_CRUD(t *testing.T) {
 	// Delete mock.
 	req4, _ := http.NewRequest(http.MethodDelete, base+"/api/mocks/http/test-mock", nil)
 	resp4, _ := http.DefaultClient.Do(req4)
-	resp4.Body.Close()
+	_ = resp4.Body.Close()
 	if resp4.StatusCode != 200 {
 		t.Errorf("delete: want 200, got %d", resp4.StatusCode)
 	}
@@ -241,14 +241,14 @@ func TestAPI_Scenarios_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/scenarios: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 201 {
 		t.Errorf("create scenario: want 201, got %d", resp.StatusCode)
 	}
 
 	// Activate scenario.
 	resp2, _ := http.Post(base+"/api/scenarios/s1/activate", "application/json", nil)
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		t.Errorf("activate: want 200, got %d", resp2.StatusCode)
 	}
@@ -259,7 +259,7 @@ func TestAPI_Scenarios_CRUD(t *testing.T) {
 	// Deactivate scenario — uses DELETE /api/scenarios/{id}/activate
 	req3, _ := http.NewRequest(http.MethodDelete, base+"/api/scenarios/s1/activate", nil)
 	resp3, _ := http.DefaultClient.Do(req3)
-	resp3.Body.Close()
+	_ = resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Errorf("deactivate: want 200, got %d", resp3.StatusCode)
 	}
@@ -279,7 +279,7 @@ func TestAPI_Fault_SetClear(t *testing.T) {
 	}
 	body, _ := json.Marshal(fault)
 	resp, _ := http.Post(base+"/api/fault", "application/json", bytes.NewReader(body))
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Errorf("set fault: want 200, got %d", resp.StatusCode)
 	}
@@ -290,7 +290,7 @@ func TestAPI_Fault_SetClear(t *testing.T) {
 	// Clear fault.
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/fault", nil)
 	resp2, _ := http.DefaultClient.Do(req)
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		t.Errorf("clear fault: want 200, got %d", resp2.StatusCode)
 	}
@@ -307,7 +307,7 @@ func TestAPI_Reset(t *testing.T) {
 
 	// Reset.
 	resp, _ := http.Post(base+"/api/reset", "application/json", nil)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Errorf("reset: want 200, got %d", resp.StatusCode)
 	}
@@ -322,7 +322,7 @@ func TestAPI_State_SetGet(t *testing.T) {
 	// Set state key.
 	body := `{"my-key":"test-val"}`
 	resp, _ := http.Post(base+"/api/state", "application/json", strings.NewReader(body))
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Errorf("set state: want 200, got %d", resp.StatusCode)
 	}
@@ -332,7 +332,7 @@ func TestAPI_State_SetGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/state: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != 200 {
 		t.Errorf("get state: want 200, got %d", resp2.StatusCode)
 	}
@@ -350,7 +350,7 @@ func TestAPI_Logs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/logs: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("GET /api/logs: want 200, got %d", resp.StatusCode)
 	}
@@ -383,7 +383,7 @@ func waitForHTTP(t *testing.T, url string, timeout time.Duration) {
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(url)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return
 		}
 		time.Sleep(10 * time.Millisecond)

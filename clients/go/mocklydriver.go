@@ -88,7 +88,7 @@ func (s *Server) AddMock(mock Mock) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("AddMock: unexpected status %d: %s", resp.StatusCode, body)
@@ -102,7 +102,7 @@ func (s *Server) DeleteMock(id string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("DeleteMock: unexpected status %d: %s", resp.StatusCode, body)
@@ -116,7 +116,7 @@ func (s *Server) Reset() error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("Reset: unexpected status %d: %s", resp.StatusCode, body)
@@ -130,7 +130,7 @@ func (s *Server) ActivateScenario(id string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("ActivateScenario: unexpected status %d: %s", resp.StatusCode, body)
@@ -144,7 +144,7 @@ func (s *Server) DeactivateScenario(id string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("DeactivateScenario: unexpected status %d: %s", resp.StatusCode, body)
@@ -158,7 +158,7 @@ func (s *Server) SetFault(cfg FaultConfig) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("SetFault: unexpected status %d: %s", resp.StatusCode, body)
@@ -172,7 +172,7 @@ func (s *Server) ClearFault() error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("ClearFault: unexpected status %d: %s", resp.StatusCode, body)

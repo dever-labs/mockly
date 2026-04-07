@@ -19,7 +19,7 @@ func TestAPI_Health(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/health: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
@@ -37,7 +37,7 @@ func TestAPI_Fault_Get(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/fault: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
@@ -48,7 +48,7 @@ func TestAPI_Fault_Get(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/fault after set: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != 200 {
 		t.Errorf("want 200 after fault set, got %d", resp2.StatusCode)
 	}
@@ -64,7 +64,7 @@ func TestAPI_State_DeleteKey(t *testing.T) {
 	// Set a key.
 	body := `{"del-key":"to-be-deleted"}`
 	resp, _ := http.Post(base+"/api/state", "application/json", bytes.NewBufferString(body))
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Delete it.
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/state/del-key", nil)
@@ -72,7 +72,7 @@ func TestAPI_State_DeleteKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DELETE /api/state/del-key: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != 200 {
 		t.Errorf("delete state key: want 200, got %d", resp2.StatusCode)
 	}
@@ -89,7 +89,7 @@ func TestAPI_Scenarios_List(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/scenarios: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
@@ -102,13 +102,13 @@ func TestAPI_Scenarios_GetSingle(t *testing.T) {
 	payload := map[string]interface{}{"id": "sc-get", "name": "GetTest"}
 	body, _ := json.Marshal(payload)
 	resp, _ := http.Post(base+"/api/scenarios", "application/json", bytes.NewReader(body))
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	resp2, err := http.Get(base + "/api/scenarios/sc-get")
 	if err != nil {
 		t.Fatalf("GET /api/scenarios/sc-get: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp2.StatusCode)
 	}
@@ -121,7 +121,7 @@ func TestAPI_Scenarios_GetSingle_NotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/scenarios/does-not-exist: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 404 {
 		t.Errorf("want 404, got %d", resp.StatusCode)
 	}
@@ -134,7 +134,7 @@ func TestAPI_Scenarios_Update(t *testing.T) {
 	payload := map[string]interface{}{"id": "sc-upd", "name": "Before"}
 	body, _ := json.Marshal(payload)
 	resp, _ := http.Post(base+"/api/scenarios", "application/json", bytes.NewReader(body))
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Update.
 	updated := map[string]interface{}{"id": "sc-upd", "name": "After"}
@@ -145,7 +145,7 @@ func TestAPI_Scenarios_Update(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PUT /api/scenarios/sc-upd: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != 200 {
 		t.Errorf("update scenario: want 200, got %d", resp2.StatusCode)
 	}
@@ -158,7 +158,7 @@ func TestAPI_Scenarios_Delete(t *testing.T) {
 	payload := map[string]interface{}{"id": "sc-del", "name": "ToDelete"}
 	body, _ := json.Marshal(payload)
 	resp, _ := http.Post(base+"/api/scenarios", "application/json", bytes.NewReader(body))
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Delete.
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/scenarios/sc-del", nil)
@@ -166,7 +166,7 @@ func TestAPI_Scenarios_Delete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DELETE /api/scenarios/sc-del: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != 200 {
 		t.Errorf("delete scenario: want 200, got %d", resp2.StatusCode)
 	}
@@ -179,7 +179,7 @@ func TestAPI_Scenarios_Active_List(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/scenarios/active: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
@@ -192,9 +192,9 @@ func TestAPI_Scenarios_DeactivateAlias(t *testing.T) {
 	payload := map[string]interface{}{"id": "sc-deact", "name": "DeactivateAlias"}
 	body, _ := json.Marshal(payload)
 	resp, _ := http.Post(base+"/api/scenarios", "application/json", bytes.NewReader(body))
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	resp2, _ := http.Post(base+"/api/scenarios/sc-deact/activate", "application/json", nil)
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 
 	if !isActive(sc, "sc-deact") {
 		t.Fatal("scenario should be active before deactivate test")
@@ -205,7 +205,7 @@ func TestAPI_Scenarios_DeactivateAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /deactivate: %v", err)
 	}
-	defer resp3.Body.Close()
+	defer resp3.Body.Close() //nolint:errcheck
 	if resp3.StatusCode != 200 {
 		t.Errorf("deactivate alias: want 200, got %d", resp3.StatusCode)
 	}
@@ -226,7 +226,7 @@ func TestAPI_Logs_Clear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DELETE /api/logs: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("DELETE /api/logs: want 200, got %d", resp.StatusCode)
 	}
@@ -246,7 +246,7 @@ func TestAPI_Calls_HTTP_Get(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/calls/http/call-mock: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
@@ -261,7 +261,7 @@ func TestAPI_Calls_HTTP_DeleteSingle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DELETE /api/calls/http/call-del: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
@@ -275,7 +275,7 @@ func TestAPI_Calls_HTTP_DeleteAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DELETE /api/calls/http: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
@@ -300,7 +300,7 @@ func TestAPI_GraphQL_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/mocks/graphql: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 201 {
 		t.Errorf("create graphql mock: want 201, got %d", resp.StatusCode)
 	}
@@ -313,7 +313,7 @@ func TestAPI_GraphQL_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/mocks/graphql: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != 200 {
 		t.Errorf("list graphql mocks: want 200, got %d", resp2.StatusCode)
 	}
@@ -328,7 +328,7 @@ func TestAPI_GraphQL_CRUD(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPut, base+"/api/mocks/graphql/gql-mock", bytes.NewReader(body2))
 	req.Header.Set("Content-Type", "application/json")
 	resp3, _ := http.DefaultClient.Do(req)
-	resp3.Body.Close()
+	_ = resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Errorf("update graphql mock: want 200, got %d", resp3.StatusCode)
 	}
@@ -336,7 +336,7 @@ func TestAPI_GraphQL_CRUD(t *testing.T) {
 	// Delete.
 	req4, _ := http.NewRequest(http.MethodDelete, base+"/api/mocks/graphql/gql-mock", nil)
 	resp4, _ := http.DefaultClient.Do(req4)
-	resp4.Body.Close()
+	_ = resp4.Body.Close()
 	if resp4.StatusCode != 200 {
 		t.Errorf("delete graphql mock: want 200, got %d", resp4.StatusCode)
 	}
@@ -362,20 +362,20 @@ func TestAPI_WebSocket_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/mocks/websocket: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 201 {
 		t.Errorf("create ws mock: want 201, got %d", resp.StatusCode)
 	}
 
 	resp2, _ := http.Get(base + "/api/mocks/websocket")
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		t.Errorf("list ws mocks: want 200, got %d", resp2.StatusCode)
 	}
 
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/mocks/websocket/ws-mock", nil)
 	resp3, _ := http.DefaultClient.Do(req)
-	resp3.Body.Close()
+	_ = resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Errorf("delete ws mock: want 200, got %d", resp3.StatusCode)
 	}
@@ -399,20 +399,20 @@ func TestAPI_GRPC_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/mocks/grpc: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 201 {
 		t.Errorf("create grpc mock: want 201, got %d", resp.StatusCode)
 	}
 
 	resp2, _ := http.Get(base + "/api/mocks/grpc")
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		t.Errorf("list grpc mocks: want 200, got %d", resp2.StatusCode)
 	}
 
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/mocks/grpc/grpc-mock", nil)
 	resp3, _ := http.DefaultClient.Do(req)
-	resp3.Body.Close()
+	_ = resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Errorf("delete grpc mock: want 200, got %d", resp3.StatusCode)
 	}
@@ -435,20 +435,20 @@ func TestAPI_TCP_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/mocks/tcp: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 201 {
 		t.Errorf("create tcp mock: want 201, got %d", resp.StatusCode)
 	}
 
 	resp2, _ := http.Get(base + "/api/mocks/tcp")
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		t.Errorf("list tcp mocks: want 200, got %d", resp2.StatusCode)
 	}
 
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/mocks/tcp/tcp-mock", nil)
 	resp3, _ := http.DefaultClient.Do(req)
-	resp3.Body.Close()
+	_ = resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Errorf("delete tcp mock: want 200, got %d", resp3.StatusCode)
 	}
@@ -472,20 +472,20 @@ func TestAPI_Redis_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/mocks/redis: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 201 {
 		t.Errorf("create redis mock: want 201, got %d", resp.StatusCode)
 	}
 
 	resp2, _ := http.Get(base + "/api/mocks/redis")
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		t.Errorf("list redis mocks: want 200, got %d", resp2.StatusCode)
 	}
 
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/mocks/redis/redis-mock", nil)
 	resp3, _ := http.DefaultClient.Do(req)
-	resp3.Body.Close()
+	_ = resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Errorf("delete redis mock: want 200, got %d", resp3.StatusCode)
 	}
@@ -508,20 +508,20 @@ func TestAPI_SMTP_Rules_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/mocks/smtp: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 201 {
 		t.Errorf("create smtp rule: want 201, got %d", resp.StatusCode)
 	}
 
 	resp2, _ := http.Get(base + "/api/mocks/smtp")
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		t.Errorf("list smtp rules: want 200, got %d", resp2.StatusCode)
 	}
 
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/mocks/smtp/smtp-rule", nil)
 	resp3, _ := http.DefaultClient.Do(req)
-	resp3.Body.Close()
+	_ = resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Errorf("delete smtp rule: want 200, got %d", resp3.StatusCode)
 	}
@@ -534,7 +534,7 @@ func TestAPI_Emails_ListAndClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/emails: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("GET /api/emails: want 200, got %d", resp.StatusCode)
 	}
@@ -544,7 +544,7 @@ func TestAPI_Emails_ListAndClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DELETE /api/emails: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != 200 {
 		t.Errorf("DELETE /api/emails: want 200, got %d", resp2.StatusCode)
 	}
@@ -568,20 +568,20 @@ func TestAPI_MQTT_Mocks_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/mocks/mqtt: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 201 {
 		t.Errorf("create mqtt mock: want 201, got %d", resp.StatusCode)
 	}
 
 	resp2, _ := http.Get(base + "/api/mocks/mqtt")
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		t.Errorf("list mqtt mocks: want 200, got %d", resp2.StatusCode)
 	}
 
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/mocks/mqtt/mqtt-mock", nil)
 	resp3, _ := http.DefaultClient.Do(req)
-	resp3.Body.Close()
+	_ = resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Errorf("delete mqtt mock: want 200, got %d", resp3.StatusCode)
 	}
@@ -594,7 +594,7 @@ func TestAPI_MQTT_Messages_ListAndClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/mqtt/messages: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("GET /api/mqtt/messages: want 200, got %d", resp.StatusCode)
 	}
@@ -604,7 +604,7 @@ func TestAPI_MQTT_Messages_ListAndClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DELETE /api/mqtt/messages: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer resp2.Body.Close() //nolint:errcheck
 	if resp2.StatusCode != 200 {
 		t.Errorf("DELETE /api/mqtt/messages: want 200, got %d", resp2.StatusCode)
 	}
@@ -621,7 +621,7 @@ func TestAPI_HTTP_Mock_InvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST invalid JSON: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 400 {
 		t.Errorf("invalid JSON: want 400, got %d", resp.StatusCode)
 	}
@@ -634,7 +634,7 @@ func TestAPI_Scenario_InvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST invalid scenario JSON: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 400 {
 		t.Errorf("invalid JSON: want 400, got %d", resp.StatusCode)
 	}
@@ -647,8 +647,9 @@ func TestAPI_Fault_InvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST invalid fault JSON: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 400 {
 		t.Errorf("invalid JSON fault: want 400, got %d", resp.StatusCode)
 	}
 }
+

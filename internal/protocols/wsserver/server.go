@@ -100,8 +100,7 @@ func (s *Server) handleConn(w http.ResponseWriter, r *http.Request, mock *config
 	if err != nil {
 		return
 	}
-	defer conn.Close()
-
+	defer conn.Close() //nolint:errcheck
 	start := time.Now()
 
 	if mock.OnConnect != nil {

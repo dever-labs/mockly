@@ -369,7 +369,7 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 }
 
 func (d Duration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(d.Duration.String())
+	return json.Marshal(d.String())
 }
 
 func (d *Duration) UnmarshalJSON(data []byte) error {
@@ -385,7 +385,7 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 }
 
 func (d Duration) MarshalYAML() (interface{}, error) {
-	return d.Duration.String(), nil
+	return d.String(), nil
 }
 
 // ---------------------------------------------------------------------------

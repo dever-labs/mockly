@@ -181,7 +181,7 @@ func (l *Logger) ServeSSE(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			data, _ := json.Marshal(entry)
-			fmt.Fprintf(w, "data: %s\n\n", data)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
 		case <-r.Context().Done():
 			return

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getHTTPMocks, createHTTPMock, updateHTTPMock, deleteHTTPMock } from '../api/client'
 import type { HTTPMock } from '../types'
@@ -47,6 +47,7 @@ export function HTTPPage() {
 
       {(adding || editing) && (
         <MockForm
+          key={editing?.id ?? 'new'}
           value={editing ?? draft}
           onCancel={() => { setAdding(false); setEditing(null) }}
           onSave={(m) => {
@@ -63,7 +64,15 @@ export function HTTPPage() {
             <span className={`font-mono text-xs font-bold w-16 ${methodColor(m.request.method)}`}>
               {m.request.method}
             </span>
-            <span className="font-mono text-sm text-zinc-300 flex-1">{m.request.path}</span>
+            <span className="font-mono text-sm text-zinc-300">
+              {m.request.path}
+              {m.request.query && Object.keys(m.request.query).length > 0 && (
+                <span className="ml-1 text-zinc-500">
+                  ?{new URLSearchParams(m.request.query).toString()}
+                </span>
+              )}
+            </span>
+            <span className="flex-1" />
             <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${m.response.status < 400 ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
               {m.response.status}
             </span>
@@ -88,6 +97,86 @@ interface FormProps {
   onChange: (m: Omit<HTTPMock, 'id'>) => void
   onSave: (m: Omit<HTTPMock, 'id'>) => void
   onCancel: () => void
+}
+
+function KVEditor({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  value: Record<string, string>
+  onChange: (v: Record<string, string>) => void
+}) {
+  type Row = { id: number; key: string; val: string }
+  const [rows, setRows] = useState<Row[]>(() =>
+    Object.entries(value).map(([k, v], i) => ({ id: i, key: k, val: v }))
+  )
+  const nextId = useRef(rows.length)
+
+  const emit = (newRows: Row[]) => {
+    onChange(Object.fromEntries(newRows.filter((r) => r.key !== '').map((r) => [r.key, r.val])))
+  }
+
+  const add = () =>
+    setRows((prev) => [...prev, { id: nextId.current++, key: '', val: '' }])
+
+  const remove = (id: number) => {
+    const next = rows.filter((r) => r.id !== id)
+    setRows(next)
+    emit(next)
+  }
+
+  const update = (id: number, key: string, val: string) => {
+    const next = rows.map((r) => (r.id === id ? { ...r, key, val } : r))
+    setRows(next)
+    emit(next)
+  }
+
+  return (
+    <div className="col-span-2 flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-zinc-500">{label}</span>
+        {hint && <span className="text-xs text-zinc-600 italic">{hint}</span>}
+        <button
+          type="button"
+          className="ml-auto text-xs text-violet-400 hover:text-violet-300"
+          onClick={add}
+        >
+          + Add
+        </button>
+      </div>
+      {rows.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {rows.map((r) => (
+            <div key={r.id} className="flex gap-2 items-center">
+              <input
+                className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 font-mono flex-1"
+                placeholder="key"
+                value={r.key}
+                onChange={(e) => update(r.id, e.target.value, r.val)}
+              />
+              <input
+                className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 font-mono flex-1"
+                placeholder="value or * (wildcard)"
+                value={r.val}
+                onChange={(e) => update(r.id, r.key, e.target.value)}
+              />
+              <button
+                type="button"
+                className="text-zinc-600 hover:text-red-400 text-xs px-1"
+                onClick={() => remove(r.id)}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function MockForm({ value, onChange, onSave, onCancel }: FormProps) {
@@ -120,6 +209,14 @@ function MockForm({ value, onChange, onSave, onCancel }: FormProps) {
             onChange={(e) => setReq('path', e.target.value)}
           />
         </label>
+        <KVEditor
+          label="Query Params"
+          hint="use * as wildcard value"
+          value={value.request.query ?? {}}
+          onChange={(q) =>
+            onChange({ ...value, request: { ...value.request, query: Object.keys(q).length ? q : undefined } })
+          }
+        />
         <label className="flex flex-col gap-1">
           <span className="text-xs text-zinc-500">Status Code</span>
           <input

@@ -489,3 +489,115 @@ func TestHTTPServer_CallCount(t *testing.T) {
 		t.Fatalf("expected 0 after reset, got %d", n)
 	}
 }
+
+func TestHTTPServer_QueryParamTemplate_InBody(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "echo-param",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/echo"},
+		Response: config.HTTPResponse{Status: 200, Body: `{"param":"{{.query.foo}}"}`},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/echo?foo=bar")
+	if err != nil {
+		t.Fatalf("GET error: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("ReadAll error: %v", err)
+	}
+	if string(body) != `{"param":"bar"}` {
+		t.Errorf("unexpected body: %q", body)
+	}
+}
+
+func TestHTTPServer_QueryParamTemplate_InHeader(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "oauth-authorize",
+		Request: config.HTTPRequest{Method: "GET", Path: "/oauth2/authorize"},
+		Response: config.HTTPResponse{
+			Status: 302,
+			Headers: map[string]string{
+				"Location": "{{.query.redirect_uri}}?code=abc&state={{.query.state}}",
+			},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	client := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Get(base + "/oauth2/authorize?redirect_uri=http://app.example.com/cb&state=xyzabc")
+	if err != nil {
+		t.Fatalf("GET error: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode != 302 {
+		t.Errorf("want 302, got %d", resp.StatusCode)
+	}
+	want := "http://app.example.com/cb?code=abc&state=xyzabc"
+	if got := resp.Header.Get("Location"); got != want {
+		t.Errorf("want Location %q, got %q", want, got)
+	}
+}
+
+func TestHTTPServer_OAuthAuthorize_QueryParamMatching(t *testing.T) {
+	mocks := []config.HTTPMock{
+		{
+			ID: "oauth-code",
+			Request: config.HTTPRequest{
+				Method: "GET",
+				Path:   "/oauth/authorize",
+				Query: map[string]string{
+					"response_type": "code",
+					"client_id":     "my-client",
+					"redirect_uri":  "*",
+					"state":         "*",
+				},
+			},
+			Response: config.HTTPResponse{
+				Status: 302,
+				Headers: map[string]string{
+					"Location": "{{.query.redirect_uri}}?code=testcode&state={{.query.state}}",
+				},
+			},
+		},
+		{
+			ID:       "oauth-bad-client",
+			Request:  config.HTTPRequest{Method: "GET", Path: "/oauth/authorize"},
+			Response: config.HTTPResponse{Status: 400, Body: `{"error":"unauthorized_client"}`},
+		},
+	}
+	base := startTestServer(t, mocks, nil)
+
+	client := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+
+	// Valid request — should redirect with code and reflected state
+	resp, err := client.Get(base + "/oauth/authorize?response_type=code&client_id=my-client&redirect_uri=https://app.example.com/cb&state=s42")
+	if err != nil {
+		t.Fatalf("GET error: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != 302 {
+		t.Errorf("want 302, got %d", resp.StatusCode)
+	}
+	wantLoc := "https://app.example.com/cb?code=testcode&state=s42"
+	if got := resp.Header.Get("Location"); got != wantLoc {
+		t.Errorf("want Location %q, got %q", wantLoc, got)
+	}
+
+	// Wrong client_id — should fall through to the 400 mock
+	resp2, err := client.Get(base + "/oauth/authorize?response_type=code&client_id=evil&redirect_uri=https://evil.example.com&state=x")
+	if err != nil {
+		t.Fatalf("GET error: %v", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	if resp2.StatusCode != 400 {
+		t.Errorf("want 400 for bad client, got %d", resp2.StatusCode)
+	}
+}

@@ -1,0 +1,37 @@
+{
+  "name": "Mockly",
+  "image": "mcr.microsoft.com/devcontainers/go:1-1.24-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "postCreateCommand": "GOTOOLCHAIN=auto go install github.com/air-verse/air@v1.61.7 && go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 && npm --prefix ui ci",
+  "forwardPorts": [8080, 8081, 9091, 50051],
+  "portsAttributes": {
+    "8080": { "label": "HTTP Mocks" },
+    "8081": { "label": "WebSocket Mocks" },
+    "9091": { "label": "Management API + UI" },
+    "50051": { "label": "gRPC Mocks" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        "ms-vscode.vscode-typescript-next",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "go.toolsManagement.checkForUpdates": "off",
+        "go.useLanguageServer": true,
+        "editor.formatOnSave": true,
+        "[go]": {
+          "editor.defaultFormatter": "golang.go"
+        }
+      }
+    }
+  }
+}

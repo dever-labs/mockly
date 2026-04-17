@@ -393,3 +393,284 @@ protocols:
 		t.Errorf("after reset: want 0 mocks, got %d", len(after))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Query parameter tests
+// ---------------------------------------------------------------------------
+
+// TestE2E_HTTP_QueryParam_ExactMatch verifies that a mock with required query
+// params only fires when those params are present with the right value, and a
+// fallback mock answers all other requests.
+func TestE2E_HTTP_QueryParam_ExactMatch(t *testing.T) {
+	_, httpBase := startMockly(t, `
+protocols:
+  http:
+    enabled: true
+    port: %d
+    mocks:
+      - id: admin-users
+        request:
+          method: GET
+          path: /api/users
+          query:
+            role: admin
+        response:
+          status: 200
+          body: '[{"role":"admin"}]'
+      - id: all-users
+        request:
+          method: GET
+          path: /api/users
+        response:
+          status: 200
+          body: '[{"role":"any"}]'
+`)
+
+	// Exact match → admin mock.
+	r1, err := http.Get(httpBase + "/api/users?role=admin")
+	if err != nil {
+		t.Fatalf("GET ?role=admin: %v", err)
+	}
+	defer r1.Body.Close() //nolint:errcheck
+	if r1.StatusCode != 200 {
+		t.Fatalf("want 200, got %d", r1.StatusCode)
+	}
+	b1, _ := io.ReadAll(r1.Body)
+	if !strings.Contains(string(b1), `"admin"`) {
+		t.Errorf("expected admin body, got: %s", b1)
+	}
+
+	// Different value → fallback mock.
+	r2, err := http.Get(httpBase + "/api/users?role=viewer")
+	if err != nil {
+		t.Fatalf("GET ?role=viewer: %v", err)
+	}
+	defer r2.Body.Close() //nolint:errcheck
+	b2, _ := io.ReadAll(r2.Body)
+	if !strings.Contains(string(b2), `"any"`) {
+		t.Errorf("expected fallback body, got: %s", b2)
+	}
+
+	// No param → fallback mock.
+	r3, err := http.Get(httpBase + "/api/users")
+	if err != nil {
+		t.Fatalf("GET /api/users (no params): %v", err)
+	}
+	defer r3.Body.Close() //nolint:errcheck
+	b3, _ := io.ReadAll(r3.Body)
+	if !strings.Contains(string(b3), `"any"`) {
+		t.Errorf("expected fallback body, got: %s", b3)
+	}
+}
+
+// TestE2E_HTTP_QueryParam_Wildcard verifies that a `*` value matches any
+// value for that param (useful when the value is dynamic but presence is required).
+func TestE2E_HTTP_QueryParam_Wildcard(t *testing.T) {
+	_, httpBase := startMockly(t, `
+protocols:
+  http:
+    enabled: true
+    port: %d
+    mocks:
+      - id: paginated
+        request:
+          method: GET
+          path: /api/items
+          query:
+            page: "*"
+        response:
+          status: 200
+          body: '{"paginated":true}'
+      - id: unpaginated
+        request:
+          method: GET
+          path: /api/items
+        response:
+          status: 200
+          body: '{"paginated":false}'
+`)
+
+	for _, page := range []string{"1", "42", "999"} {
+		r, err := http.Get(httpBase + "/api/items?page=" + page)
+		if err != nil {
+			t.Fatalf("GET ?page=%s: %v", page, err)
+		}
+		b, _ := io.ReadAll(r.Body)
+		r.Body.Close() //nolint:errcheck
+		if !strings.Contains(string(b), `"paginated":true`) {
+			t.Errorf("page=%s: expected wildcard mock, got: %s", page, b)
+		}
+	}
+
+	// No page param → unpaginated mock.
+	r, err := http.Get(httpBase + "/api/items")
+	if err != nil {
+		t.Fatalf("GET /api/items: %v", err)
+	}
+	defer r.Body.Close() //nolint:errcheck
+	b, _ := io.ReadAll(r.Body)
+	if !strings.Contains(string(b), `"paginated":false`) {
+		t.Errorf("no page param: expected unpaginated mock, got: %s", b)
+	}
+}
+
+// TestE2E_HTTP_QueryParam_TemplateInBody verifies that query param values are
+// accessible via {{.query.key}} in response bodies.
+func TestE2E_HTTP_QueryParam_TemplateInBody(t *testing.T) {
+	_, httpBase := startMockly(t, `
+protocols:
+  http:
+    enabled: true
+    port: %d
+    mocks:
+      - id: echo
+        request:
+          method: GET
+          path: /echo
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: '{"name":"{{.query.name}}","page":{{.query.page}}}'
+`)
+
+	r, err := http.Get(httpBase + "/echo?name=alice&page=3")
+	if err != nil {
+		t.Fatalf("GET /echo: %v", err)
+	}
+	defer r.Body.Close() //nolint:errcheck
+	body, _ := io.ReadAll(r.Body)
+	if !strings.Contains(string(body), `"name":"alice"`) {
+		t.Errorf("missing name in body: %s", body)
+	}
+	if !strings.Contains(string(body), `"page":3`) {
+		t.Errorf("missing page in body: %s", body)
+	}
+}
+
+// TestE2E_HTTP_OAuthAuthorize is the primary motivating test: mock an OAuth2
+// authorization endpoint that requires specific query params, reflects
+// redirect_uri and state in the Location header, and falls back to a 400 for
+// unrecognised clients — all without any real auth server.
+func TestE2E_HTTP_OAuthAuthorize(t *testing.T) {
+	_, httpBase := startMockly(t, `
+protocols:
+  http:
+    enabled: true
+    port: %d
+    mocks:
+      - id: oauth-authorize
+        request:
+          method: GET
+          path: /oauth/authorize
+          query:
+            response_type: code
+            client_id: my-app
+            redirect_uri: "*"
+            state: "*"
+        response:
+          status: 302
+          headers:
+            Location: "{{.query.redirect_uri}}?code=mock-code&state={{.query.state}}"
+      - id: oauth-bad-client
+        request:
+          method: GET
+          path: /oauth/authorize
+        response:
+          status: 400
+          body: '{"error":"unauthorized_client"}'
+`)
+
+	noRedirect := &http.Client{
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	// Valid authorization request → 302 with correct Location.
+	url := httpBase + "/oauth/authorize?response_type=code&client_id=my-app" +
+		"&redirect_uri=https://app.example.com/callback&state=csrf-token-42"
+	r1, err := noRedirect.Get(url)
+	if err != nil {
+		t.Fatalf("GET authorize: %v", err)
+	}
+	defer r1.Body.Close() //nolint:errcheck
+	if r1.StatusCode != 302 {
+		t.Fatalf("want 302, got %d", r1.StatusCode)
+	}
+	loc := r1.Header.Get("Location")
+	if !strings.HasPrefix(loc, "https://app.example.com/callback") {
+		t.Errorf("Location should redirect to app callback, got: %s", loc)
+	}
+	if !strings.Contains(loc, "code=mock-code") {
+		t.Errorf("Location missing code, got: %s", loc)
+	}
+	if !strings.Contains(loc, "state=csrf-token-42") {
+		t.Errorf("Location missing reflected state, got: %s", loc)
+	}
+
+	// Wrong client_id → 400 error.
+	r2, err := noRedirect.Get(httpBase + "/oauth/authorize?response_type=code&client_id=evil" +
+		"&redirect_uri=https://evil.example.com&state=x")
+	if err != nil {
+		t.Fatalf("GET authorize (bad client): %v", err)
+	}
+	defer r2.Body.Close() //nolint:errcheck
+	if r2.StatusCode != 400 {
+		t.Errorf("bad client: want 400, got %d", r2.StatusCode)
+	}
+	b2, _ := io.ReadAll(r2.Body)
+	if !strings.Contains(string(b2), "unauthorized_client") {
+		t.Errorf("expected unauthorized_client error, got: %s", b2)
+	}
+}
+
+// TestE2E_HTTP_QueryParam_ViaAPI verifies that a mock with query param
+// constraints can be created through the management REST API (not just YAML).
+func TestE2E_HTTP_QueryParam_ViaAPI(t *testing.T) {
+	apiBase, httpBase := startMockly(t, `
+protocols:
+  http:
+    enabled: true
+    port: %d
+`)
+
+	// Register mock with query constraints via the API.
+	mock := map[string]interface{}{
+		"id": "search",
+		"request": map[string]interface{}{
+			"method": "GET",
+			"path":   "/search",
+			"query":  map[string]interface{}{"q": "*", "lang": "en"},
+		},
+		"response": map[string]interface{}{
+			"status": 200,
+			"body":   `{"results":[]}`,
+		},
+	}
+	resp := postJSON(t, apiBase+"/api/mocks/http", mock)
+	resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != 201 {
+		t.Fatalf("create mock: want 201, got %d", resp.StatusCode)
+	}
+
+	// Matching request → 200.
+	r1, err := http.Get(httpBase + "/search?q=golang&lang=en")
+	if err != nil {
+		t.Fatalf("GET /search: %v", err)
+	}
+	defer r1.Body.Close() //nolint:errcheck
+	if r1.StatusCode != 200 {
+		t.Errorf("matching request: want 200, got %d", r1.StatusCode)
+	}
+
+	// Wrong lang → no match → 404.
+	r2, err := http.Get(httpBase + "/search?q=golang&lang=fr")
+	if err != nil {
+		t.Fatalf("GET /search (wrong lang): %v", err)
+	}
+	defer r2.Body.Close() //nolint:errcheck
+	if r2.StatusCode != 404 {
+		t.Errorf("wrong lang: want 404, got %d", r2.StatusCode)
+	}
+}

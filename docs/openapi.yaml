@@ -1,0 +1,1803 @@
+openapi: "3.1.0"
+info:
+  title: Mockly Management API
+  description: |
+    REST API for managing Mockly mock server at runtime.
+    All endpoints are served on the management port (default: **9091**).
+  version: "1.0.0"
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:9091
+    description: Local Mockly instance (default)
+
+tags:
+  - name: System
+    description: Health, protocol status, and global reset
+  - name: HTTP Mocks
+    description: Manage HTTP mock definitions
+  - name: WebSocket Mocks
+    description: Manage WebSocket mock definitions
+  - name: gRPC Mocks
+    description: Manage gRPC mock definitions
+  - name: GraphQL Mocks
+    description: Manage GraphQL mock definitions
+  - name: TCP Mocks
+    description: Manage TCP mock definitions
+  - name: Redis Mocks
+    description: Manage Redis mock definitions
+  - name: SMTP Mocks
+    description: Manage SMTP rules and captured email inbox
+  - name: MQTT Mocks
+    description: Manage MQTT mock definitions and captured messages
+  - name: State
+    description: Shared key-value state used by state-conditional mocks
+  - name: Scenarios
+    description: Named sets of mock patches for deterministic failure/latency testing
+  - name: Fault Injection
+    description: Global fault injection applied across all HTTP mock responses
+  - name: Logs
+    description: Request/response log access and streaming
+  - name: Call Verification
+    description: HTTP mock call counts and wait-for-call helpers
+
+paths:
+  # ---------------------------------------------------------------------------
+  # System
+  # ---------------------------------------------------------------------------
+  /api/health:
+    get:
+      tags: [System]
+      operationId: getHealth
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/protocols:
+    get:
+      tags: [System]
+      operationId: listProtocols
+      summary: List active protocol servers and their status
+      responses:
+        "200":
+          description: Array of protocol status objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+
+  /api/reset:
+    post:
+      tags: [System]
+      operationId: reset
+      summary: Reset all mocks, state, scenarios, and call counts to their startup values
+      responses:
+        "200":
+          description: Reset successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+
+  # ---------------------------------------------------------------------------
+  # HTTP Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/http:
+    get:
+      tags: [HTTP Mocks]
+      operationId: listHTTPMocks
+      summary: List all HTTP mocks
+      responses:
+        "200":
+          description: Array of HTTP mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HTTPMock"
+    post:
+      tags: [HTTP Mocks]
+      operationId: addHTTPMock
+      summary: Create an HTTP mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HTTPMock"
+            examples:
+              simple:
+                summary: Simple GET mock
+                value:
+                  id: get-users
+                  request:
+                    method: GET
+                    path: /users
+                  response:
+                    status: 200
+                    headers:
+                      Content-Type: application/json
+                    body: '[{"id":1,"name":"Alice"}]'
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/http/{id}:
+    put:
+      tags: [HTTP Mocks]
+      operationId: updateHTTPMock
+      summary: Replace an HTTP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HTTPMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [HTTP Mocks]
+      operationId: patchHTTPMock
+      summary: Partially update an HTTP mock response
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HTTPResponsePatch"
+            examples:
+              status:
+                summary: Temporarily change status code
+                value:
+                  status: 503
+      responses:
+        "200":
+          description: Mock patched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [HTTP Mocks]
+      operationId: deleteHTTPMock
+      summary: Delete an HTTP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # WebSocket Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/websocket:
+    get:
+      tags: [WebSocket Mocks]
+      operationId: listWSMocks
+      summary: List all WebSocket mocks
+      responses:
+        "200":
+          description: Array of WebSocket mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebSocketMock"
+    post:
+      tags: [WebSocket Mocks]
+      operationId: addWSMock
+      summary: Create a WebSocket mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebSocketMock"
+            examples:
+              simple:
+                summary: Echo WebSocket mock
+                value:
+                  id: ws-echo
+                  path: /ws/echo
+                  on_connect:
+                    send: '{"status":"connected"}'
+                  on_message:
+                    - match: ping
+                      respond: pong
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebSocketMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/websocket/{id}:
+    put:
+      tags: [WebSocket Mocks]
+      operationId: updateWSMock
+      summary: Replace a WebSocket mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebSocketMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebSocketMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [WebSocket Mocks]
+      operationId: patchWSMock
+      summary: Partially update a WebSocket mock on_connect behaviour
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WSOnConnectPatch"
+      responses:
+        "200":
+          description: Mock patched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebSocketMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [WebSocket Mocks]
+      operationId: deleteWSMock
+      summary: Delete a WebSocket mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # gRPC Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/grpc:
+    get:
+      tags: [gRPC Mocks]
+      operationId: listGRPCMocks
+      summary: List all gRPC mocks
+      responses:
+        "200":
+          description: Array of gRPC mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GRPCMock"
+    post:
+      tags: [gRPC Mocks]
+      operationId: addGRPCMock
+      summary: Create a gRPC mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GRPCMock"
+            examples:
+              simple:
+                summary: SayHello mock
+                value:
+                  id: say-hello
+                  method: SayHello
+                  response:
+                    message: Hello from Mockly
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GRPCMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/grpc/{id}:
+    put:
+      tags: [gRPC Mocks]
+      operationId: updateGRPCMock
+      summary: Replace a gRPC mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GRPCMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GRPCMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [gRPC Mocks]
+      operationId: patchGRPCMock
+      summary: Partially update a gRPC mock response
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GRPCResponsePatch"
+      responses:
+        "200":
+          description: Mock patched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GRPCMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [gRPC Mocks]
+      operationId: deleteGRPCMock
+      summary: Delete a gRPC mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # GraphQL Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/graphql:
+    get:
+      tags: [GraphQL Mocks]
+      operationId: listGraphQLMocks
+      summary: List all GraphQL mocks
+      responses:
+        "200":
+          description: Array of GraphQL mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GraphQLMock"
+    post:
+      tags: [GraphQL Mocks]
+      operationId: addGraphQLMock
+      summary: Create a GraphQL mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GraphQLMock"
+            examples:
+              simple:
+                summary: Query mock
+                value:
+                  id: gql-users
+                  operation_type: query
+                  operation_name: GetUsers
+                  response:
+                    users:
+                      - id: "1"
+                        name: Alice
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphQLMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/graphql/{id}:
+    put:
+      tags: [GraphQL Mocks]
+      operationId: updateGraphQLMock
+      summary: Replace a GraphQL mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GraphQLMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphQLMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [GraphQL Mocks]
+      operationId: deleteGraphQLMock
+      summary: Delete a GraphQL mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # TCP Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/tcp:
+    get:
+      tags: [TCP Mocks]
+      operationId: listTCPMocks
+      summary: List all TCP mocks
+      responses:
+        "200":
+          description: Array of TCP mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TCPMock"
+    post:
+      tags: [TCP Mocks]
+      operationId: addTCPMock
+      summary: Create a TCP mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TCPMock"
+            examples:
+              simple:
+                summary: Respond to PING
+                value:
+                  id: tcp-ping
+                  match: PING
+                  response: PONG
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TCPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/tcp/{id}:
+    put:
+      tags: [TCP Mocks]
+      operationId: updateTCPMock
+      summary: Replace a TCP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TCPMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TCPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [TCP Mocks]
+      operationId: deleteTCPMock
+      summary: Delete a TCP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Redis Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/redis:
+    get:
+      tags: [Redis Mocks]
+      operationId: listRedisMocks
+      summary: List all Redis mocks
+      responses:
+        "200":
+          description: Array of Redis mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RedisMock"
+    post:
+      tags: [Redis Mocks]
+      operationId: addRedisMock
+      summary: Create a Redis mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedisMock"
+            examples:
+              simple:
+                summary: GET key mock
+                value:
+                  id: redis-get-user
+                  command: GET
+                  key: "user:*"
+                  response:
+                    type: bulk
+                    value: '{"id":1,"name":"Alice"}'
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedisMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/redis/{id}:
+    put:
+      tags: [Redis Mocks]
+      operationId: updateRedisMock
+      summary: Replace a Redis mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedisMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedisMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Redis Mocks]
+      operationId: deleteRedisMock
+      summary: Delete a Redis mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # SMTP Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/smtp:
+    get:
+      tags: [SMTP Mocks]
+      operationId: listSMTPRules
+      summary: List all SMTP rules
+      responses:
+        "200":
+          description: Array of SMTP rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SMTPRule"
+    post:
+      tags: [SMTP Mocks]
+      operationId: addSMTPRule
+      summary: Create an SMTP rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SMTPRule"
+            examples:
+              reject:
+                summary: Reject mail from unknown senders
+                value:
+                  id: smtp-reject-spam
+                  from: "re:.*@spam\\.example\\.com"
+                  action: reject
+                  message: "550 Rejected"
+      responses:
+        "201":
+          description: Rule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SMTPRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/smtp/{id}:
+    put:
+      tags: [SMTP Mocks]
+      operationId: updateSMTPRule
+      summary: Replace an SMTP rule
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SMTPRule"
+      responses:
+        "200":
+          description: Rule updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SMTPRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [SMTP Mocks]
+      operationId: deleteSMTPRule
+      summary: Delete an SMTP rule
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/emails:
+    get:
+      tags: [SMTP Mocks]
+      operationId: listEmails
+      summary: List all emails captured in the SMTP inbox
+      responses:
+        "200":
+          description: Array of captured emails
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReceivedEmail"
+    delete:
+      tags: [SMTP Mocks]
+      operationId: clearEmails
+      summary: Clear the SMTP inbox
+      responses:
+        "200":
+          description: Inbox cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+
+  # ---------------------------------------------------------------------------
+  # MQTT Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/mqtt:
+    get:
+      tags: [MQTT Mocks]
+      operationId: listMQTTMocks
+      summary: List all MQTT mocks
+      responses:
+        "200":
+          description: Array of MQTT mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MQTTMock"
+    post:
+      tags: [MQTT Mocks]
+      operationId: addMQTTMock
+      summary: Create an MQTT mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MQTTMock"
+            examples:
+              simple:
+                summary: Respond to sensor topic
+                value:
+                  id: mqtt-sensor
+                  topic: "sensors/+"
+                  response:
+                    topic: "sensors/response"
+                    payload: '{"ack":true}'
+                    qos: 0
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MQTTMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/mqtt/{id}:
+    put:
+      tags: [MQTT Mocks]
+      operationId: updateMQTTMock
+      summary: Replace an MQTT mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MQTTMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MQTTMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [MQTT Mocks]
+      operationId: deleteMQTTMock
+      summary: Delete an MQTT mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/mqtt/messages:
+    get:
+      tags: [MQTT Mocks]
+      operationId: listMQTTMessages
+      summary: List all captured MQTT messages
+      responses:
+        "200":
+          description: Array of captured messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+    delete:
+      tags: [MQTT Mocks]
+      operationId: clearMQTTMessages
+      summary: Clear captured MQTT messages
+      responses:
+        "200":
+          description: Messages cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+
+  # ---------------------------------------------------------------------------
+  # State
+  # ---------------------------------------------------------------------------
+  /api/state:
+    get:
+      tags: [State]
+      operationId: getState
+      summary: Get all state key-value pairs
+      responses:
+        "200":
+          description: Current state map
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+    post:
+      tags: [State]
+      operationId: setState
+      summary: Set one or more state keys
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+            examples:
+              simple:
+                summary: Set checkout state
+                value:
+                  checkout: "paid"
+                  user_role: "admin"
+      responses:
+        "200":
+          description: Updated state
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+
+  /api/state/{key}:
+    delete:
+      tags: [State]
+      operationId: deleteState
+      summary: Delete a state key
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Scenarios
+  # ---------------------------------------------------------------------------
+  /api/scenarios:
+    get:
+      tags: [Scenarios]
+      operationId: listScenarios
+      summary: List all scenarios
+      responses:
+        "200":
+          description: Array of scenarios
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Scenario"
+    post:
+      tags: [Scenarios]
+      operationId: createScenario
+      summary: Create a scenario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Scenario"
+            examples:
+              simple:
+                summary: Payment failure scenario
+                value:
+                  id: payment-failure
+                  name: Payment Service Down
+                  description: Simulates the payment service returning 503
+                  patches:
+                    - mock_id: post-payment
+                      status: 503
+                      body: '{"error":"service unavailable"}'
+      responses:
+        "201":
+          description: Scenario created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scenario"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/scenarios/active:
+    get:
+      tags: [Scenarios]
+      operationId: listActiveScenarios
+      summary: List currently active scenarios
+      responses:
+        "200":
+          description: Active scenario IDs and their full definitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: array
+                    items:
+                      type: string
+                  scenarios:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Scenario"
+
+  /api/scenarios/{id}:
+    get:
+      tags: [Scenarios]
+      operationId: getScenario
+      summary: Get a scenario by ID
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          description: Scenario found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scenario"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Scenarios]
+      operationId: updateScenario
+      summary: Replace a scenario
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Scenario"
+      responses:
+        "200":
+          description: Scenario updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scenario"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Scenarios]
+      operationId: deleteScenario
+      summary: Delete a scenario
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/scenarios/{id}/activate:
+    post:
+      tags: [Scenarios]
+      operationId: activateScenario
+      summary: Activate a scenario
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          description: Scenario activated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  activated:
+                    type: string
+                  active:
+                    type: array
+                    items:
+                      type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Scenarios]
+      operationId: deactivateScenario
+      summary: Deactivate a scenario
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          description: Scenario deactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deactivated:
+                    type: string
+                  active:
+                    type: array
+                    items:
+                      type: string
+
+  /api/scenarios/{id}/deactivate:
+    post:
+      tags: [Scenarios]
+      operationId: deactivateScenarioPost
+      summary: Deactivate a scenario (POST alias)
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          description: Scenario deactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deactivated:
+                    type: string
+                  active:
+                    type: array
+                    items:
+                      type: string
+
+  # ---------------------------------------------------------------------------
+  # Fault Injection
+  # ---------------------------------------------------------------------------
+  /api/fault:
+    get:
+      tags: [Fault Injection]
+      operationId: getFault
+      summary: Get the current global fault configuration
+      responses:
+        "200":
+          description: Current fault config (enabled:false when not set)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalFault"
+    post:
+      tags: [Fault Injection]
+      operationId: setFault
+      summary: Enable global fault injection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GlobalFault"
+            examples:
+              latency:
+                summary: Add 500ms latency to all requests
+                value:
+                  delay: "500ms"
+              error:
+                summary: Return 503 for 50% of requests
+                value:
+                  status_override: 503
+                  error_rate: 0.5
+                  body: '{"error":"injected fault"}'
+      responses:
+        "200":
+          description: Fault enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalFault"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    delete:
+      tags: [Fault Injection]
+      operationId: clearFault
+      summary: Disable global fault injection
+      responses:
+        "200":
+          description: Fault cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+
+  # ---------------------------------------------------------------------------
+  # Logs
+  # ---------------------------------------------------------------------------
+  /api/logs:
+    get:
+      tags: [Logs]
+      operationId: getLogs
+      summary: Get captured request/response logs
+      responses:
+        "200":
+          description: Array of log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+    delete:
+      tags: [Logs]
+      operationId: clearLogs
+      summary: Clear all captured logs
+      responses:
+        "200":
+          description: Logs cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+
+  /api/logs/stream:
+    get:
+      tags: [Logs]
+      operationId: streamLogs
+      summary: Stream logs as Server-Sent Events
+      responses:
+        "200":
+          description: SSE stream of log entries
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  # ---------------------------------------------------------------------------
+  # Call Verification
+  # ---------------------------------------------------------------------------
+  /api/calls/http/{mockId}:
+    get:
+      tags: [Call Verification]
+      operationId: getHTTPCalls
+      summary: Get call count and details for an HTTP mock
+      parameters:
+        - name: mockId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Call count information
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    delete:
+      tags: [Call Verification]
+      operationId: clearHTTPMockCalls
+      summary: Reset call count for a specific HTTP mock
+      parameters:
+        - name: mockId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+
+  /api/calls/http:
+    delete:
+      tags: [Call Verification]
+      operationId: clearAllHTTPCalls
+      summary: Reset call counts for all HTTP mocks
+      responses:
+        "200":
+          description: All call counts cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+
+  /api/calls/http/{mockId}/wait:
+    post:
+      tags: [Call Verification]
+      operationId: waitHTTPCalls
+      summary: Block until a mock has been called at least N times (or timeout)
+      parameters:
+        - name: mockId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                count:
+                  type: integer
+                  description: Minimum number of calls to wait for
+                  example: 1
+                timeout:
+                  type: string
+                  description: Max wait duration (Go duration string)
+                  example: "5s"
+      responses:
+        "200":
+          description: Call count reached
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "408":
+          description: Timeout waiting for calls
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Mock or resource ID
+
+  responses:
+    BadRequest:
+      description: Invalid request body
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Deleted:
+      description: Resource deleted
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              deleted:
+                type: string
+
+  schemas:
+    # ── Primitives ─────────────────────────────────────────────────────────────
+    Duration:
+      type: string
+      description: Go duration string (e.g. "500ms", "1s", "2m")
+      example: "500ms"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+
+    StatusMessage:
+      type: object
+      properties:
+        status:
+          type: string
+
+    StateCondition:
+      type: object
+      required: [key, value]
+      properties:
+        key:
+          type: string
+          description: State key name
+        value:
+          type: string
+          description: Required state value for this mock to match
+
+    # ── HTTP ──────────────────────────────────────────────────────────────────
+    HTTPRequest:
+      type: object
+      required: [method, path]
+      properties:
+        method:
+          type: string
+          enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+          example: GET
+        path:
+          type: string
+          description: URL path (exact or with wildcards)
+          example: /users/{id}
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Required request headers (exact match)
+        body:
+          type: string
+          description: Required request body (exact or wildcard match)
+        query:
+          type: object
+          additionalProperties:
+            type: string
+          description: Required query params ("*" for wildcard value)
+        body_json:
+          type: object
+          additionalProperties:
+            type: string
+          description: Match JSON body fields using dot-notation paths
+
+    HTTPResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: integer
+          example: 200
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
+          description: Response body (supports Go template variables)
+        delay:
+          $ref: "#/components/schemas/Duration"
+
+    MockFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        status_override:
+          type: integer
+        body:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    HTTPMock:
+      type: object
+      required: [request, response]
+      properties:
+        id:
+          type: string
+          description: Unique ID (auto-generated if omitted)
+        request:
+          $ref: "#/components/schemas/HTTPRequest"
+        response:
+          $ref: "#/components/schemas/HTTPResponse"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+        sequence:
+          type: array
+          items:
+            $ref: "#/components/schemas/HTTPResponse"
+          description: Cycled responses — returned in order on successive calls
+        sequence_exhausted:
+          type: string
+          enum: [loop, hold_last, not_found]
+          description: Behaviour when sequence is exhausted (default: hold_last)
+        fault:
+          $ref: "#/components/schemas/MockFault"
+
+    HTTPResponsePatch:
+      type: object
+      properties:
+        status:
+          type: integer
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
+        delay:
+          $ref: "#/components/schemas/Duration"
+
+    # ── WebSocket ─────────────────────────────────────────────────────────────
+    WebSocketAction:
+      type: object
+      properties:
+        send:
+          type: string
+          description: Message to send
+        delay:
+          $ref: "#/components/schemas/Duration"
+
+    WebSocketRule:
+      type: object
+      required: [match]
+      properties:
+        match:
+          type: string
+          description: Incoming message to match (exact, "re:…" regex, or "*")
+        respond:
+          type: string
+          description: Message to send back
+        close:
+          type: boolean
+          description: Close connection after responding
+        delay:
+          $ref: "#/components/schemas/Duration"
+
+    WebSocketMock:
+      type: object
+      required: [path]
+      properties:
+        id:
+          type: string
+        path:
+          type: string
+          description: WebSocket path to mount (e.g. /ws/chat)
+        on_connect:
+          $ref: "#/components/schemas/WebSocketAction"
+        on_message:
+          type: array
+          items:
+            $ref: "#/components/schemas/WebSocketRule"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    WSOnConnectPatch:
+      type: object
+      properties:
+        send:
+          type: string
+        delay:
+          $ref: "#/components/schemas/Duration"
+
+    # ── gRPC ──────────────────────────────────────────────────────────────────
+    GRPCError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+          description: gRPC status code
+        message:
+          type: string
+
+    GRPCMock:
+      type: object
+      required: [method]
+      properties:
+        id:
+          type: string
+        method:
+          type: string
+          description: Fully-qualified gRPC method name (e.g. SayHello or pkg.Service/Method)
+        response:
+          type: object
+          additionalProperties: true
+          description: Response payload fields
+        error:
+          $ref: "#/components/schemas/GRPCError"
+        delay:
+          $ref: "#/components/schemas/Duration"
+
+    GRPCResponsePatch:
+      type: object
+      properties:
+        response:
+          type: object
+          additionalProperties: true
+        error:
+          $ref: "#/components/schemas/GRPCError"
+        delay:
+          $ref: "#/components/schemas/Duration"
+
+    # ── GraphQL ───────────────────────────────────────────────────────────────
+    GraphQLError:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        path:
+          type: array
+          items:
+            type: string
+        extensions:
+          type: object
+          additionalProperties: true
+
+    GraphQLMock:
+      type: object
+      properties:
+        id:
+          type: string
+        operation_type:
+          type: string
+          enum: [query, mutation, subscription]
+          description: Operation type filter (omit for any)
+        operation_name:
+          type: string
+          description: Operation name filter (exact or wildcard; omit for any)
+        response:
+          type: object
+          additionalProperties: true
+          description: Data fields returned under the "data" key
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphQLError"
+        delay:
+          $ref: "#/components/schemas/Duration"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    # ── TCP ───────────────────────────────────────────────────────────────────
+    TCPMock:
+      type: object
+      required: [match, response]
+      properties:
+        id:
+          type: string
+        match:
+          type: string
+          description: Exact string, "re:…" regex, or "hex:…" hex bytes
+        response:
+          type: string
+          description: Plain string or "hex:…" hex bytes
+        close:
+          type: boolean
+          description: Close connection after responding
+        delay:
+          $ref: "#/components/schemas/Duration"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    # ── Redis ─────────────────────────────────────────────────────────────────
+    RedisResponse:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [string, bulk, integer, array, error, nil]
+        value:
+          description: Response value (type depends on `type` field)
+
+    RedisMock:
+      type: object
+      required: [command, response]
+      properties:
+        id:
+          type: string
+        command:
+          type: string
+          description: Redis command (e.g. GET, SET, HGET)
+          example: GET
+        key:
+          type: string
+          description: Key to match (exact, "re:…" regex, or "*" wildcard)
+        response:
+          $ref: "#/components/schemas/RedisResponse"
+        delay:
+          $ref: "#/components/schemas/Duration"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    # ── SMTP ──────────────────────────────────────────────────────────────────
+    SMTPRule:
+      type: object
+      required: [action]
+      properties:
+        id:
+          type: string
+        from:
+          type: string
+          description: Sender address filter (exact, "re:…", or wildcard)
+        to:
+          type: string
+          description: Recipient filter
+        subject:
+          type: string
+          description: Subject filter
+        action:
+          type: string
+          enum: [accept, reject]
+        message:
+          type: string
+          description: SMTP error message when action is "reject"
+
+    ReceivedEmail:
+      type: object
+      properties:
+        id:
+          type: string
+        from:
+          type: string
+        to:
+          type: array
+          items:
+            type: string
+        subject:
+          type: string
+        body:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+
+    # ── MQTT ──────────────────────────────────────────────────────────────────
+    MQTTResponse:
+      type: object
+      required: [payload]
+      properties:
+        topic:
+          type: string
+          description: Publish topic (empty = <incoming>/response)
+        payload:
+          type: string
+        qos:
+          type: integer
+          minimum: 0
+          maximum: 2
+        retain:
+          type: boolean
+        delay:
+          $ref: "#/components/schemas/Duration"
+
+    MQTTMock:
+      type: object
+      required: [topic]
+      properties:
+        id:
+          type: string
+        topic:
+          type: string
+          description: MQTT topic pattern (supports + and # wildcards)
+        response:
+          $ref: "#/components/schemas/MQTTResponse"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    # ── Scenarios ─────────────────────────────────────────────────────────────
+    MockPatch:
+      type: object
+      required: [mock_id]
+      properties:
+        mock_id:
+          type: string
+        status:
+          type: integer
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
+        delay:
+          $ref: "#/components/schemas/Duration"
+        disabled:
+          type: boolean
+          description: If true, the mock is disabled while this scenario is active
+
+    Scenario:
+      type: object
+      required: [name, patches]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        patches:
+          type: array
+          items:
+            $ref: "#/components/schemas/MockPatch"
+
+    # ── Fault Injection ───────────────────────────────────────────────────────
+    GlobalFault:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        status_override:
+          type: integer
+          description: HTTP status code to return instead of the mock's configured status
+        delay:
+          $ref: "#/components/schemas/Duration"
+        body:
+          type: string
+          description: Response body to return when fault is triggered
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Probability (0.0–1.0) that any given request triggers the fault (0 = always)

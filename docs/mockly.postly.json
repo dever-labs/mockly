@@ -1,0 +1,1059 @@
+{
+  "$schema": "postly/v1",
+  "exportedAt": "2026-04-17T00:00:00.000Z",
+  "collections": [
+    {
+      "name": "Mockly API",
+      "description": "Management API for the Mockly mock server (default port 9091).\n\nSet the 'baseUrl' environment variable to your Mockly instance, e.g. http://localhost:9091",
+      "source": "local",
+      "auth": { "type": "none", "config": {} },
+      "ssl": "inherit",
+      "groups": [
+        {
+          "name": "System",
+          "description": "Health, protocol status, and global reset",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "Health Check",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/health",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns {\"status\":\"ok\"} when Mockly is running.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "List Protocols",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/protocols",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns status info for all active protocol servers (HTTP, WS, gRPC, etc.).",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Reset All",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/reset",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Resets all mocks, state, scenarios, and call counts to their startup values.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "HTTP Mocks",
+          "description": "Create, update, and delete HTTP mock definitions.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List HTTP Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/http",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all currently registered HTTP mocks.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create HTTP Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/http",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"get-users\",\n  \"request\": {\n    \"method\": \"GET\",\n    \"path\": \"/users\"\n  },\n  \"response\": {\n    \"status\": 200,\n    \"headers\": {\n      \"Content-Type\": \"application/json\"\n    },\n    \"body\": \"[{\\\"id\\\":1,\\\"name\\\":\\\"Alice\\\"}]\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Registers a new HTTP mock. If 'id' is omitted it is auto-generated.\n\nThe request.path field supports exact strings and path parameters (e.g. /users/{id}).\nThe response.body field supports Go text/template with .query, .headers, and .body context.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update HTTP Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/http/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"request\": {\n    \"method\": \"GET\",\n    \"path\": \"/users\"\n  },\n  \"response\": {\n    \"status\": 200,\n    \"headers\": {\n      \"Content-Type\": \"application/json\"\n    },\n    \"body\": \"[{\\\"id\\\":1,\\\"name\\\":\\\"Alice\\\"}]\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Fully replaces an HTTP mock. Set mockId in your environment or replace it in the URL.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Patch HTTP Mock",
+              "method": "PATCH",
+              "url": "{{baseUrl}}/api/mocks/http/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"status\": 503,\n  \"body\": \"{\\\"error\\\":\\\"temporarily unavailable\\\"}\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Partially updates the response fields of an HTTP mock (status, headers, body, delay). Useful for temporarily overriding a mock without replacing it.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete HTTP Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/http/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Removes an HTTP mock by ID.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "WebSocket Mocks",
+          "description": "Create, update, and delete WebSocket mock definitions.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List WebSocket Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/websocket",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all registered WebSocket mocks.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create WebSocket Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/websocket",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"ws-echo\",\n  \"path\": \"/ws/echo\",\n  \"on_connect\": {\n    \"send\": \"{\\\"status\\\":\\\"connected\\\"}\"\n  },\n  \"on_message\": [\n    {\n      \"match\": \"ping\",\n      \"respond\": \"pong\"\n    }\n  ]\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Creates a WebSocket mock. on_message.match supports exact strings or \"re:…\" regex patterns.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update WebSocket Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/websocket/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"path\": \"/ws/echo\",\n  \"on_connect\": {\n    \"send\": \"{\\\"status\\\":\\\"connected\\\"}\"\n  },\n  \"on_message\": [\n    {\n      \"match\": \"ping\",\n      \"respond\": \"pong\"\n    }\n  ]\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Fully replaces a WebSocket mock.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Patch WebSocket Mock",
+              "method": "PATCH",
+              "url": "{{baseUrl}}/api/mocks/websocket/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"send\": \"{\\\"status\\\":\\\"reconnecting\\\"}\",\n  \"delay\": \"200ms\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Partially updates the on_connect behaviour of a WebSocket mock.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete WebSocket Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/websocket/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Removes a WebSocket mock by ID.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "gRPC Mocks",
+          "description": "Create, update, and delete gRPC mock definitions.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List gRPC Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/grpc",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all registered gRPC mocks.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create gRPC Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/grpc",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"say-hello\",\n  \"method\": \"SayHello\",\n  \"response\": {\n    \"message\": \"Hello from Mockly\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Creates a gRPC mock. To return an error instead of a response, use the 'error' field with a gRPC status code.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update gRPC Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/grpc/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"method\": \"SayHello\",\n  \"response\": {\n    \"message\": \"Updated response\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Fully replaces a gRPC mock.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Patch gRPC Mock",
+              "method": "PATCH",
+              "url": "{{baseUrl}}/api/mocks/grpc/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"error\": {\n    \"code\": 14,\n    \"message\": \"service unavailable\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Partially updates the response or error of a gRPC mock.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete gRPC Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/grpc/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Removes a gRPC mock by ID.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "GraphQL Mocks",
+          "description": "Create, update, and delete GraphQL mock definitions.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List GraphQL Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/graphql",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all registered GraphQL mocks.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create GraphQL Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/graphql",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"gql-users\",\n  \"operation_type\": \"query\",\n  \"operation_name\": \"GetUsers\",\n  \"response\": {\n    \"users\": [\n      { \"id\": \"1\", \"name\": \"Alice\" }\n    ]\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Creates a GraphQL mock. operation_type and operation_name are optional filters. Omit both to match any operation.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update GraphQL Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/graphql/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"operation_type\": \"query\",\n  \"operation_name\": \"GetUsers\",\n  \"errors\": [\n    { \"message\": \"Not authorized\" }\n  ]\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Fully replaces a GraphQL mock.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete GraphQL Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/graphql/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Removes a GraphQL mock by ID.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "TCP Mocks",
+          "description": "Create, update, and delete TCP mock definitions.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List TCP Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/tcp",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all registered TCP mocks.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create TCP Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/tcp",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"tcp-ping\",\n  \"match\": \"PING\",\n  \"response\": \"PONG\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Creates a TCP mock. match supports exact strings, \"re:…\" regex, or \"hex:…\" hex bytes. response supports plain strings or \"hex:…\" hex bytes.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update TCP Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/tcp/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"match\": \"PING\",\n  \"response\": \"PONG v2\",\n  \"close\": false\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Fully replaces a TCP mock.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete TCP Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/tcp/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Removes a TCP mock by ID.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "Redis Mocks",
+          "description": "Create, update, and delete Redis mock definitions.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List Redis Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/redis",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all registered Redis mocks.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create Redis Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/redis",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"redis-get-user\",\n  \"command\": \"GET\",\n  \"key\": \"user:*\",\n  \"response\": {\n    \"type\": \"bulk\",\n    \"value\": \"{\\\"id\\\":1,\\\"name\\\":\\\"Alice\\\"}\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Creates a Redis mock. key supports exact strings, \"re:…\" regex, or \"*\" wildcard. response.type must be one of: string, bulk, integer, array, error, nil.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update Redis Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/redis/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"command\": \"GET\",\n  \"key\": \"user:*\",\n  \"response\": {\n    \"type\": \"nil\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Fully replaces a Redis mock.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete Redis Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/redis/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Removes a Redis mock by ID.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "SMTP Mocks",
+          "description": "Manage SMTP rules and the captured email inbox.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List SMTP Rules",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/smtp",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all SMTP accept/reject rules.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create SMTP Rule",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/smtp",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"smtp-accept-all\",\n  \"action\": \"accept\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Creates an SMTP rule. from, to, and subject support exact strings, \"re:…\" regex, or wildcards. action must be \"accept\" or \"reject\".",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update SMTP Rule",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/smtp/{{ruleId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"action\": \"reject\",\n  \"message\": \"550 Not accepted\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Fully replaces an SMTP rule.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete SMTP Rule",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/smtp/{{ruleId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Removes an SMTP rule by ID.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "List Captured Emails",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/emails",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all emails captured in the SMTP inbox.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Clear Email Inbox",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/emails",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Clears all captured emails from the inbox.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "MQTT Mocks",
+          "description": "Manage MQTT mock definitions and captured messages.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List MQTT Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/mqtt",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all registered MQTT mocks.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create MQTT Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/mqtt",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"mqtt-sensor\",\n  \"topic\": \"sensors/+\",\n  \"response\": {\n    \"topic\": \"sensors/response\",\n    \"payload\": \"{\\\"ack\\\":true}\",\n    \"qos\": 0\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Creates an MQTT mock. topic supports MQTT wildcards: + (single level) and # (multi-level). If response.topic is empty, Mockly publishes to <incoming-topic>/response.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update MQTT Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/mqtt/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"topic\": \"sensors/+\",\n  \"response\": {\n    \"payload\": \"{\\\"ack\\\":false}\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Fully replaces an MQTT mock.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete MQTT Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/mqtt/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Removes an MQTT mock by ID.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "List Captured MQTT Messages",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mqtt/messages",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all MQTT messages captured by Mockly's broker.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Clear MQTT Messages",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mqtt/messages",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Clears all captured MQTT messages.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "State",
+          "description": "Shared key-value state used by state-conditional mocks.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "Get State",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/state",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all current state key-value pairs.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Set State",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/state",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"checkout\": \"paid\",\n  \"user_role\": \"admin\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Sets one or more state keys. Use this to drive state-conditional mocks (e.g. simulate a paid checkout so the confirmation endpoint returns 200).",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete State Key",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/state/{{stateKey}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Deletes a single state key. Replace {{stateKey}} with the key name.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "Scenarios",
+          "description": "Named sets of mock patches for deterministic failure/latency testing.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List Scenarios",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/scenarios",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all scenarios.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create Scenario",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/scenarios",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"payment-failure\",\n  \"name\": \"Payment Service Down\",\n  \"description\": \"Simulates the payment service returning 503\",\n  \"patches\": [\n    {\n      \"mock_id\": \"post-payment\",\n      \"status\": 503,\n      \"body\": \"{\\\"error\\\":\\\"service unavailable\\\"}\"\n    }\n  ]\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Creates a scenario. Patches override mock responses while the scenario is active.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "List Active Scenarios",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/scenarios/active",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns the IDs and full definitions of all currently active scenarios.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Get Scenario",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/scenarios/{{scenarioId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns a scenario by ID.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update Scenario",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/scenarios/{{scenarioId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"name\": \"Payment Service Down\",\n  \"description\": \"Updated description\",\n  \"patches\": [\n    {\n      \"mock_id\": \"post-payment\",\n      \"status\": 500\n    }\n  ]\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Fully replaces a scenario.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete Scenario",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/scenarios/{{scenarioId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Removes a scenario by ID.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Activate Scenario",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/scenarios/{{scenarioId}}/activate",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Activates a scenario so its patches are applied to matching mock responses.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Deactivate Scenario",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/scenarios/{{scenarioId}}/activate",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Deactivates a scenario, restoring original mock responses.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "Fault Injection",
+          "description": "Inject latency or error responses globally across all HTTP mocks.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "Get Fault",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/fault",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns the current global fault configuration. Returns {\"enabled\":false} when no fault is active.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Set Fault – Latency",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/fault",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"delay\": \"500ms\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Adds 500ms latency to every HTTP mock response.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Set Fault – Error Rate",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/fault",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"status_override\": 503,\n  \"error_rate\": 0.5,\n  \"body\": \"{\\\"error\\\":\\\"injected fault\\\"}\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns 503 for ~50% of requests. Set error_rate to 0 or omit it to affect 100% of requests.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Clear Fault",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/fault",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Disables global fault injection and restores normal mock behaviour.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "Logs",
+          "description": "Access captured request/response logs.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "Get Logs",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/logs",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all captured request/response log entries.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Clear Logs",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/logs",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Clears all captured log entries.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "Call Verification",
+          "description": "Verify HTTP mock call counts — useful in test assertions.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "Get Mock Call Count",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/calls/http/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns the call count and details for a specific HTTP mock.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Wait For Mock Call",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/calls/http/{{mockId}}/wait",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"count\": 1,\n  \"timeout\": \"5s\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Blocks until the mock has been called at least 'count' times, or returns 408 on timeout. Useful for async test assertions.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Clear Mock Call Count",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/calls/http/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Resets the call count for a specific HTTP mock.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Clear All Call Counts",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/calls/http",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Resets call counts for all HTTP mocks.",
+              "protocolConfig": {}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -764,6 +764,13 @@ mockly fault       set [--delay <d>] [--status <n>] [--rate <f>] | clear | show
 
 Base URL: `http://localhost:9091`
 
+> **API documentation files** — two ready-to-use references ship in `docs/`:
+>
+> | File | Format | How to use |
+> |---|---|---|
+> | [`docs/openapi.yaml`](docs/openapi.yaml) | OpenAPI 3.1 | Open in [Swagger UI](https://editor.swagger.io/), Redoc, Stoplight, or any OpenAPI-compatible tool |
+> | [`docs/mockly.postly.json`](docs/mockly.postly.json) | [Postly](https://github.com/dever-labs/postly) collection | Import into Postly and set the `baseUrl` environment variable to your Mockly instance (e.g. `http://localhost:9091`) |
+
 ### Protocols
 
 | Method | Path | Description |

@@ -491,54 +491,57 @@ func TestHTTPServer_CallCount(t *testing.T) {
 }
 
 func TestHTTPServer_QueryParamTemplate_InBody(t *testing.T) {
-mocks := []config.HTTPMock{{
-ID:       "echo-param",
-Request:  config.HTTPRequest{Method: "GET", Path: "/echo"},
-Response: config.HTTPResponse{Status: 200, Body: `{"param":"{{.query.foo}}"}`},
-}}
-base := startTestServer(t, mocks, nil)
+	mocks := []config.HTTPMock{{
+		ID:       "echo-param",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/echo"},
+		Response: config.HTTPResponse{Status: 200, Body: `{"param":"{{.query.foo}}"}`},
+	}}
+	base := startTestServer(t, mocks, nil)
 
-resp, err := http.Get(base + "/echo?foo=bar")
-if err != nil {
-t.Fatalf("GET error: %v", err)
-}
-defer resp.Body.Close() //nolint:errcheck
+	resp, err := http.Get(base + "/echo?foo=bar")
+	if err != nil {
+		t.Fatalf("GET error: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
 
-body, _ := io.ReadAll(resp.Body)
-if string(body) != `{"param":"bar"}` {
-t.Errorf("unexpected body: %q", body)
-}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("ReadAll error: %v", err)
+	}
+	if string(body) != `{"param":"bar"}` {
+		t.Errorf("unexpected body: %q", body)
+	}
 }
 
 func TestHTTPServer_QueryParamTemplate_InHeader(t *testing.T) {
-mocks := []config.HTTPMock{{
-ID:      "oauth-authorize",
-Request: config.HTTPRequest{Method: "GET", Path: "/oauth2/authorize"},
-Response: config.HTTPResponse{
-Status: 302,
-Headers: map[string]string{
-"Location": "{{.query.redirect_uri}}?code=abc&state={{.query.state}}",
-},
-},
-}}
-base := startTestServer(t, mocks, nil)
+	mocks := []config.HTTPMock{{
+		ID:      "oauth-authorize",
+		Request: config.HTTPRequest{Method: "GET", Path: "/oauth2/authorize"},
+		Response: config.HTTPResponse{
+			Status: 302,
+			Headers: map[string]string{
+				"Location": "{{.query.redirect_uri}}?code=abc&state={{.query.state}}",
+			},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
 
-client := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-return http.ErrUseLastResponse
-}}
-resp, err := client.Get(base + "/oauth2/authorize?redirect_uri=http://app.example.com/cb&state=xyzabc")
-if err != nil {
-t.Fatalf("GET error: %v", err)
-}
-defer resp.Body.Close() //nolint:errcheck
+	client := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Get(base + "/oauth2/authorize?redirect_uri=http://app.example.com/cb&state=xyzabc")
+	if err != nil {
+		t.Fatalf("GET error: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
 
-if resp.StatusCode != 302 {
-t.Errorf("want 302, got %d", resp.StatusCode)
-}
-want := "http://app.example.com/cb?code=abc&state=xyzabc"
-if got := resp.Header.Get("Location"); got != want {
-t.Errorf("want Location %q, got %q", want, got)
-}
+	if resp.StatusCode != 302 {
+		t.Errorf("want 302, got %d", resp.StatusCode)
+	}
+	want := "http://app.example.com/cb?code=abc&state=xyzabc"
+	if got := resp.Header.Get("Location"); got != want {
+		t.Errorf("want Location %q, got %q", want, got)
+	}
 }
 
 func TestHTTPServer_OAuthAuthorize_QueryParamMatching(t *testing.T) {

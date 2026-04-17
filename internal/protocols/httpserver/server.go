@@ -234,10 +234,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 					status = patch.Status
 				}
 				if patch.Body != "" {
-					respBody = patch.Body
+					respBody = engine.Render(patch.Body, query, hdrs, string(body))
 				}
 				for k, v := range patch.Headers {
-					respHdrs[k] = v
+					respHdrs[k] = engine.Render(v, query, hdrs, string(body))
 				}
 				if patch.Delay != nil {
 					delay = patch.Delay.Duration

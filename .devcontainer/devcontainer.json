@@ -7,7 +7,7 @@
     },
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-  "postCreateCommand": "GOTOOLCHAIN=auto go install github.com/air-verse/air@latest && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && npm --prefix ui ci && npm install -g @github/copilot",
+  "postCreateCommand": "GOTOOLCHAIN=auto go install github.com/air-verse/air@v1.61.7 && go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 && npm --prefix ui ci",
   "forwardPorts": [8080, 8081, 9091, 50051],
   "portsAttributes": {
     "8080": { "label": "HTTP Mocks" },

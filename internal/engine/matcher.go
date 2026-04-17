@@ -267,8 +267,8 @@ func renderTemplate(tmpl string, query, headers map[string]string, body string) 
 }
 
 // Render is the exported counterpart of renderTemplate for use by protocol
-// servers that perform sequence-based or patch-based response selection
-// outside of HTTPMatch (e.g. server.go sequence entry bodies/headers).
+// servers that need to template-render a string outside of HTTPMatch
+// (e.g. sequence entry bodies/headers and scenario patch bodies/headers).
 // On template error it returns the original string unchanged.
 func Render(tmpl string, query, headers map[string]string, body string) string {
 	out, err := renderTemplate(tmpl, query, headers, body)

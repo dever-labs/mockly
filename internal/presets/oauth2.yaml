@@ -99,6 +99,11 @@ protocols:
         request:
           method: GET
           path: /oauth2/authorize
+          query:
+            response_type: "*"
+            client_id: "*"
+            redirect_uri: "*"
+            state: "*"
         response:
           status: 302
           headers:
@@ -272,6 +277,10 @@ scenarios:
     patches:
       - mock_id: oauth2-authorize
         status: 503
+        headers:
+          Content-Type: application/json
+          Location: ""
+          Set-Cookie: ""
         body: '{"error":"temporarily_unavailable","error_description":"The authorization server is temporarily unavailable."}'
       - mock_id: token-success
         status: 503

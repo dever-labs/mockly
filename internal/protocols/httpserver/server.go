@@ -172,13 +172,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 					status = entry.Status
 				}
 				if entry.Body != "" {
-					rendered, err := func() (string, error) { return entry.Body, nil }()
-					if err == nil {
-						respBody = rendered
-					}
+					respBody = engine.Render(entry.Body, query, hdrs, string(body))
 				}
 				for k, v := range entry.Headers {
-					respHdrs[k] = v
+					respHdrs[k] = engine.Render(v, query, hdrs, string(body))
 				}
 				if entry.Delay.Duration > 0 {
 					delay = entry.Delay.Duration
@@ -196,10 +193,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 						status = entry.Status
 					}
 					if entry.Body != "" {
-						respBody = entry.Body
+						respBody = engine.Render(entry.Body, query, hdrs, string(body))
 					}
 					for k, v := range entry.Headers {
-						respHdrs[k] = v
+						respHdrs[k] = engine.Render(v, query, hdrs, string(body))
 					}
 					if entry.Delay.Duration > 0 {
 						delay = entry.Delay.Duration
@@ -213,10 +210,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 						status = entry.Status
 					}
 					if entry.Body != "" {
-						respBody = entry.Body
+						respBody = engine.Render(entry.Body, query, hdrs, string(body))
 					}
 					for k, v := range entry.Headers {
-						respHdrs[k] = v
+						respHdrs[k] = engine.Render(v, query, hdrs, string(body))
 					}
 					if entry.Delay.Duration > 0 {
 						delay = entry.Delay.Duration

@@ -63,7 +63,15 @@ export function HTTPPage() {
             <span className={`font-mono text-xs font-bold w-16 ${methodColor(m.request.method)}`}>
               {m.request.method}
             </span>
-            <span className="font-mono text-sm text-zinc-300 flex-1">{m.request.path}</span>
+            <span className="font-mono text-sm text-zinc-300">
+              {m.request.path}
+              {m.request.query && Object.keys(m.request.query).length > 0 && (
+                <span className="ml-1 text-zinc-500">
+                  ?{Object.entries(m.request.query).map(([k, v]) => `${k}=${v}`).join('&')}
+                </span>
+              )}
+            </span>
+            <span className="flex-1" />
             <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${m.response.status < 400 ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
               {m.response.status}
             </span>
@@ -88,6 +96,73 @@ interface FormProps {
   onChange: (m: Omit<HTTPMock, 'id'>) => void
   onSave: (m: Omit<HTTPMock, 'id'>) => void
   onCancel: () => void
+}
+
+function KVEditor({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  value: Record<string, string>
+  onChange: (v: Record<string, string>) => void
+}) {
+  const entries = Object.entries(value)
+  const set = (i: number, k: string, v: string) => {
+    const next = [...entries]
+    next[i] = [k, v]
+    onChange(Object.fromEntries(next.filter(([key]) => key !== '' || next.indexOf([key, v]) !== i)))
+  }
+  const add = () => onChange({ ...value, '': '' })
+  const remove = (i: number) => {
+    const next = entries.filter((_, idx) => idx !== i)
+    onChange(Object.fromEntries(next))
+  }
+
+  return (
+    <div className="col-span-2 flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-zinc-500">{label}</span>
+        {hint && <span className="text-xs text-zinc-600 italic">{hint}</span>}
+        <button
+          type="button"
+          className="ml-auto text-xs text-violet-400 hover:text-violet-300"
+          onClick={add}
+        >
+          + Add
+        </button>
+      </div>
+      {entries.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {entries.map(([k, v], i) => (
+            <div key={i} className="flex gap-2 items-center">
+              <input
+                className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 font-mono flex-1"
+                placeholder="key"
+                value={k}
+                onChange={(e) => set(i, e.target.value, v)}
+              />
+              <input
+                className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 font-mono flex-1"
+                placeholder='value or * (wildcard)'
+                value={v}
+                onChange={(e) => set(i, k, e.target.value)}
+              />
+              <button
+                type="button"
+                className="text-zinc-600 hover:text-red-400 text-xs px-1"
+                onClick={() => remove(i)}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function MockForm({ value, onChange, onSave, onCancel }: FormProps) {
@@ -120,6 +195,14 @@ function MockForm({ value, onChange, onSave, onCancel }: FormProps) {
             onChange={(e) => setReq('path', e.target.value)}
           />
         </label>
+        <KVEditor
+          label="Query Params"
+          hint="use * as wildcard value"
+          value={value.request.query ?? {}}
+          onChange={(q) =>
+            onChange({ ...value, request: { ...value.request, query: Object.keys(q).length ? q : undefined } })
+          }
+        />
         <label className="flex flex-col gap-1">
           <span className="text-xs text-zinc-500">Status Code</span>
           <input

@@ -94,6 +94,18 @@ protocols:
               ]
             }
 
+      # ── Authorization endpoint (Authorization Code flow) ─────────────────
+      - id: oauth2-authorize
+        request:
+          method: GET
+          path: /oauth2/authorize
+        response:
+          status: 302
+          headers:
+            Location: "{{.query.redirect_uri}}?code={{uuid}}&state={{.query.state}}"
+            Set-Cookie: "idp-session=active; Path=/; HttpOnly"
+          body: ""
+
       # ── Token endpoint — authorization_code / password / client_credentials
       - id: token-success
         request:
@@ -258,6 +270,9 @@ scenarios:
     name: Auth Server Down
     description: Token and userinfo endpoints return 503. Test your app behaviour when the auth server is unreachable.
     patches:
+      - mock_id: oauth2-authorize
+        status: 503
+        body: '{"error":"temporarily_unavailable","error_description":"The authorization server is temporarily unavailable."}'
       - mock_id: token-success
         status: 503
         body: '{"error":"temporarily_unavailable","error_description":"The authorization server is temporarily unavailable."}'

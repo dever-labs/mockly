@@ -38,7 +38,7 @@
 | **Request matching** | Method + path (exact / wildcard / regex), headers, query params, JSON body fields |
 | **Response sequences** | Return a different response on each successive call — loop, hold last, or 404 when exhausted |
 | **Response control** | Status code, headers, body, artificial delay |
-| **Template responses** | Go template syntax in response bodies (`{{now}}`, `{{.body}}`, etc.) |
+| **Template responses** | Go template syntax in response bodies and headers (`{{now}}`, `{{.query.foo}}`, `{{.body}}`, etc.) |
 | **State conditions** | Fire a mock only when a runtime state variable matches |
 | **Scenarios** | Named sets of mock patches — activate/deactivate atomically via API or CLI |
 | **Global fault injection** | Delay, status override, and probabilistic error rate across all requests |
@@ -199,7 +199,7 @@ scenarios:
 
 ### Template responses
 
-Response bodies are rendered as Go templates. Built-in functions:
+Response bodies **and response headers** are rendered as Go templates. Built-in functions:
 
 | Function | Example | Description |
 |---|---|---|
@@ -234,6 +234,7 @@ Response bodies are rendered as Go templates. Built-in functions:
 | `{{lower "WORLD"}}` | `world` | Lowercase string |
 | `{{.body}}` | *(request body)* | Incoming request body |
 | `{{.headers.X-Foo}}` | *(header value)* | Incoming request header |
+| `{{.query.foo}}` | *(query value)* | Incoming request query parameter |
 | `{{state "key"}}` | *(state value)* | Value from runtime state store |
 
 **Sequence counters** (`{{seq "name"}}`) are reset to zero by `POST /api/reset` or `mockly reset`.

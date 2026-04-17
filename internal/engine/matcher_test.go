@@ -184,6 +184,44 @@ func TestHTTPMatch_BodyJSON(t *testing.T) {
 	}
 }
 
+func TestHTTPMatch_QueryParamInBody(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "echo-param",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/echo"},
+		Response: config.HTTPResponse{Status: 200, Body: `{"param":"{{.query.foo}}"}`},
+	}}
+	query := map[string]string{"foo": "bar"}
+	result, ok := engine.HTTPMatch(mocks, "GET", "/echo", query, nil, "", nil)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if result.Body != `{"param":"bar"}` {
+		t.Errorf("unexpected body: %q", result.Body)
+	}
+}
+
+func TestHTTPMatch_QueryParamInResponseHeader(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "oauth-authorize",
+		Request: config.HTTPRequest{Method: "GET", Path: "/authorize"},
+		Response: config.HTTPResponse{
+			Status: 302,
+			Headers: map[string]string{
+				"Location": "{{.query.redirect_uri}}?code=abc&state={{.query.state}}",
+			},
+		},
+	}}
+	query := map[string]string{"redirect_uri": "http://app.example.com/cb", "state": "xyz123"}
+	result, ok := engine.HTTPMatch(mocks, "GET", "/authorize", query, nil, "", nil)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	want := "http://app.example.com/cb?code=abc&state=xyz123"
+	if result.Headers["Location"] != want {
+		t.Errorf("want Location %q, got %q", want, result.Headers["Location"])
+	}
+}
+
 func TestWSMatch(t *testing.T) {
 	rules := []config.WebSocketRule{
 		{Match: "ping", Respond: "pong"},
@@ -203,6 +241,90 @@ func TestWSMatch(t *testing.T) {
 	_, ok3 := engine.WSMatch(rules, "hello")
 	if ok3 {
 		t.Fatal("expected no match")
+	}
+}
+
+func TestHTTPMatch_QueryParams_MissingRequired(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "filtered",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/search", Query: map[string]string{"q": "*"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	// Request without the required query param should not match
+	_, ok := engine.HTTPMatch(mocks, "GET", "/search", nil, nil, "", nil)
+	if ok {
+		t.Fatal("expected no match when required query param is absent")
+	}
+}
+
+func TestHTTPMatch_QueryParams_ExtraParamsIgnored(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/items", Query: map[string]string{"type": "book"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	// Extra params in request beyond what mock requires should still match
+	q := map[string]string{"type": "book", "page": "2", "limit": "10"}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/items", q, nil, "", nil)
+	if !ok {
+		t.Fatal("expected match when request has extra query params beyond required ones")
+	}
+}
+
+// TestHTTPMatch_OAuthAuthorize covers a realistic OAuth 2.0 authorization endpoint:
+// the mock requires specific query params and reflects them in the redirect Location header.
+func TestHTTPMatch_OAuthAuthorize(t *testing.T) {
+	mocks := []config.HTTPMock{
+		{
+			ID: "oauth-code-flow",
+			Request: config.HTTPRequest{
+				Method: "GET",
+				Path:   "/oauth/authorize",
+				Query: map[string]string{
+					"response_type": "code",
+					"client_id":     "my-client",
+					"redirect_uri":  "*",
+					"state":         "*",
+				},
+			},
+			Response: config.HTTPResponse{
+				Status: 302,
+				Headers: map[string]string{
+					"Location": "{{.query.redirect_uri}}?code=testcode&state={{.query.state}}",
+				},
+			},
+		},
+	}
+
+	q := map[string]string{
+		"response_type": "code",
+		"client_id":     "my-client",
+		"redirect_uri":  "https://app.example.com/callback",
+		"state":         "random-state-42",
+	}
+
+	result, ok := engine.HTTPMatch(mocks, "GET", "/oauth/authorize", q, nil, "", nil)
+	if !ok {
+		t.Fatal("expected OAuth mock to match")
+	}
+	if result.Status != 302 {
+		t.Errorf("want status 302, got %d", result.Status)
+	}
+	wantLocation := "https://app.example.com/callback?code=testcode&state=random-state-42"
+	if result.Headers["Location"] != wantLocation {
+		t.Errorf("want Location %q, got %q", wantLocation, result.Headers["Location"])
+	}
+
+	// Wrong client_id should not match
+	qWrong := map[string]string{
+		"response_type": "code",
+		"client_id":     "other-client",
+		"redirect_uri":  "https://app.example.com/callback",
+		"state":         "s",
+	}
+	_, ok2 := engine.HTTPMatch(mocks, "GET", "/oauth/authorize", qWrong, nil, "", nil)
+	if ok2 {
+		t.Fatal("expected no match for wrong client_id")
 	}
 }
 

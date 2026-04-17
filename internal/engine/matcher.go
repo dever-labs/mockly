@@ -60,9 +60,18 @@ func HTTPMatch(
 			continue
 		}
 
-		rendered, err := renderTemplate(m.Response.Body, headers, body)
+		rendered, err := renderTemplate(m.Response.Body, query, headers, body)
 		if err != nil {
 			rendered = m.Response.Body
+		}
+
+		renderedHeaders := make(map[string]string, len(m.Response.Headers))
+		for k, v := range m.Response.Headers {
+			rv, herr := renderTemplate(v, query, headers, body)
+			if herr != nil {
+				rv = v
+			}
+			renderedHeaders[k] = rv
 		}
 
 		status := m.Response.Status
@@ -74,7 +83,7 @@ func HTTPMatch(
 			Matched: true,
 			MockID:  m.ID,
 			Body:    rendered,
-			Headers: m.Response.Headers,
+			Headers: renderedHeaders,
 			Status:  status,
 			Delay:   m.Response.Delay.Duration,
 			Fault:   m.Fault,
@@ -237,7 +246,7 @@ func matchState(cond *config.StateCondition, store *state.Store) bool {
 }
 
 // renderTemplate executes a Go text/template against a simple context object.
-func renderTemplate(tmpl string, headers map[string]string, body string) (string, error) {
+func renderTemplate(tmpl string, query, headers map[string]string, body string) (string, error) {
 	if !strings.Contains(tmpl, "{{") {
 		return tmpl, nil
 	}
@@ -246,6 +255,7 @@ func renderTemplate(tmpl string, headers map[string]string, body string) (string
 		return "", fmt.Errorf("parsing template: %w", err)
 	}
 	ctx := map[string]interface{}{
+		"query":   query,
 		"headers": headers,
 		"body":    body,
 	}
@@ -254,4 +264,16 @@ func renderTemplate(tmpl string, headers map[string]string, body string) (string
 		return "", fmt.Errorf("executing template: %w", err)
 	}
 	return buf.String(), nil
+}
+
+// Render is the exported counterpart of renderTemplate for use by protocol
+// servers that perform sequence-based or patch-based response selection
+// outside of HTTPMatch (e.g. server.go sequence entry bodies/headers).
+// On template error it returns the original string unchanged.
+func Render(tmpl string, query, headers map[string]string, body string) string {
+	out, err := renderTemplate(tmpl, query, headers, body)
+	if err != nil {
+		return tmpl
+	}
+	return out
 }

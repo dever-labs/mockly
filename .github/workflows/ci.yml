@@ -294,7 +294,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         working-directory: clients/node
         run: |
-          npm ci
+          npm install
           npm run build
           npm publish --access public --provenance
 

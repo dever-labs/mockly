@@ -20,6 +20,16 @@ updates:
     commit-message:
       prefix: "chore(deps)"
 
+  - package-ecosystem: cargo
+    directory: /clients/rust
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps)"
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

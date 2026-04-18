@@ -1,13 +1,15 @@
 {
   "name": "Mockly",
-  "image": "mcr.microsoft.com/devcontainers/go:1-1.24-bookworm",
-  "features": {
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "20"
-    },
-    "ghcr.io/devcontainers/features/github-cli:1": {}
-  },
+  "image": "ghcr.io/dever-labs/devcontainers/go-dev:latest",
   "postCreateCommand": "GOTOOLCHAIN=auto go install github.com/air-verse/air@v1.61.7 && go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 && npm --prefix ui ci",
+  "mounts": [
+    "source=dever-labs-gh-config,target=/home/vscode/.config/gh,type=volume"
+  ],
+
+  "remoteEnv": {
+    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
+  },
+
   "forwardPorts": [8080, 8081, 9091, 50051],
   "portsAttributes": {
     "8080": { "label": "HTTP Mocks" },

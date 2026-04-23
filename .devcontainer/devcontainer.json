@@ -3,7 +3,8 @@
   "image": "ghcr.io/dever-labs/devcontainers/go-dev:latest",
   "postCreateCommand": "GOTOOLCHAIN=auto go install github.com/air-verse/air@v1.61.7 && go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 && npm --prefix ui ci",
   "mounts": [
-    "source=dever-labs-gh-config,target=/home/vscode/.config/gh,type=volume"
+    "source=dever-labs-gh-config,target=/home/vscode/.config/gh,type=volume",
+    "source=dever-labs-copilot-config,target=/home/vscode/.copilot,type=volume"
   ],
 
   "remoteEnv": {
@@ -20,11 +21,10 @@
   "customizations": {
     "vscode": {
       "extensions": [
+        "github.copilot",
+        "github.copilot-chat",
+        "anthropics.claude-code",
         "golang.go",
-        "dbaeumer.vscode-eslint",
-        "bradlc.vscode-tailwindcss",
-        "ms-vscode.vscode-typescript-next",
-        "esbenp.prettier-vscode"
       ],
       "settings": {
         "go.toolsManagement.checkForUpdates": "off",

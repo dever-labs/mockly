@@ -94,20 +94,32 @@ func (s *stubMQTT) GetMocks() []config.MQTTMock           { return nil }
 func (s *stubMQTT) SetMocks(m []config.MQTTMock)          {}
 func (s *stubMQTT) GetMessageStore() *mqttserver.MessageStore { return s.ms }
 
-type stubSNMP struct{}
+type stubSNMP struct {
+	mocks    []config.SNMPMock
+	traps    []config.SNMPTrap
+	lastSent string
+}
 
-func (s *stubSNMP) StatusInfo() map[string]interface{}  { return map[string]interface{}{"protocol": "snmp"} }
-func (s *stubSNMP) GetMocks() []config.SNMPMock         { return nil }
-func (s *stubSNMP) SetMocks(m []config.SNMPMock)        {}
-func (s *stubSNMP) GetTraps() []config.SNMPTrap         { return nil }
-func (s *stubSNMP) SetTraps(t []config.SNMPTrap)        {}
-func (s *stubSNMP) SendTrap(id string) error            { return nil }
+func (s *stubSNMP) StatusInfo() map[string]interface{} { return map[string]interface{}{"protocol": "snmp"} }
+func (s *stubSNMP) GetMocks() []config.SNMPMock         { return s.mocks }
+func (s *stubSNMP) SetMocks(m []config.SNMPMock)        { s.mocks = m }
+func (s *stubSNMP) GetTraps() []config.SNMPTrap         { return s.traps }
+func (s *stubSNMP) SetTraps(t []config.SNMPTrap)        { s.traps = t }
+func (s *stubSNMP) SendTrap(id string) error {
+	for _, t := range s.traps {
+		if t.ID == id {
+			s.lastSent = id
+			return nil
+		}
+	}
+	return fmt.Errorf("trap %q not found", id)
+}
 
 // ---------------------------------------------------------------------------
 // Helper: start an API server on a free port
 // ---------------------------------------------------------------------------
 
-func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store) {
+func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store, *stubSNMP) {
 	t.Helper()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -128,6 +140,7 @@ func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store) 
 	graphqlStub := &stubGraphQL{}
 	smtpStub := &stubSMTP{inbox: smtpserver.NewInbox(50)}
 	mqttStub := &stubMQTT{ms: mqttserver.NewMessageStore(50)}
+	snmpStub := &stubSNMP{}
 
 	srv := api.New(
 		cfg, store, sc, log,
@@ -139,7 +152,7 @@ func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store) 
 		&stubRedis{},
 		smtpStub,
 		mqttStub,
-		&stubSNMP{},
+		snmpStub,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -148,7 +161,7 @@ func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store) 
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
 	waitForHTTP(t, base+"/api/protocols", 2*time.Second)
-	return base, httpStub, graphqlStub, sc
+	return base, httpStub, graphqlStub, sc, snmpStub
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +169,7 @@ func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store) 
 // ---------------------------------------------------------------------------
 
 func TestAPI_GetProtocols(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	resp, err := http.Get(base + "/api/protocols")
 	if err != nil {
@@ -175,7 +188,7 @@ func TestAPI_GetProtocols(t *testing.T) {
 }
 
 func TestAPI_HTTP_CRUD(t *testing.T) {
-	base, httpStub, _, _ := startAPI(t)
+	base, httpStub, _, _, _ := startAPI(t)
 
 	// Create a mock.
 	mock := map[string]interface{}{
@@ -236,7 +249,7 @@ func TestAPI_HTTP_CRUD(t *testing.T) {
 }
 
 func TestAPI_Scenarios_CRUD(t *testing.T) {
-	base, _, _, sc := startAPI(t)
+	base, _, _, sc, _ := startAPI(t)
 
 	// Create scenario.
 	payload := map[string]interface{}{
@@ -279,7 +292,7 @@ func TestAPI_Scenarios_CRUD(t *testing.T) {
 }
 
 func TestAPI_Fault_SetClear(t *testing.T) {
-	base, _, _, sc := startAPI(t)
+	base, _, _, sc, _ := startAPI(t)
 
 	// Set fault.
 	fault := map[string]interface{}{
@@ -310,7 +323,7 @@ func TestAPI_Fault_SetClear(t *testing.T) {
 }
 
 func TestAPI_Reset(t *testing.T) {
-	base, _, _, sc := startAPI(t)
+	base, _, _, sc, _ := startAPI(t)
 
 	// Set some state.
 	sc.SetFault(&config.GlobalFault{Enabled: true, StatusOverride: 500})
@@ -327,7 +340,7 @@ func TestAPI_Reset(t *testing.T) {
 }
 
 func TestAPI_State_SetGet(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	// Set state key.
 	body := `{"my-key":"test-val"}`
@@ -354,7 +367,7 @@ func TestAPI_State_SetGet(t *testing.T) {
 }
 
 func TestAPI_Logs(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	resp, err := http.Get(base + "/api/logs")
 	if err != nil {
@@ -399,4 +412,186 @@ func waitForHTTP(t *testing.T, url string, timeout time.Duration) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("server did not become ready at %s within %v", url, timeout)
+}
+
+// ---------------------------------------------------------------------------
+// SNMP API handler tests
+// ---------------------------------------------------------------------------
+
+func TestAPI_SNMP_MockCRUD(t *testing.T) {
+base, _, _, _, snmpStub := startAPI(t)
+
+// List — initially empty.
+resp, err := http.Get(base + "/api/mocks/snmp")
+if err != nil {
+t.Fatalf("GET /api/mocks/snmp: %v", err)
+}
+defer resp.Body.Close() //nolint:errcheck
+if resp.StatusCode != 200 {
+t.Fatalf("list: want 200, got %d", resp.StatusCode)
+}
+var initial []config.SNMPMock
+mustDecodeJSON(t, resp.Body, &initial)
+if len(initial) != 0 {
+t.Fatalf("expected empty list, got %d", len(initial))
+}
+
+// Create.
+mock := map[string]interface{}{
+"id":    "sys-descr",
+"oid":   "1.3.6.1.2.1.1.1.0",
+"type":  "string",
+"value": "Test Device",
+}
+body, _ := json.Marshal(mock)
+resp2, err := http.Post(base+"/api/mocks/snmp", "application/json", bytes.NewReader(body))
+if err != nil {
+t.Fatalf("POST /api/mocks/snmp: %v", err)
+}
+_ = resp2.Body.Close()
+if resp2.StatusCode != 201 {
+t.Errorf("create: want 201, got %d", resp2.StatusCode)
+}
+if len(snmpStub.GetMocks()) != 1 || snmpStub.GetMocks()[0].ID != "sys-descr" {
+t.Fatalf("stub not updated after create: %+v", snmpStub.GetMocks())
+}
+
+// List — one mock now.
+resp3, _ := http.Get(base + "/api/mocks/snmp")
+defer resp3.Body.Close() //nolint:errcheck
+var listed []config.SNMPMock
+mustDecodeJSON(t, resp3.Body, &listed)
+if len(listed) != 1 || listed[0].OID != "1.3.6.1.2.1.1.1.0" {
+t.Errorf("list after create: unexpected %+v", listed)
+}
+
+// Update.
+updated := map[string]interface{}{
+"id":    "sys-descr",
+"oid":   "1.3.6.1.2.1.1.1.0",
+"type":  "string",
+"value": "Updated Device",
+}
+putBody, _ := json.Marshal(updated)
+req, _ := http.NewRequest(http.MethodPut, base+"/api/mocks/snmp/sys-descr", bytes.NewReader(putBody))
+req.Header.Set("Content-Type", "application/json")
+resp4, _ := http.DefaultClient.Do(req)
+_ = resp4.Body.Close()
+if resp4.StatusCode != 200 {
+t.Errorf("update: want 200, got %d", resp4.StatusCode)
+}
+if snmpStub.GetMocks()[0].Value != "Updated Device" {
+t.Errorf("update not reflected in stub: %+v", snmpStub.GetMocks())
+}
+
+// Delete.
+req5, _ := http.NewRequest(http.MethodDelete, base+"/api/mocks/snmp/sys-descr", nil)
+resp5, _ := http.DefaultClient.Do(req5)
+_ = resp5.Body.Close()
+if resp5.StatusCode != 200 {
+t.Errorf("delete: want 200, got %d", resp5.StatusCode)
+}
+if len(snmpStub.GetMocks()) != 0 {
+t.Errorf("expected 0 mocks after delete, got %d", len(snmpStub.GetMocks()))
+}
+}
+
+func TestAPI_SNMP_TrapsCRUD(t *testing.T) {
+base, _, _, _, snmpStub := startAPI(t)
+
+// List — initially empty.
+resp, err := http.Get(base + "/api/snmp/traps")
+if err != nil {
+t.Fatalf("GET /api/snmp/traps: %v", err)
+}
+defer resp.Body.Close() //nolint:errcheck
+if resp.StatusCode != 200 {
+t.Fatalf("list: want 200, got %d", resp.StatusCode)
+}
+var initial []config.SNMPTrap
+mustDecodeJSON(t, resp.Body, &initial)
+if len(initial) != 0 {
+t.Fatalf("expected empty list, got %d", len(initial))
+}
+
+// Add trap.
+trap := map[string]interface{}{
+"id":        "cold-start",
+"target":    "127.0.0.1:1162",
+"version":   "2c",
+"community": "public",
+"oid":       "1.3.6.1.6.3.1.1.5.1",
+}
+body, _ := json.Marshal(trap)
+resp2, err := http.Post(base+"/api/snmp/traps", "application/json", bytes.NewReader(body))
+if err != nil {
+t.Fatalf("POST /api/snmp/traps: %v", err)
+}
+defer resp2.Body.Close() //nolint:errcheck
+if resp2.StatusCode != 201 {
+b, _ := io.ReadAll(resp2.Body)
+t.Fatalf("create trap: want 201, got %d — %s", resp2.StatusCode, b)
+}
+if len(snmpStub.GetTraps()) != 1 || snmpStub.GetTraps()[0].ID != "cold-start" {
+t.Fatalf("stub not updated after add trap: %+v", snmpStub.GetTraps())
+}
+
+// List — one trap now.
+resp3, _ := http.Get(base + "/api/snmp/traps")
+defer resp3.Body.Close() //nolint:errcheck
+var listed []config.SNMPTrap
+mustDecodeJSON(t, resp3.Body, &listed)
+if len(listed) != 1 || listed[0].Target != "127.0.0.1:1162" {
+t.Errorf("list traps after add: unexpected %+v", listed)
+}
+}
+
+func TestAPI_SNMP_SendTrap(t *testing.T) {
+base, _, _, _, snmpStub := startAPI(t)
+
+// Seed a trap directly in the stub so we can send it.
+snmpStub.SetTraps([]config.SNMPTrap{
+{ID: "test-trap", Target: "127.0.0.1:1162", OID: "1.3.6.1.6.3.1.1.5.1"},
+})
+
+resp, err := http.Post(base+"/api/snmp/traps/test-trap/send", "application/json", nil)
+if err != nil {
+t.Fatalf("POST /api/snmp/traps/test-trap/send: %v", err)
+}
+defer resp.Body.Close() //nolint:errcheck
+if resp.StatusCode != 200 {
+b, _ := io.ReadAll(resp.Body)
+t.Fatalf("send trap: want 200, got %d — %s", resp.StatusCode, b)
+}
+if snmpStub.lastSent != "test-trap" {
+t.Errorf("SendTrap not called with expected id: got %q", snmpStub.lastSent)
+}
+}
+
+func TestAPI_SNMP_SendTrap_NotFound(t *testing.T) {
+base, _, _, _, _ := startAPI(t)
+
+resp, err := http.Post(base+"/api/snmp/traps/nonexistent/send", "application/json", nil)
+if err != nil {
+t.Fatalf("POST send nonexistent trap: %v", err)
+}
+defer resp.Body.Close() //nolint:errcheck
+if resp.StatusCode != 500 {
+t.Errorf("nonexistent trap: want 500, got %d", resp.StatusCode)
+}
+}
+
+func TestAPI_SNMP_UpdateMock_NotFound(t *testing.T) {
+base, _, _, _, _ := startAPI(t)
+
+body, _ := json.Marshal(map[string]interface{}{
+"id": "ghost", "oid": "1.2.3", "type": "string", "value": "x",
+})
+req, _ := http.NewRequest(http.MethodPut, base+"/api/mocks/snmp/ghost", bytes.NewReader(body))
+req.Header.Set("Content-Type", "application/json")
+resp, _ := http.DefaultClient.Do(req)
+_ = resp.Body.Close()
+if resp.StatusCode != 404 {
+t.Errorf("update missing mock: want 404, got %d", resp.StatusCode)
+}
 }

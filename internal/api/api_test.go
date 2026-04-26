@@ -130,6 +130,7 @@ func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store) 
 		&stubRedis{},
 		smtpStub,
 		mqttStub,
+		nil, // snmp not used in these tests
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())

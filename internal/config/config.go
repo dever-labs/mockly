@@ -40,6 +40,7 @@ type ProtocolsConfig struct {
 	Redis     *RedisConfig     `yaml:"redis,omitempty" json:"redis,omitempty"`
 	SMTP      *SMTPConfig      `yaml:"smtp,omitempty" json:"smtp,omitempty"`
 	MQTT      *MQTTConfig      `yaml:"mqtt,omitempty" json:"mqtt,omitempty"`
+	SNMP      *SNMPConfig      `yaml:"snmp,omitempty" json:"snmp,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +300,60 @@ type MQTTResponse struct {
 }
 
 // ---------------------------------------------------------------------------
+// SNMP
+// ---------------------------------------------------------------------------
+
+// SNMPConfig configures the SNMP agent mock server.
+type SNMPConfig struct {
+	Enabled  bool       `yaml:"enabled" json:"enabled"`
+	Port     int        `yaml:"port" json:"port"`
+	// Community is the v1/v2c community string accepted by the agent (default: public).
+	Community string     `yaml:"community,omitempty" json:"community,omitempty"`
+	// V3Users lists SNMPv3 USM user credentials.
+	V3Users  []SNMPUser `yaml:"v3_users,omitempty" json:"v3_users,omitempty"`
+	Mocks    []SNMPMock `yaml:"mocks,omitempty" json:"mocks,omitempty"`
+	// Traps lists outbound TRAP configurations that can be triggered via API.
+	Traps    []SNMPTrap `yaml:"traps,omitempty" json:"traps,omitempty"`
+}
+
+// SNMPMock defines a single OID value returned by the agent.
+// Type is one of: string, integer, gauge32, counter32, counter64, timeticks, ipaddress, objectidentifier.
+// Value is the raw value (string is marshalled from YAML; numeric types accepted as int or string).
+type SNMPMock struct {
+	ID    string          `yaml:"id" json:"id"`
+	OID   string          `yaml:"oid" json:"oid"`
+	Type  string          `yaml:"type" json:"type"`
+	Value interface{}     `yaml:"value" json:"value"`
+	State *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+// SNMPUser defines a SNMPv3 USM user credential set.
+type SNMPUser struct {
+	Username          string `yaml:"username" json:"username"`
+	AuthProtocol      string `yaml:"auth_protocol,omitempty" json:"auth_protocol,omitempty"`       // md5|sha|sha224|sha256|sha384|sha512
+	AuthPassphrase    string `yaml:"auth_passphrase,omitempty" json:"auth_passphrase,omitempty"`
+	PrivProtocol      string `yaml:"priv_protocol,omitempty" json:"priv_protocol,omitempty"`       // des|aes|aes192|aes256
+	PrivPassphrase    string `yaml:"priv_passphrase,omitempty" json:"priv_passphrase,omitempty"`
+}
+
+// SNMPTrap is an outbound TRAP definition that can be triggered via the management API.
+type SNMPTrap struct {
+	ID        string             `yaml:"id" json:"id"`
+	Target    string             `yaml:"target" json:"target"`       // host:port
+	Version   string             `yaml:"version,omitempty" json:"version,omitempty"` // "1"|"2c"|"3"
+	Community string             `yaml:"community,omitempty" json:"community,omitempty"`
+	OID       string             `yaml:"oid" json:"oid"`
+	Bindings  []SNMPTrapBinding  `yaml:"bindings,omitempty" json:"bindings,omitempty"`
+}
+
+// SNMPTrapBinding is a variable binding attached to an outbound TRAP.
+type SNMPTrapBinding struct {
+	OID   string      `yaml:"oid" json:"oid"`
+	Type  string      `yaml:"type" json:"type"`
+	Value interface{} `yaml:"value" json:"value"`
+}
+
+// ---------------------------------------------------------------------------
 // Shared
 // ---------------------------------------------------------------------------
 
@@ -473,5 +528,13 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Protocols.MQTT != nil && cfg.Protocols.MQTT.Port == 0 {
 		cfg.Protocols.MQTT.Port = 1883
+	}
+	if cfg.Protocols.SNMP != nil {
+		if cfg.Protocols.SNMP.Port == 0 {
+			cfg.Protocols.SNMP.Port = 1161
+		}
+		if cfg.Protocols.SNMP.Community == "" {
+			cfg.Protocols.SNMP.Community = "public"
+		}
 	}
 }

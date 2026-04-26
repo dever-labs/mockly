@@ -90,6 +90,16 @@ type MQTTProtocol interface {
 	GetMessageStore() *mqttserver.MessageStore
 }
 
+// SNMPProtocol is the subset of snmpserver.Server used by the API.
+type SNMPProtocol interface {
+	ProtocolServer
+	GetMocks() []config.SNMPMock
+	SetMocks([]config.SNMPMock)
+	GetTraps() []config.SNMPTrap
+	SetTraps([]config.SNMPTrap)
+	SendTrap(id string) error
+}
+
 // Server is the management API HTTP server.
 type Server struct {
 	cfg       *config.Config
@@ -104,6 +114,7 @@ type Server struct {
 	redis     RedisProtocol
 	smtp      SMTPProtocol
 	mqtt      MQTTProtocol
+	snmp      SNMPProtocol
 	server    *http.Server
 	uiFiles   http.FileSystem
 }
@@ -122,6 +133,7 @@ func New(
 	redisSrv RedisProtocol,
 	smtpSrv SMTPProtocol,
 	mqttSrv MQTTProtocol,
+	snmpSrv SNMPProtocol,
 ) *Server {
 	return &Server{
 		cfg:       cfg,
@@ -136,6 +148,7 @@ func New(
 		redis:     redisSrv,
 		smtp:      smtpSrv,
 		mqtt:      mqttSrv,
+		snmp:      snmpSrv,
 	}
 }
 
@@ -230,6 +243,15 @@ func (s *Server) buildRouter() http.Handler {
 		r.Get("/api/mqtt/messages", s.listMQTTMessages)
 		r.Delete("/api/mqtt/messages", s.clearMQTTMessages)
 
+		// SNMP mocks + traps
+		r.Get("/api/mocks/snmp", s.listSNMPMocks)
+		r.Post("/api/mocks/snmp", s.addSNMPMock)
+		r.Put("/api/mocks/snmp/{id}", s.updateSNMPMock)
+		r.Delete("/api/mocks/snmp/{id}", s.deleteSNMPMock)
+		r.Get("/api/snmp/traps", s.listSNMPTraps)
+		r.Post("/api/snmp/traps", s.addSNMPTrap)
+		r.Post("/api/snmp/traps/{id}/send", s.sendSNMPTrap)
+
 		r.Get("/api/state", s.getState)
 		r.Post("/api/state", s.setState)
 		r.Delete("/api/state/{key}", s.deleteState)
@@ -290,7 +312,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listProtocols(w http.ResponseWriter, r *http.Request) {
 	var protocols []map[string]interface{}
-	for _, p := range []ProtocolServer{s.http, s.ws, s.grpc, s.graphql, s.tcp, s.redis, s.smtp, s.mqtt} {
+	for _, p := range []ProtocolServer{s.http, s.ws, s.grpc, s.graphql, s.tcp, s.redis, s.smtp, s.mqtt, s.snmp} {
 		if p != nil {
 			protocols = append(protocols, p.StatusInfo())
 		}
@@ -1019,8 +1041,112 @@ func (s *Server) clearMQTTMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// State
+// SNMP mocks + traps
 // ---------------------------------------------------------------------------
+
+func (s *Server) listSNMPMocks(w http.ResponseWriter, r *http.Request) {
+	if s.snmp == nil {
+		writeJSON(w, http.StatusOK, []config.SNMPMock{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.snmp.GetMocks())
+}
+
+func (s *Server) addSNMPMock(w http.ResponseWriter, r *http.Request) {
+	if s.snmp == nil {
+		writeError(w, http.StatusServiceUnavailable, "snmp protocol not enabled")
+		return
+	}
+	var m config.SNMPMock
+	if err := decodeBody(r, &m); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if m.ID == "" {
+		m.ID = fmt.Sprintf("snmp-%d", time.Now().UnixNano())
+	}
+	s.snmp.SetMocks(append(s.snmp.GetMocks(), m))
+	writeJSON(w, http.StatusCreated, m)
+}
+
+func (s *Server) updateSNMPMock(w http.ResponseWriter, r *http.Request) {
+	if s.snmp == nil {
+		writeError(w, http.StatusServiceUnavailable, "snmp protocol not enabled")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var updated config.SNMPMock
+	if err := decodeBody(r, &updated); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated.ID = id
+	mocks := s.snmp.GetMocks()
+	for i, m := range mocks {
+		if m.ID == id {
+			mocks[i] = updated
+			s.snmp.SetMocks(mocks)
+			writeJSON(w, http.StatusOK, updated)
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "mock not found")
+}
+
+func (s *Server) deleteSNMPMock(w http.ResponseWriter, r *http.Request) {
+	if s.snmp == nil {
+		writeError(w, http.StatusServiceUnavailable, "snmp protocol not enabled")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	mocks := s.snmp.GetMocks()
+	filtered := make([]config.SNMPMock, 0, len(mocks))
+	for _, m := range mocks {
+		if m.ID != id {
+			filtered = append(filtered, m)
+		}
+	}
+	s.snmp.SetMocks(filtered)
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+func (s *Server) listSNMPTraps(w http.ResponseWriter, r *http.Request) {
+	if s.snmp == nil {
+		writeJSON(w, http.StatusOK, []config.SNMPTrap{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.snmp.GetTraps())
+}
+
+func (s *Server) addSNMPTrap(w http.ResponseWriter, r *http.Request) {
+	if s.snmp == nil {
+		writeError(w, http.StatusServiceUnavailable, "snmp protocol not enabled")
+		return
+	}
+	var t config.SNMPTrap
+	if err := decodeBody(r, &t); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if t.ID == "" {
+		t.ID = fmt.Sprintf("trap-%d", time.Now().UnixNano())
+	}
+	s.snmp.SetTraps(append(s.snmp.GetTraps(), t))
+	writeJSON(w, http.StatusCreated, t)
+}
+
+func (s *Server) sendSNMPTrap(w http.ResponseWriter, r *http.Request) {
+	if s.snmp == nil {
+		writeError(w, http.StatusServiceUnavailable, "snmp protocol not enabled")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if err := s.snmp.SendTrap(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"sent": id})
+}
 
 func (s *Server) getState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.store.All())
@@ -1134,6 +1260,13 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 		}
 		s.mqtt.SetMocks(mocks)
 		s.mqtt.GetMessageStore().Clear()
+	}
+	if s.snmp != nil {
+		var mocks []config.SNMPMock
+		if s.cfg.Protocols.SNMP != nil {
+			mocks = s.cfg.Protocols.SNMP.Mocks
+		}
+		s.snmp.SetMocks(mocks)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})

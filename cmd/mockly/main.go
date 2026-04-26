@@ -23,6 +23,7 @@ import (
 	"github.com/dever-labs/mockly/internal/protocols/mqttserver"
 	"github.com/dever-labs/mockly/internal/protocols/redisserver"
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
+	"github.com/dever-labs/mockly/internal/protocols/snmpserver"
 	"github.com/dever-labs/mockly/internal/protocols/tcpserver"
 	"github.com/dever-labs/mockly/internal/protocols/wsserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
@@ -111,6 +112,7 @@ func runServers(cfg *config.Config) error {
 	var redisSrv api.RedisProtocol
 	var smtpSrv api.SMTPProtocol
 	var mqttSrv api.MQTTProtocol
+	var snmpSrv api.SNMPProtocol
 
 	if cfg.Protocols.HTTP != nil && cfg.Protocols.HTTP.Enabled {
 		srv := httpserver.New(cfg.Protocols.HTTP, store, sc, log)
@@ -168,7 +170,14 @@ func runServers(cfg *config.Config) error {
 		fmt.Printf("→ MQTT broker       on :%d\n", cfg.Protocols.MQTT.Port)
 	}
 
-	apiSrv := api.New(cfg, store, sc, log, httpSrv, wsSrv, grpcSrv, graphqlSrv, tcpSrv, redisSrv, smtpSrv, mqttSrv)
+	if cfg.Protocols.SNMP != nil && cfg.Protocols.SNMP.Enabled {
+		srv := snmpserver.New(cfg.Protocols.SNMP, store, log)
+		snmpSrv = srv
+		go func() { errCh <- srv.Start(ctx) }()
+		fmt.Printf("→ SNMP agent        on :%d\n", cfg.Protocols.SNMP.Port)
+	}
+
+	apiSrv := api.New(cfg, store, sc, log, httpSrv, wsSrv, grpcSrv, graphqlSrv, tcpSrv, redisSrv, smtpSrv, mqttSrv, snmpSrv)
 
 	if cfg.Mockly.UI.Enabled {
 		apiSrv.AttachUI(assets.DistFS())

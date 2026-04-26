@@ -14,7 +14,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestAPI_Health(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 	resp, err := http.Get(base + "/api/health")
 	if err != nil {
 		t.Fatalf("GET /api/health: %v", err)
@@ -30,7 +30,7 @@ func TestAPI_Health(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_Fault_Get(t *testing.T) {
-	base, _, _, sc := startAPI(t)
+	base, _, _, sc, _ := startAPI(t)
 
 	// No fault set yet — response should still be 200.
 	resp, err := http.Get(base + "/api/fault")
@@ -59,7 +59,7 @@ func TestAPI_Fault_Get(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_State_DeleteKey(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	// Set a key.
 	body := `{"del-key":"to-be-deleted"}`
@@ -83,7 +83,7 @@ func TestAPI_State_DeleteKey(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_Scenarios_List(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	resp, err := http.Get(base + "/api/scenarios")
 	if err != nil {
@@ -96,7 +96,7 @@ func TestAPI_Scenarios_List(t *testing.T) {
 }
 
 func TestAPI_Scenarios_GetSingle(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	// Create one first.
 	payload := map[string]interface{}{"id": "sc-get", "name": "GetTest"}
@@ -115,7 +115,7 @@ func TestAPI_Scenarios_GetSingle(t *testing.T) {
 }
 
 func TestAPI_Scenarios_GetSingle_NotFound(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	resp, err := http.Get(base + "/api/scenarios/does-not-exist")
 	if err != nil {
@@ -128,7 +128,7 @@ func TestAPI_Scenarios_GetSingle_NotFound(t *testing.T) {
 }
 
 func TestAPI_Scenarios_Update(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	// Create.
 	payload := map[string]interface{}{"id": "sc-upd", "name": "Before"}
@@ -152,7 +152,7 @@ func TestAPI_Scenarios_Update(t *testing.T) {
 }
 
 func TestAPI_Scenarios_Delete(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	// Create.
 	payload := map[string]interface{}{"id": "sc-del", "name": "ToDelete"}
@@ -173,7 +173,7 @@ func TestAPI_Scenarios_Delete(t *testing.T) {
 }
 
 func TestAPI_Scenarios_Active_List(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	resp, err := http.Get(base + "/api/scenarios/active")
 	if err != nil {
@@ -186,7 +186,7 @@ func TestAPI_Scenarios_Active_List(t *testing.T) {
 }
 
 func TestAPI_Scenarios_DeactivateAlias(t *testing.T) {
-	base, _, _, sc := startAPI(t)
+	base, _, _, sc, _ := startAPI(t)
 
 	// Create + activate.
 	payload := map[string]interface{}{"id": "sc-deact", "name": "DeactivateAlias"}
@@ -219,7 +219,7 @@ func TestAPI_Scenarios_DeactivateAlias(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_Logs_Clear(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/logs", nil)
 	resp, err := http.DefaultClient.Do(req)
@@ -237,7 +237,7 @@ func TestAPI_Logs_Clear(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_Calls_HTTP_Get(t *testing.T) {
-	base, httpStub, _, _ := startAPI(t)
+	base, httpStub, _, _, _ := startAPI(t)
 
 	// Seed a mock.
 	httpStub.SetMocks([]config.HTTPMock{{ID: "call-mock"}})
@@ -253,7 +253,7 @@ func TestAPI_Calls_HTTP_Get(t *testing.T) {
 }
 
 func TestAPI_Calls_HTTP_DeleteSingle(t *testing.T) {
-	base, httpStub, _, _ := startAPI(t)
+	base, httpStub, _, _, _ := startAPI(t)
 	httpStub.SetMocks([]config.HTTPMock{{ID: "call-del"}})
 
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/calls/http/call-del", nil)
@@ -268,7 +268,7 @@ func TestAPI_Calls_HTTP_DeleteSingle(t *testing.T) {
 }
 
 func TestAPI_Calls_HTTP_DeleteAll(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/calls/http", nil)
 	resp, err := http.DefaultClient.Do(req)
@@ -286,7 +286,7 @@ func TestAPI_Calls_HTTP_DeleteAll(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_GraphQL_CRUD(t *testing.T) {
-	base, _, graphqlStub, _ := startAPI(t)
+	base, _, graphqlStub, _, _ := startAPI(t)
 
 	// Create.
 	mock := map[string]interface{}{
@@ -350,7 +350,7 @@ func TestAPI_GraphQL_CRUD(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_WebSocket_CRUD(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	mock := map[string]interface{}{
 		"id":      "ws-mock",
@@ -386,7 +386,7 @@ func TestAPI_WebSocket_CRUD(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_GRPC_CRUD(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	mock := map[string]interface{}{
 		"id":      "grpc-mock",
@@ -423,7 +423,7 @@ func TestAPI_GRPC_CRUD(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_TCP_CRUD(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	mock := map[string]interface{}{
 		"id":       "tcp-mock",
@@ -459,7 +459,7 @@ func TestAPI_TCP_CRUD(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_Redis_CRUD(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	mock := map[string]interface{}{
 		"id":      "redis-mock",
@@ -496,7 +496,7 @@ func TestAPI_Redis_CRUD(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_SMTP_Rules_CRUD(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	rule := map[string]interface{}{
 		"id":     "smtp-rule",
@@ -528,7 +528,7 @@ func TestAPI_SMTP_Rules_CRUD(t *testing.T) {
 }
 
 func TestAPI_Emails_ListAndClear(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	resp, err := http.Get(base + "/api/emails")
 	if err != nil {
@@ -555,7 +555,7 @@ func TestAPI_Emails_ListAndClear(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_MQTT_Mocks_CRUD(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	mock := map[string]interface{}{
 		"id":              "mqtt-mock",
@@ -588,7 +588,7 @@ func TestAPI_MQTT_Mocks_CRUD(t *testing.T) {
 }
 
 func TestAPI_MQTT_Messages_ListAndClear(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	resp, err := http.Get(base + "/api/mqtt/messages")
 	if err != nil {
@@ -615,7 +615,7 @@ func TestAPI_MQTT_Messages_ListAndClear(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAPI_HTTP_Mock_InvalidJSON(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	resp, err := http.Post(base+"/api/mocks/http", "application/json", bytes.NewBufferString("{invalid}"))
 	if err != nil {
@@ -628,7 +628,7 @@ func TestAPI_HTTP_Mock_InvalidJSON(t *testing.T) {
 }
 
 func TestAPI_Scenario_InvalidJSON(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	resp, err := http.Post(base+"/api/scenarios", "application/json", bytes.NewBufferString("{bad}"))
 	if err != nil {
@@ -641,7 +641,7 @@ func TestAPI_Scenario_InvalidJSON(t *testing.T) {
 }
 
 func TestAPI_Fault_InvalidJSON(t *testing.T) {
-	base, _, _, _ := startAPI(t)
+	base, _, _, _, _ := startAPI(t)
 
 	resp, err := http.Post(base+"/api/fault", "application/json", bytes.NewBufferString("{bad}"))
 	if err != nil {

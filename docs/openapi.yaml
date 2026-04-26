@@ -31,6 +31,8 @@ tags:
     description: Manage SMTP rules and captured email inbox
   - name: MQTT Mocks
     description: Manage MQTT mock definitions and captured messages
+  - name: SNMP Mocks
+    description: Manage SNMP OID mock definitions and outbound TRAP configurations
   - name: State
     description: Shared key-value state used by state-conditional mocks
   - name: Scenarios
@@ -880,6 +882,170 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusMessage"
+
+  # ---------------------------------------------------------------------------
+  # SNMP Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/snmp:
+    get:
+      tags: [SNMP Mocks]
+      operationId: listSNMPMocks
+      summary: List all SNMP OID mocks
+      responses:
+        "200":
+          description: Array of SNMP mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SNMPMock"
+    post:
+      tags: [SNMP Mocks]
+      operationId: addSNMPMock
+      summary: Add an SNMP OID mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SNMPMock"
+            examples:
+              string_oid:
+                summary: System description string OID
+                value:
+                  id: sys-descr
+                  oid: "1.3.6.1.2.1.1.1.0"
+                  type: string
+                  value: "Mockly Virtual Device"
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SNMPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/snmp/{id}:
+    put:
+      tags: [SNMP Mocks]
+      operationId: updateSNMPMock
+      summary: Replace an SNMP OID mock
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SNMPMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SNMPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [SNMP Mocks]
+      operationId: deleteSNMPMock
+      summary: Delete an SNMP OID mock
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Mock deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/snmp/traps:
+    get:
+      tags: [SNMP Mocks]
+      operationId: listSNMPTraps
+      summary: List configured SNMP traps
+      responses:
+        "200":
+          description: Array of trap configurations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SNMPTrap"
+    post:
+      tags: [SNMP Mocks]
+      operationId: addSNMPTrap
+      summary: Add an SNMP trap configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SNMPTrap"
+            examples:
+              cold_start:
+                summary: coldStart trap to localhost
+                value:
+                  id: cold-start
+                  target: "127.0.0.1:1162"
+                  version: "2c"
+                  community: "public"
+                  oid: "1.3.6.1.6.3.1.1.5.1"
+                  bindings:
+                    - oid: "1.3.6.1.2.1.1.1.0"
+                      type: string
+                      value: "Device restarted"
+      responses:
+        "201":
+          description: Trap configuration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SNMPTrap"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/snmp/traps/{id}/send:
+    post:
+      tags: [SNMP Mocks]
+      operationId: sendSNMPTrap
+      summary: Send an SNMP trap immediately
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID of a configured trap to send
+      responses:
+        "200":
+          description: Trap sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
   # ---------------------------------------------------------------------------
   # State
@@ -1801,3 +1967,83 @@ components:
           minimum: 0
           maximum: 1
           description: Probability (0.0–1.0) that any given request triggers the fault (0 = always)
+
+# ── SNMP ──────────────────────────────────────────────────────────────────
+    SNMPMock:
+      type: object
+      required: [id, oid, type, value]
+      properties:
+        id:
+          type: string
+          description: Unique identifier for this mock
+        oid:
+          type: string
+          description: OID in dotted-decimal notation (e.g. "1.3.6.1.2.1.1.1.0")
+        type:
+          type: string
+          enum: [string, octetstring, integer, int, gauge32, counter32, counter64, timeticks, ipaddress, objectidentifier, oid]
+          description: SNMP data type for this OID
+        value:
+          description: The value to return for GET requests (can be string, integer, or float)
+
+    SNMPTrapBinding:
+      type: object
+      required: [oid, type, value]
+      properties:
+        oid:
+          type: string
+          description: OID in dotted-decimal notation
+        type:
+          type: string
+          description: SNMP data type (same values as SNMPMock.type)
+        value:
+          description: Variable binding value
+
+    SNMPTrap:
+      type: object
+      required: [id, target, oid]
+      properties:
+        id:
+          type: string
+          description: Unique identifier for this trap configuration
+        target:
+          type: string
+          description: "Destination host:port for the trap UDP datagram (e.g. \"127.0.0.1:1162\")"
+        version:
+          type: string
+          enum: ["1", "2c", "3"]
+          default: "2c"
+          description: SNMP version for the outbound trap
+        community:
+          type: string
+          default: "public"
+          description: Community string (v1/v2c)
+        oid:
+          type: string
+          description: Trap OID / enterprise OID
+        bindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/SNMPTrapBinding"
+          description: Variable bindings to include in the trap PDU
+
+    SNMPUser:
+      type: object
+      required: [username]
+      properties:
+        username:
+          type: string
+        auth_protocol:
+          type: string
+          enum: [md5, sha, sha224, sha256, sha384, sha512]
+          default: md5
+        auth_passphrase:
+          type: string
+          format: password
+        priv_protocol:
+          type: string
+          enum: [des, aes, aes192, aes256]
+          default: des
+        priv_passphrase:
+          type: string
+          format: password

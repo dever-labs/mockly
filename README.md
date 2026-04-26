@@ -1,6 +1,6 @@
 # Mockly
 
-**Cross-platform, multi-protocol mock server** — HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, and MQTT in a single binary with a built-in web UI, REST management API, scenario system, and fault injection.
+**Cross-platform, multi-protocol mock server** — HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, and SNMP in a single binary with a built-in web UI, REST management API, scenario system, and fault injection.
 
 [![CI](https://github.com/dever-labs/mockly/actions/workflows/ci.yml/badge.svg)](https://github.com/dever-labs/mockly/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/dever-labs/mockly)](https://github.com/dever-labs/mockly/releases/latest)
@@ -34,7 +34,7 @@
 
 | Feature | Details |
 |---|---|
-| **Protocols** | HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT |
+| **Protocols** | HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP |
 | **Request matching** | Method + path (exact / wildcard / regex), headers, query params, JSON body fields |
 | **Response sequences** | Return a different response on each successive call — loop, hold last, or 404 when exhausted |
 | **Response control** | Status code, headers, body, artificial delay |
@@ -506,6 +506,64 @@ Topic wildcards: `+` matches a single segment, `#` matches everything below.
 
 ---
 
+### SNMP
+
+Full SNMP agent (powered by GoSNMPServer) that responds to GET, GETNEXT, GETBULK, and SET requests. Supports SNMPv1, v2c, and v3 (USM with MD5/SHA auth and DES/AES privacy). Can also send outbound TRAPs to any target host via the management API.
+
+```yaml
+protocols:
+  snmp:
+    enabled: true
+    port: 1161            # default; 161 requires root / CAP_NET_BIND_SERVICE
+    community: "public"   # v1/v2c community string
+    v3_users:
+      - username: mocklyuser
+        auth_protocol: md5        # md5 | sha | sha224 | sha256 | sha384 | sha512
+        auth_passphrase: mocklyauth
+        priv_protocol: des        # des | aes | aes192 | aes256
+        priv_passphrase: mocklypriv
+    mocks:
+      - id: sys-descr
+        oid: 1.3.6.1.2.1.1.1.0
+        type: string
+        value: "Mockly Virtual Device"
+      - id: sys-uptime
+        oid: 1.3.6.1.2.1.1.3.0
+        type: timeticks
+        value: 987654
+      - id: if-number
+        oid: 1.3.6.1.2.1.2.1.0
+        type: integer
+        value: 4
+    traps:
+      - id: cold-start
+        target: "127.0.0.1:1162"
+        version: "2c"
+        community: "public"
+        oid: 1.3.6.1.6.3.1.1.5.1
+        bindings:
+          - oid: 1.3.6.1.2.1.1.1.0
+            type: string
+            value: "Device restarted"
+```
+
+**Supported OID types:**
+
+| `type` value | SNMP ASN.1 type | Example `value` |
+|---|---|---|
+| `string` / `octetstring` | OctetString | `"Mockly Virtual Device"` |
+| `integer` / `int` | Integer | `42` |
+| `gauge32` | Gauge32 | `100` |
+| `counter32` | Counter32 | `1048576` |
+| `counter64` | Counter64 | `9000000000` |
+| `timeticks` | TimeTicks | `987654` |
+| `ipaddress` | IPAddress | `"192.168.1.1"` |
+| `objectidentifier` / `oid` | ObjectIdentifier | `"1.3.6.1.2.1.1.2.0"` |
+
+**TRAP sending** — POST to `/api/snmp/traps/{id}/send` to trigger any configured trap. The agent connects to the trap's `target` over UDP and sends the PDU.
+
+---
+
 ## Component Testing
 
 Mockly is designed for **component testing** — testing how your application behaves when a dependency returns errors, timeouts, unexpected data, or edge-case responses. The config file is owned by the dependency team; consuming teams just load it and toggle scenarios.
@@ -788,7 +846,7 @@ Base URL: `http://localhost:9091`
 | `PATCH` | `/api/mocks/http/{id}` | Partial update HTTP mock |
 | `DELETE` | `/api/mocks/http/{id}` | Delete HTTP mock |
 
-Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), GraphQL (`/api/mocks/graphql`), TCP (`/api/mocks/tcp`), Redis (`/api/mocks/redis`), SMTP (`/api/mocks/smtp`), MQTT (`/api/mocks/mqtt`).
+Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), GraphQL (`/api/mocks/graphql`), TCP (`/api/mocks/tcp`), Redis (`/api/mocks/redis`), SMTP (`/api/mocks/smtp`), MQTT (`/api/mocks/mqtt`), and SNMP (`/api/mocks/snmp`).
 
 ### Call Verification (HTTP)
 
@@ -812,6 +870,18 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 |---|---|---|
 | `GET` | `/api/mqtt/messages` | List captured MQTT messages |
 | `DELETE` | `/api/mqtt/messages` | Clear message store |
+
+### SNMP Mocks & Traps
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/mocks/snmp` | List configured OID mocks |
+| `POST` | `/api/mocks/snmp` | Add an OID mock |
+| `PUT` | `/api/mocks/snmp/{id}` | Replace an OID mock |
+| `DELETE` | `/api/mocks/snmp/{id}` | Remove an OID mock |
+| `GET` | `/api/snmp/traps` | List configured traps |
+| `POST` | `/api/snmp/traps` | Add a trap config |
+| `POST` | `/api/snmp/traps/{id}/send` | Send a configured trap immediately |
 
 ### Scenarios
 
@@ -1096,21 +1166,21 @@ docker compose up
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                            Single Binary                                         │
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────┐         │
-│  │                     Management API + Web UI  :9091                  │         │
-│  │  CRUD mocks/rules  ·  scenarios  ·  fault  ·  state  ·  logs/SSE    │         │
-│  └─────────────────────────────────────────────────────────────────────┘         │
-│                                                                                  │
-│  ┌──────┐ ┌─────────┐ ┌──────┐ ┌─────────┐ ┌─────┐ ┌───────┐ ┌──────┐ ┌──────┐   │
-│  │ HTTP │ │WebSocket│ │ gRPC │ │GraphQL  │ │ TCP │ │ Redis │ │ SMTP │ │ MQTT │   │
-│  │:8080 │ │ :8081   │ │:50051│ │ :8082   │ │:8083│ │ :6379 │ │:2525 │ │:1883 │   │
-│  └──────┘ └─────────┘ └──────┘ └─────────┘ └─────┘ └───────┘ └──────┘ └──────┘   │
-│                                                                                  │
-│  Shared:  State Store  ·  Request Logger  ·  Scenario Store                      │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                Single Binary                                             │
+│                                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────────┐                 │
+│  │                     Management API + Web UI  :9091                  │                 │
+│  │  CRUD mocks/rules  ·  scenarios  ·  fault  ·  state  ·  logs/SSE    │                 │
+│  └─────────────────────────────────────────────────────────────────────┘                 │
+│                                                                                          │
+│  ┌──────┐ ┌─────────┐ ┌──────┐ ┌─────────┐ ┌─────┐ ┌───────┐ ┌──────┐ ┌──────┐ ┌──────┐  │
+│  │ HTTP │ │WebSocket│ │ gRPC │ │GraphQL  │ │ TCP │ │ Redis │ │ SMTP │ │ MQTT │ │ SNMP │  │
+│  │:8080 │ │ :8081   │ │:50051│ │ :8082   │ │:8083│ │ :6379 │ │:2525 │ │:1883 │ │:1161 │  │
+│  └──────┘ └─────────┘ └──────┘ └─────────┘ └─────┘ └───────┘ └──────┘ └──────┘ └──────┘  │
+│                                                                                          │
+│  Shared:  State Store  ·  Request Logger  ·  Scenario Store                              │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---

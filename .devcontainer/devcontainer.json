@@ -1,10 +1,9 @@
 {
   "name": "Mockly",
   "image": "ghcr.io/dever-labs/devcontainers/go-dev:latest",
-  "postCreateCommand": "GOTOOLCHAIN=auto go install github.com/air-verse/air@v1.61.7 && go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 && npm --prefix ui ci",
   "mounts": [
     "source=dever-labs-gh-config,target=/home/vscode/.config/gh,type=volume",
-    "source=dever-labs-copilot-config,target=/home/vscode/.copilot,type=volume"
+    "source=dever-labs-copilot,target=/home/vscode/.copilot,type=volume"
   ],
 
   "remoteEnv": {
@@ -21,19 +20,23 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        "github.copilot",
-        "github.copilot-chat",
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
         "anthropics.claude-code",
-        "golang.go",
+        "golang.go"
       ],
       "settings": {
         "go.toolsManagement.checkForUpdates": "off",
         "go.useLanguageServer": true,
         "editor.formatOnSave": true,
+        "github.copilot.enable": { "*": true },
         "[go]": {
           "editor.defaultFormatter": "golang.go"
         }
       }
     }
-  }
+  },
+
+  "postCreateCommand": "bash .devcontainer/init.sh",
+  "remoteUser": "vscode"
 }

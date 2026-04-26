@@ -21,6 +21,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gosnmp/gosnmp"
 )
 
 // ---------------------------------------------------------------------------
@@ -673,4 +675,278 @@ protocols:
 	if r2.StatusCode != 404 {
 		t.Errorf("wrong lang: want 404, got %d", r2.StatusCode)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// SNMP helpers
+// ---------------------------------------------------------------------------
+
+// startMocklyWithSNMP starts Mockly with SNMP enabled on a free port and
+// returns (apiBase, snmpPort).
+func startMocklyWithSNMP(t *testing.T, extraMocks string) (apiBase string, snmpPort int) {
+t.Helper()
+
+apiPort := freePort(t)
+snmpPort = freePort(t)
+httpPort := freePort(t)
+
+cfg := fmt.Sprintf(`mockly:
+  api:
+    port: %d
+protocols:
+  http:
+    enabled: true
+    port: %d
+  snmp:
+    enabled: true
+    port: %d
+    community: public
+    mocks:
+      - id: sys-descr
+        oid: 1.3.6.1.2.1.1.1.0
+        type: string
+        value: "Mockly Virtual Device"
+      - id: sys-uptime
+        oid: 1.3.6.1.2.1.1.3.0
+        type: timeticks
+        value: 987654
+%s`, apiPort, httpPort, snmpPort, extraMocks)
+
+dir := t.TempDir()
+cfgPath := filepath.Join(dir, "mockly.yaml")
+if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+t.Fatalf("write config: %v", err)
+}
+
+cmd := exec.Command(binaryPath, "start", "--config", cfgPath)
+cmd.Stdout = os.Stdout
+cmd.Stderr = os.Stderr
+if err := cmd.Start(); err != nil {
+t.Fatalf("start mockly: %v", err)
+}
+t.Cleanup(func() {
+if err := cmd.Process.Kill(); err != nil {
+t.Logf("cleanup: failed to kill mockly process: %v", err)
+}
+_ = cmd.Wait()
+})
+
+apiBase = fmt.Sprintf("http://127.0.0.1:%d", apiPort)
+waitForHTTP(t, apiBase+"/api/protocols", 10*time.Second)
+
+// Wait for SNMP UDP port to become reachable.
+deadline := time.Now().Add(10 * time.Second)
+for time.Now().Before(deadline) {
+g := &gosnmp.GoSNMP{
+Target:    "127.0.0.1",
+Port:      uint16(snmpPort),
+Community: "public",
+Version:   gosnmp.Version2c,
+Timeout:   200 * time.Millisecond,
+Retries:   0,
+}
+if err := g.Connect(); err == nil {
+_, err = g.Get([]string{"1.3.6.1.2.1.1.1.0"})
+g.Conn.Close()
+if err == nil {
+break
+}
+}
+time.Sleep(50 * time.Millisecond)
+}
+return apiBase, snmpPort
+}
+
+// snmpGet connects a v2c client to the given port and returns the value of the
+// first variable in the GET response.
+func snmpGet(t *testing.T, port int, oid string) gosnmp.SnmpPDU {
+t.Helper()
+g := &gosnmp.GoSNMP{
+Target:    "127.0.0.1",
+Port:      uint16(port),
+Community: "public",
+Version:   gosnmp.Version2c,
+Timeout:   3 * time.Second,
+Retries:   1,
+}
+if err := g.Connect(); err != nil {
+t.Fatalf("snmpGet Connect: %v", err)
+}
+defer g.Conn.Close()
+result, err := g.Get([]string{oid})
+if err != nil {
+t.Fatalf("snmpGet %s: %v", oid, err)
+}
+if len(result.Variables) == 0 {
+t.Fatalf("snmpGet %s: empty response", oid)
+}
+return result.Variables[0]
+}
+
+// ---------------------------------------------------------------------------
+// SNMP E2E tests
+// ---------------------------------------------------------------------------
+
+func TestE2E_SNMP_GET_ReturnsConfiguredValue(t *testing.T) {
+_, snmpPort := startMocklyWithSNMP(t, "")
+
+pdu := snmpGet(t, snmpPort, "1.3.6.1.2.1.1.1.0")
+got := string(pdu.Value.([]byte))
+if got != "Mockly Virtual Device" {
+t.Errorf("sys-descr: want %q, got %q", "Mockly Virtual Device", got)
+}
+}
+
+func TestE2E_SNMP_GETNEXT_WalksOIDs(t *testing.T) {
+_, snmpPort := startMocklyWithSNMP(t, "")
+
+g := &gosnmp.GoSNMP{
+Target:    "127.0.0.1",
+Port:      uint16(snmpPort),
+Community: "public",
+Version:   gosnmp.Version2c,
+Timeout:   3 * time.Second,
+Retries:   1,
+}
+if err := g.Connect(); err != nil {
+t.Fatalf("Connect: %v", err)
+}
+defer g.Conn.Close()
+
+// GETNEXT on sys-descr should return sys-uptime (next OID).
+result, err := g.GetNext([]string{"1.3.6.1.2.1.1.1.0"})
+if err != nil {
+t.Fatalf("GetNext: %v", err)
+}
+if len(result.Variables) == 0 {
+t.Fatal("GetNext: empty response")
+}
+nextOID := result.Variables[0].Name
+if !strings.Contains(nextOID, "1.3.6.1.2.1.1.3.0") {
+t.Errorf("GETNEXT from sys-descr: expected next OID to contain sys-uptime, got %s", nextOID)
+}
+}
+
+func TestE2E_SNMP_SET_UpdatesValue(t *testing.T) {
+_, snmpPort := startMocklyWithSNMP(t, "")
+
+g := &gosnmp.GoSNMP{
+Target:    "127.0.0.1",
+Port:      uint16(snmpPort),
+Community: "public",
+Version:   gosnmp.Version2c,
+Timeout:   3 * time.Second,
+Retries:   1,
+}
+if err := g.Connect(); err != nil {
+t.Fatalf("Connect: %v", err)
+}
+defer g.Conn.Close()
+
+pdus := []gosnmp.SnmpPDU{{
+Name:  "1.3.6.1.2.1.1.1.0",
+Type:  gosnmp.OctetString,
+Value: "Updated Device",
+}}
+if _, err := g.Set(pdus); err != nil {
+t.Fatalf("SET: %v", err)
+}
+
+// Verify with GET.
+got := snmpGet(t, snmpPort, "1.3.6.1.2.1.1.1.0")
+gotStr := string(got.Value.([]byte))
+if gotStr != "Updated Device" {
+t.Errorf("after SET: want %q, got %q", "Updated Device", gotStr)
+}
+}
+
+func TestE2E_SNMP_APICRUDReflectsInGET(t *testing.T) {
+apiBase, snmpPort := startMocklyWithSNMP(t, "")
+
+// Add a new OID mock via API.
+newMock := map[string]interface{}{
+"id":    "custom-oid",
+"oid":   "1.3.6.1.4.1.9999.99.0",
+"type":  "integer",
+"value": 42,
+}
+resp := postJSON(t, apiBase+"/api/mocks/snmp", newMock)
+defer resp.Body.Close()
+if resp.StatusCode != 201 {
+body, _ := io.ReadAll(resp.Body)
+t.Fatalf("POST /api/mocks/snmp: want 201, got %d — %s", resp.StatusCode, body)
+}
+
+// Give the server a moment to apply the new mock.
+time.Sleep(300 * time.Millisecond)
+
+pdu := snmpGet(t, snmpPort, "1.3.6.1.4.1.9999.99.0")
+got, ok := pdu.Value.(int)
+if !ok {
+t.Fatalf("expected integer value, got %T", pdu.Value)
+}
+if got != 42 {
+t.Errorf("custom OID: want 42, got %d", got)
+}
+}
+
+func TestE2E_SNMP_TrapSend_Returns200(t *testing.T) {
+apiBase, _ := startMocklyWithSNMP(t, "")
+
+// Add a trap config.
+trap := map[string]interface{}{
+"id":        "test-trap",
+"target":    "127.0.0.1:1162",
+"version":   "2c",
+"community": "public",
+"oid":       "1.3.6.1.6.3.1.1.5.1",
+"bindings": []map[string]interface{}{
+{"oid": "1.3.6.1.2.1.1.1.0", "type": "string", "value": "test"},
+},
+}
+r1 := postJSON(t, apiBase+"/api/snmp/traps", trap)
+defer r1.Body.Close()
+if r1.StatusCode != 201 {
+body, _ := io.ReadAll(r1.Body)
+t.Fatalf("POST /api/snmp/traps: want 201, got %d — %s", r1.StatusCode, body)
+}
+
+// Send the trap — 127.0.0.1:1162 likely has no listener, but the API
+// should still return 200 if the UDP packet was dispatched (best-effort).
+r2 := postJSON(t, apiBase+"/api/snmp/traps/test-trap/send", nil)
+defer r2.Body.Close()
+if r2.StatusCode != 200 {
+body, _ := io.ReadAll(r2.Body)
+t.Fatalf("POST /api/snmp/traps/test-trap/send: want 200, got %d — %s", r2.StatusCode, body)
+}
+}
+
+func TestE2E_SNMP_UnknownOID_ReturnsNoSuchObject(t *testing.T) {
+_, snmpPort := startMocklyWithSNMP(t, "")
+
+g := &gosnmp.GoSNMP{
+Target:    "127.0.0.1",
+Port:      uint16(snmpPort),
+Community: "public",
+Version:   gosnmp.Version2c,
+Timeout:   3 * time.Second,
+Retries:   1,
+}
+if err := g.Connect(); err != nil {
+t.Fatalf("Connect: %v", err)
+}
+defer g.Conn.Close()
+
+result, err := g.Get([]string{"1.3.6.1.4.1.99999.0.0.0"})
+if err != nil {
+t.Fatalf("GET unknown OID: %v", err)
+}
+if len(result.Variables) == 0 {
+t.Fatal("GET unknown OID: no variables in response")
+}
+pduType := result.Variables[0].Type
+// GoSNMPServer returns NoSuchObject (0x80) or NoSuchInstance (0x81) for unknown OIDs.
+if pduType != gosnmp.NoSuchObject && pduType != gosnmp.NoSuchInstance {
+t.Errorf("unknown OID: expected NoSuchObject or NoSuchInstance, got type %v", pduType)
+}
 }

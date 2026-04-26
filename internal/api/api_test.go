@@ -94,6 +94,15 @@ func (s *stubMQTT) GetMocks() []config.MQTTMock           { return nil }
 func (s *stubMQTT) SetMocks(m []config.MQTTMock)          {}
 func (s *stubMQTT) GetMessageStore() *mqttserver.MessageStore { return s.ms }
 
+type stubSNMP struct{}
+
+func (s *stubSNMP) StatusInfo() map[string]interface{}  { return map[string]interface{}{"protocol": "snmp"} }
+func (s *stubSNMP) GetMocks() []config.SNMPMock         { return nil }
+func (s *stubSNMP) SetMocks(m []config.SNMPMock)        {}
+func (s *stubSNMP) GetTraps() []config.SNMPTrap         { return nil }
+func (s *stubSNMP) SetTraps(t []config.SNMPTrap)        {}
+func (s *stubSNMP) SendTrap(id string) error            { return nil }
+
 // ---------------------------------------------------------------------------
 // Helper: start an API server on a free port
 // ---------------------------------------------------------------------------
@@ -130,7 +139,7 @@ func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store) 
 		&stubRedis{},
 		smtpStub,
 		mqttStub,
-		nil, // snmp not used in these tests
+		&stubSNMP{},
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())

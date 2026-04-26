@@ -64,18 +64,13 @@ func (s *Server) SetMocks(mocks []config.SNMPMock) {
 	// Prepare a new restart channel before signalling.
 	oldRestart := s.restart
 	s.restart = make(chan struct{})
-	// Capture the current srv pointer while still holding the lock so reads
-	// of s.srv are synchronized with buildAndListen's write.
-	srv := s.srv
 	s.mu.Unlock()
 
-	// Signal the Start loop to rebuild with the new mocks BEFORE shutting
-	// down the server, so the restart channel is already closed when
-	// ServeForever() returns and the select's errCh fires.
+	// Signal the Start loop to rebuild. The Start loop is responsible for
+	// shutting down the running server (via current.Shutdown in the
+	// <-restartCh case) before re-binding the port. Calling Shutdown here
+	// would race with the Start loop's own Shutdown call.
 	close(oldRestart)
-	if srv != nil {
-		srv.Shutdown()
-	}
 }
 
 func (s *Server) GetTraps() []config.SNMPTrap {
@@ -137,7 +132,9 @@ func (s *Server) Start(ctx context.Context) error {
 			current.Shutdown()
 			return nil
 		case <-restartCh:
-			// SetMocks triggered a rebuild; loop back to buildAndListen.
+			// SetMocks triggered a rebuild. Shut down the running server so
+			// it releases the UDP port before buildAndListen re-binds it.
+			current.Shutdown()
 			continue
 		case err := <-errCh:
 			// If a restart was requested at the same time ServeForever returned,

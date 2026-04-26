@@ -1,0 +1,181 @@
+# Mockly preset: Anthropic Claude API
+#
+# Mocks the Anthropic Messages API for testing Claude integrations.
+#
+# Start:   mockly preset use anthropic
+#          mockly start --config configs/presets/anthropic.yaml
+#
+# Base URL in your app config: http://localhost:8080
+# Docs: https://docs.anthropic.com/en/api
+#
+# Includes:
+#   - Messages (Claude 3.5/3 Opus/Sonnet/Haiku)
+#   - Models list
+#   - Token counting
+#   - Common error responses (rate limit, overloaded, invalid auth)
+#
+# Use state to simulate errors:
+#   curl -X POST http://localhost:9091/api/state -d '{"anthropic_error":"rate_limit"}'
+#   curl -X DELETE http://localhost:9091/api/state/anthropic_error
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── Models ────────────────────────────────────────────────────────────
+      - id: list-models
+        request:
+          method: GET
+          path: /v1/models
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "data": [
+                {
+                  "type": "model",
+                  "id": "claude-3-5-sonnet-20241022",
+                  "display_name": "Claude 3.5 Sonnet",
+                  "created_at": "2024-10-22T00:00:00Z"
+                },
+                {
+                  "type": "model",
+                  "id": "claude-3-5-haiku-20241022",
+                  "display_name": "Claude 3.5 Haiku",
+                  "created_at": "2024-10-22T00:00:00Z"
+                },
+                {
+                  "type": "model",
+                  "id": "claude-3-opus-20240229",
+                  "display_name": "Claude 3 Opus",
+                  "created_at": "2024-02-29T00:00:00Z"
+                },
+                {
+                  "type": "model",
+                  "id": "claude-3-sonnet-20240229",
+                  "display_name": "Claude 3 Sonnet",
+                  "created_at": "2024-02-29T00:00:00Z"
+                },
+                {
+                  "type": "model",
+                  "id": "claude-3-haiku-20240307",
+                  "display_name": "Claude 3 Haiku",
+                  "created_at": "2024-03-07T00:00:00Z"
+                }
+              ],
+              "has_more": false,
+              "first_id": "claude-3-5-sonnet-20241022",
+              "last_id": "claude-3-haiku-20240307"
+            }
+
+      # ── Messages (error states first — evaluated before the default) ──────
+      - id: error-unauthorized
+        state:
+          key: anthropic_error
+          value: "unauthorized"
+        request:
+          method: POST
+          path: /v1/messages
+        response:
+          status: 401
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "type": "error",
+              "error": {
+                "type": "authentication_error",
+                "message": "invalid x-api-key"
+              }
+            }
+
+      - id: error-rate-limit
+        state:
+          key: anthropic_error
+          value: "rate_limit"
+        request:
+          method: POST
+          path: /v1/messages
+        response:
+          status: 429
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "type": "error",
+              "error": {
+                "type": "rate_limit_error",
+                "message": "Rate limit exceeded"
+              }
+            }
+
+      - id: error-overloaded
+        state:
+          key: anthropic_error
+          value: "overloaded"
+        request:
+          method: POST
+          path: /v1/messages
+        response:
+          status: 529
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "type": "error",
+              "error": {
+                "type": "overloaded_error",
+                "message": "Anthropic's API is temporarily overloaded"
+              }
+            }
+
+      - id: create-message
+        request:
+          method: POST
+          path: /v1/messages
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "msg_mock001",
+              "type": "message",
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Hello! I'm Claude, an AI assistant made by Anthropic. How can I help you today?"
+                }
+              ],
+              "model": "claude-3-5-sonnet-20241022",
+              "stop_reason": "end_turn",
+              "stop_sequence": null,
+              "usage": {
+                "input_tokens": 15,
+                "output_tokens": 20
+              }
+            }
+
+      # ── Token counting ────────────────────────────────────────────────────
+      - id: count-tokens
+        request:
+          method: POST
+          path: /v1/messages/count_tokens
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {"input_tokens": 42}

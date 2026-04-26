@@ -35,6 +35,10 @@ var All = []Preset{
 	{Name: "slack", Description: "Slack Web API mock (messages, channels, users, webhooks)", Filename: "slack.yaml"},
 	{Name: "twilio", Description: "Twilio API mock (SMS, calls, Verify OTP)", Filename: "twilio.yaml"},
 	{Name: "sendgrid", Description: "SendGrid v3 API mock (mail send, templates, suppressions)", Filename: "sendgrid.yaml"},
+	{Name: "anthropic", Description: "Anthropic Claude API mock (messages, models)", Filename: "anthropic.yaml"},
+	{Name: "resend", Description: "Resend email API mock (send, retrieve, domains, API keys)", Filename: "resend.yaml"},
+	{Name: "pagerduty", Description: "PagerDuty API mock (incidents, services, users, escalations)", Filename: "pagerduty.yaml"},
+	{Name: "aws-s3", Description: "AWS S3 API mock (list buckets/objects, get/put/delete objects)", Filename: "aws-s3.yaml"},
 }
 
 // Find returns the Preset with the given name (case-insensitive), or an error.

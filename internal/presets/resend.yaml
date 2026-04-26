@@ -1,0 +1,206 @@
+# Mockly preset: Resend Email API
+#
+# Mocks the Resend v1 API for testing transactional email integrations.
+#
+# Start:   mockly preset use resend
+#          mockly start --config configs/presets/resend.yaml
+#
+# Base URL in your app config: http://localhost:8080
+# Docs: https://resend.com/docs/api-reference
+#
+# Includes:
+#   - Send email
+#   - Retrieve / update / cancel email
+#   - Batch send
+#   - Domains (list, get)
+#   - API Keys (list)
+#   - Common error responses (invalid API key, rate limit)
+#
+# Use state to simulate errors:
+#   curl -X POST http://localhost:9091/api/state -d '{"resend_error":"rate_limit"}'
+#   curl -X DELETE http://localhost:9091/api/state/resend_error
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── Emails (error states first) ───────────────────────────────────────
+      - id: error-unauthorized
+        state:
+          key: resend_error
+          value: "unauthorized"
+        request:
+          method: POST
+          path: /emails
+        response:
+          status: 401
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "statusCode": 401,
+              "message": "API key is invalid",
+              "name": "validation_error"
+            }
+
+      - id: error-rate-limit
+        state:
+          key: resend_error
+          value: "rate_limit"
+        request:
+          method: POST
+          path: /emails
+        response:
+          status: 429
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "statusCode": 429,
+              "message": "Too many requests",
+              "name": "rate_limit_exceeded"
+            }
+
+      - id: send-email
+        request:
+          method: POST
+          path: /emails
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {"id": "re_mock_00000001"}
+
+      - id: get-email
+        request:
+          method: GET
+          path: re:^/emails/[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "re_mock_00000001",
+              "object": "email",
+              "to": ["recipient@example.com"],
+              "from": "sender@example.com",
+              "created_at": "2024-01-01T00:00:00.000Z",
+              "subject": "Test email",
+              "html": "<p>Hello</p>",
+              "text": "Hello",
+              "bcc": null,
+              "cc": null,
+              "reply_to": null,
+              "last_event": "delivered"
+            }
+
+      - id: update-email
+        request:
+          method: PATCH
+          path: re:^/emails/[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {"id": "re_mock_00000001", "object": "email"}
+
+      - id: cancel-email
+        request:
+          method: POST
+          path: re:^/emails/[^/]+/cancel$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {"id": "re_mock_00000001", "object": "email"}
+
+      # ── Batch send ────────────────────────────────────────────────────────
+      - id: batch-send
+        request:
+          method: POST
+          path: /emails/batch
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "data": [
+                {"id": "re_mock_00000002"},
+                {"id": "re_mock_00000003"}
+              ]
+            }
+
+      # ── Domains ───────────────────────────────────────────────────────────
+      - id: list-domains
+        request:
+          method: GET
+          path: /domains
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "data": [
+                {
+                  "id": "dom_mock001",
+                  "name": "example.com",
+                  "status": "verified",
+                  "created_at": "2024-01-01T00:00:00.000Z",
+                  "region": "us-east-1",
+                  "records": []
+                }
+              ]
+            }
+
+      - id: get-domain
+        request:
+          method: GET
+          path: re:^/domains/[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "id": "dom_mock001",
+              "name": "example.com",
+              "status": "verified",
+              "created_at": "2024-01-01T00:00:00.000Z",
+              "region": "us-east-1",
+              "records": []
+            }
+
+      # ── API Keys ──────────────────────────────────────────────────────────
+      - id: list-api-keys
+        request:
+          method: GET
+          path: /api-keys
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "data": [
+                {
+                  "id": "key_mock001",
+                  "name": "Production",
+                  "created_at": "2024-01-01T00:00:00.000Z"
+                }
+              ]
+            }

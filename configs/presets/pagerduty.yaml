@@ -1,0 +1,447 @@
+# Mockly preset: PagerDuty API
+#
+# Mocks the PagerDuty REST API for testing incident management integrations.
+#
+# Start:   mockly preset use pagerduty
+#          mockly start --config configs/presets/pagerduty.yaml
+#
+# Base URL in your app config: http://localhost:8080
+# Authorization: Token token=mock-pagerduty-token
+# Docs: https://developer.pagerduty.com/api-reference
+#
+# Includes:
+#   - Incidents (list, create, get, acknowledge, resolve)
+#   - Services (list, get)
+#   - Users (list, get)
+#   - Escalation Policies (list)
+#   - Abilities check
+#   - Error responses (invalid auth, not found)
+#
+# Use state to simulate errors:
+#   curl -X POST http://localhost:9091/api/state -d '{"pagerduty_error":"unauthorized"}'
+#   curl -X DELETE http://localhost:9091/api/state/pagerduty_error
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── Abilities ─────────────────────────────────────────────────────────
+      - id: get-abilities
+        request:
+          method: GET
+          path: /abilities
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "abilities": [
+                "teams",
+                "read_only_users",
+                "service_rules",
+                "workflows"
+              ]
+            }
+
+      # ── Incidents (error state first) ─────────────────────────────────────
+      - id: error-unauthorized
+        state:
+          key: pagerduty_error
+          value: "unauthorized"
+        request:
+          method: GET
+          path: /incidents
+        response:
+          status: 401
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "error": {
+                "code": 2006,
+                "message": "Account locked",
+                "errors": ["Account locked."]
+              }
+            }
+
+      - id: list-incidents
+        request:
+          method: GET
+          path: /incidents
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "incidents": [
+                {
+                  "id": "PT4KHLK",
+                  "incident_number": 1,
+                  "title": "Database CPU usage is critically high",
+                  "status": "triggered",
+                  "urgency": "high",
+                  "created_at": "2024-01-15T08:00:00Z",
+                  "html_url": "http://localhost:8080/incidents/PT4KHLK",
+                  "type": "incident",
+                  "service": {
+                    "id": "PIJ90N7",
+                    "type": "service_reference",
+                    "summary": "Production DB",
+                    "html_url": "http://localhost:8080/services/PIJ90N7"
+                  },
+                  "assignments": [
+                    {
+                      "at": "2024-01-15T08:00:00Z",
+                      "assignee": {
+                        "id": "PXPGF42",
+                        "type": "user_reference",
+                        "summary": "Alice Smith",
+                        "html_url": "http://localhost:8080/users/PXPGF42"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "Q123ABC",
+                  "incident_number": 2,
+                  "title": "High memory usage on app servers",
+                  "status": "acknowledged",
+                  "urgency": "low",
+                  "created_at": "2024-01-15T09:30:00Z",
+                  "html_url": "http://localhost:8080/incidents/Q123ABC",
+                  "type": "incident",
+                  "service": {
+                    "id": "P8QQMKV",
+                    "type": "service_reference",
+                    "summary": "App Server",
+                    "html_url": "http://localhost:8080/services/P8QQMKV"
+                  },
+                  "assignments": [
+                    {
+                      "at": "2024-01-15T09:30:00Z",
+                      "assignee": {
+                        "id": "PABCDE1",
+                        "type": "user_reference",
+                        "summary": "Bob Jones",
+                        "html_url": "http://localhost:8080/users/PABCDE1"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "limit": 25,
+              "offset": 0,
+              "more": false,
+              "total": 2
+            }
+
+      - id: create-incident
+        request:
+          method: POST
+          path: /incidents
+        response:
+          status: 201
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "incident": {
+                "id": "PNEW001",
+                "incident_number": 3,
+                "title": "Mock incident created via API",
+                "status": "triggered",
+                "urgency": "high",
+                "created_at": "2024-01-15T10:00:00Z",
+                "html_url": "http://localhost:8080/incidents/PNEW001",
+                "type": "incident",
+                "service": {
+                  "id": "PIJ90N7",
+                  "type": "service_reference",
+                  "summary": "Production DB",
+                  "html_url": "http://localhost:8080/services/PIJ90N7"
+                },
+                "assignments": []
+              }
+            }
+
+      - id: get-incident
+        request:
+          method: GET
+          path: re:^/incidents/[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "incident": {
+                "id": "PT4KHLK",
+                "incident_number": 1,
+                "title": "Database CPU usage is critically high",
+                "status": "triggered",
+                "urgency": "high",
+                "created_at": "2024-01-15T08:00:00Z",
+                "html_url": "http://localhost:8080/incidents/PT4KHLK",
+                "type": "incident",
+                "service": {
+                  "id": "PIJ90N7",
+                  "type": "service_reference",
+                  "summary": "Production DB",
+                  "html_url": "http://localhost:8080/services/PIJ90N7"
+                },
+                "assignments": []
+              }
+            }
+
+      - id: update-incident
+        request:
+          method: PUT
+          path: re:^/incidents/[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "incident": {
+                "id": "PT4KHLK",
+                "incident_number": 1,
+                "title": "Database CPU usage is critically high",
+                "status": "resolved",
+                "urgency": "high",
+                "created_at": "2024-01-15T08:00:00Z",
+                "resolved_at": "2024-01-15T10:30:00Z",
+                "html_url": "http://localhost:8080/incidents/PT4KHLK",
+                "type": "incident",
+                "service": {
+                  "id": "PIJ90N7",
+                  "type": "service_reference",
+                  "summary": "Production DB",
+                  "html_url": "http://localhost:8080/services/PIJ90N7"
+                },
+                "assignments": []
+              }
+            }
+
+      # ── Incident Notes ────────────────────────────────────────────────────
+      - id: list-incident-notes
+        request:
+          method: GET
+          path: re:^/incidents/[^/]+/notes$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {"notes": []}
+
+      - id: create-incident-note
+        request:
+          method: POST
+          path: re:^/incidents/[^/]+/notes$
+        response:
+          status: 201
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "note": {
+                "id": "PWL7QXS",
+                "user": {
+                  "id": "PXPGF42",
+                  "type": "user_reference",
+                  "summary": "Mock User",
+                  "html_url": "http://localhost:8080/users/PXPGF42"
+                },
+                "channel": {"type": "website"},
+                "content": "Note added",
+                "created_at": "2024-01-15T10:00:00Z"
+              }
+            }
+
+      # ── Services ──────────────────────────────────────────────────────────
+      - id: list-services
+        request:
+          method: GET
+          path: /services
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "services": [
+                {
+                  "id": "PIJ90N7",
+                  "name": "Production DB",
+                  "description": "Primary production database service",
+                  "status": "active",
+                  "created_at": "2023-01-01T00:00:00Z",
+                  "html_url": "http://localhost:8080/services/PIJ90N7",
+                  "type": "service",
+                  "escalation_policy": {
+                    "id": "PT20YPA",
+                    "type": "escalation_policy_reference",
+                    "summary": "Default"
+                  }
+                },
+                {
+                  "id": "P8QQMKV",
+                  "name": "App Server",
+                  "description": "Application server fleet",
+                  "status": "active",
+                  "created_at": "2023-01-01T00:00:00Z",
+                  "html_url": "http://localhost:8080/services/P8QQMKV",
+                  "type": "service",
+                  "escalation_policy": {
+                    "id": "PT20YPA",
+                    "type": "escalation_policy_reference",
+                    "summary": "Default"
+                  }
+                }
+              ],
+              "limit": 25,
+              "offset": 0,
+              "more": false,
+              "total": 2
+            }
+
+      - id: get-service
+        request:
+          method: GET
+          path: re:^/services/[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "service": {
+                "id": "PIJ90N7",
+                "name": "Production DB",
+                "description": "Primary production database service",
+                "status": "active",
+                "created_at": "2023-01-01T00:00:00Z",
+                "html_url": "http://localhost:8080/services/PIJ90N7",
+                "type": "service",
+                "escalation_policy": {
+                  "id": "PT20YPA",
+                  "type": "escalation_policy_reference",
+                  "summary": "Default"
+                }
+              }
+            }
+
+      # ── Users ─────────────────────────────────────────────────────────────
+      - id: list-users
+        request:
+          method: GET
+          path: /users
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "users": [
+                {
+                  "id": "PXPGF42",
+                  "name": "Alice Smith",
+                  "email": "alice@example.com",
+                  "role": "admin",
+                  "type": "user",
+                  "html_url": "http://localhost:8080/users/PXPGF42",
+                  "teams": [
+                    {"id": "PT1234A", "type": "team_reference", "summary": "Ops Team"}
+                  ]
+                },
+                {
+                  "id": "PABCDE1",
+                  "name": "Bob Jones",
+                  "email": "bob@example.com",
+                  "role": "user",
+                  "type": "user",
+                  "html_url": "http://localhost:8080/users/PABCDE1",
+                  "teams": [
+                    {"id": "PT1234A", "type": "team_reference", "summary": "Ops Team"}
+                  ]
+                }
+              ],
+              "limit": 25,
+              "offset": 0,
+              "more": false,
+              "total": 2
+            }
+
+      - id: get-user
+        request:
+          method: GET
+          path: re:^/users/[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "user": {
+                "id": "PXPGF42",
+                "name": "Alice Smith",
+                "email": "alice@example.com",
+                "role": "admin",
+                "type": "user",
+                "html_url": "http://localhost:8080/users/PXPGF42",
+                "teams": [
+                  {"id": "PT1234A", "type": "team_reference", "summary": "Ops Team"}
+                ]
+              }
+            }
+
+      # ── Escalation Policies ───────────────────────────────────────────────
+      - id: list-escalation-policies
+        request:
+          method: GET
+          path: /escalation_policies
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "escalation_policies": [
+                {
+                  "id": "PT20YPA",
+                  "name": "Default",
+                  "type": "escalation_policy",
+                  "html_url": "http://localhost:8080/escalation_policies/PT20YPA",
+                  "escalation_rules": [
+                    {
+                      "id": "PUS0OAH",
+                      "escalation_delay_in_minutes": 30,
+                      "targets": [
+                        {
+                          "id": "PXPGF42",
+                          "type": "user_reference",
+                          "summary": "Alice Smith"
+                        }
+                      ]
+                    }
+                  ],
+                  "num_loops": 0
+                }
+              ],
+              "limit": 25,
+              "offset": 0,
+              "more": false,
+              "total": 1
+            }

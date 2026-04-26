@@ -34,6 +34,10 @@ mockly start --config configs/presets/keycloak.yaml
 | [`slack`](#slack) | Slack Web API | 8080 | `/api/chat.postMessage` |
 | [`twilio`](#twilio) | Twilio SMS & Voice API | 8080 | `/2010-04-01/Accounts/…` |
 | [`sendgrid`](#sendgrid) | SendGrid v3 Email API | 8080 | `/v3/mail/send` |
+| [`anthropic`](#anthropic) | Anthropic Claude API | 8080 | `/v1/messages`, `/v1/models` |
+| [`resend`](#resend) | Resend transactional email API | 8080 | `/emails`, `/domains` |
+| [`pagerduty`](#pagerduty) | PagerDuty incident management API | 8080 | `/incidents`, `/services` |
+| [`aws-s3`](#aws-s3) | AWS S3 storage API | 8080 | `/my-mock-bucket/…` |
 
 ---
 
@@ -259,7 +263,130 @@ SENDGRID_API_KEY=SG.mockly-not-a-real-key
 
 ---
 
-## Customising a Preset
+## anthropic
+
+Simulates the Anthropic Messages API for Claude integrations.
+
+**Configure your app:**
+```
+ANTHROPIC_BASE_URL=http://localhost:8080
+ANTHROPIC_API_KEY=sk-ant-mockly-not-a-real-key
+```
+
+**Endpoints mocked:**
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/v1/models` | List available Claude models |
+| `POST` | `/v1/messages` | Create a message (Claude response) |
+| `POST` | `/v1/messages/count_tokens` | Count tokens for a request |
+
+**State-conditional error mocks:**
+```bash
+curl -X POST http://localhost:9091/api/state -d '{"anthropic_error":"rate_limit"}'
+curl -X POST http://localhost:9091/api/state -d '{"anthropic_error":"unauthorized"}'
+curl -X POST http://localhost:9091/api/state -d '{"anthropic_error":"overloaded"}'
+curl -X DELETE http://localhost:9091/api/state/anthropic_error
+```
+
+---
+
+## resend
+
+Simulates the Resend v1 transactional email API.
+
+**Configure your app:**
+```
+RESEND_BASE_URL=http://localhost:8080
+RESEND_API_KEY=re_mockly_not_a_real_key
+```
+
+**Endpoints mocked:**
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/emails` | Send email |
+| `GET` | `/emails/:id` | Retrieve email |
+| `PATCH` | `/emails/:id` | Update scheduled email |
+| `POST` | `/emails/:id/cancel` | Cancel scheduled email |
+| `POST` | `/emails/batch` | Batch send |
+| `GET` | `/domains` | List domains |
+| `GET` | `/domains/:id` | Get domain |
+| `GET` | `/api-keys` | List API keys |
+
+**State-conditional error mocks:**
+```bash
+curl -X POST http://localhost:9091/api/state -d '{"resend_error":"rate_limit"}'
+curl -X POST http://localhost:9091/api/state -d '{"resend_error":"unauthorized"}'
+curl -X DELETE http://localhost:9091/api/state/resend_error
+```
+
+---
+
+## pagerduty
+
+Simulates the PagerDuty REST API for incident management integrations.
+
+**Configure your app:**
+```
+PAGERDUTY_BASE_URL=http://localhost:8080
+PAGERDUTY_TOKEN=mock-pagerduty-token
+```
+
+**Endpoints mocked:**
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/abilities` | List account abilities |
+| `GET` | `/incidents` | List incidents |
+| `POST` | `/incidents` | Create incident |
+| `GET` | `/incidents/:id` | Get incident |
+| `PUT` | `/incidents/:id` | Update incident (acknowledge/resolve) |
+| `GET` | `/incidents/:id/notes` | List incident notes |
+| `POST` | `/incidents/:id/notes` | Create incident note |
+| `GET` | `/services` | List services |
+| `GET` | `/services/:id` | Get service |
+| `GET` | `/users` | List users |
+| `GET` | `/users/:id` | Get user |
+| `GET` | `/escalation_policies` | List escalation policies |
+
+**State-conditional error mocks:**
+```bash
+curl -X POST http://localhost:9091/api/state -d '{"pagerduty_error":"unauthorized"}'
+curl -X DELETE http://localhost:9091/api/state/pagerduty_error
+```
+
+---
+
+## aws-s3
+
+Simulates the AWS S3 REST API. Responses use XML (matching the real S3 API). Compatible with AWS SDK v2 and MinIO clients.
+
+**Configure your AWS SDK:**
+```bash
+export AWS_ENDPOINT_URL=http://localhost:8080
+export AWS_ACCESS_KEY_ID=mocklyAccessKey
+export AWS_SECRET_ACCESS_KEY=mocklySecretKey
+export AWS_REGION=us-east-1
+```
+
+**Default bucket:** `my-mock-bucket`
+
+**Endpoints mocked:**
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | List all buckets |
+| `HEAD` | `/my-mock-bucket` | Head bucket |
+| `PUT` | `/my-mock-bucket` | Create bucket |
+| `GET` | `/my-mock-bucket` | ListObjectsV2 |
+| `GET` | `/my-mock-bucket/*` | Get object |
+| `PUT` | `/my-mock-bucket/*` | Put object (or CopyObject if `x-amz-copy-source` header present) |
+| `DELETE` | `/my-mock-bucket/*` | Delete object |
+| `HEAD` | `/my-mock-bucket/*` | Head object |
+
+**State-conditional error mocks:**
+```bash
+curl -X POST http://localhost:9091/api/state -d '{"s3_error":"no_such_key"}'
+curl -X POST http://localhost:9091/api/state -d '{"s3_error":"access_denied"}'
+curl -X DELETE http://localhost:9091/api/state/s3_error
+```
 
 ```bash
 # Export the preset to a file

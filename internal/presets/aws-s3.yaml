@@ -1,0 +1,225 @@
+# Mockly preset: AWS S3 API
+#
+# Mocks the AWS S3 REST API for testing storage integrations.
+# Compatible with AWS SDK v2, MinIO clients, and any S3-compatible client.
+#
+# Start:   mockly preset use aws-s3
+#          mockly start --config configs/presets/aws-s3.yaml
+#
+# Configure your AWS SDK:
+#   AWS_ENDPOINT_URL=http://localhost:8080
+#   AWS_ACCESS_KEY_ID=mocklyAccessKey
+#   AWS_SECRET_ACCESS_KEY=mocklySecretKey
+#   AWS_REGION=us-east-1
+#   (+ disable SSL verification or use http://)
+#
+# Default bucket: my-mock-bucket
+# Docs: https://docs.aws.amazon.com/AmazonS3/latest/API/
+#
+# Includes:
+#   - List buckets
+#   - HeadBucket / CreateBucket / DeleteBucket
+#   - ListObjectsV2
+#   - GetObject / PutObject / DeleteObject / HeadObject
+#   - CopyObject
+#   - Error responses (NoSuchKey, NoSuchBucket, AccessDenied)
+#
+# Use state to simulate errors:
+#   curl -X POST http://localhost:9091/api/state -d '{"s3_error":"no_such_key"}'
+#   curl -X DELETE http://localhost:9091/api/state/s3_error
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── List Buckets ──────────────────────────────────────────────────────
+      - id: list-buckets
+        request:
+          method: GET
+          path: /
+        response:
+          status: 200
+          headers:
+            Content-Type: application/xml
+          body: |
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ListAllMyBucketsResult>
+              <Owner>
+                <ID>mockly-owner-id</ID>
+                <DisplayName>mockly</DisplayName>
+              </Owner>
+              <Buckets>
+                <Bucket>
+                  <Name>my-mock-bucket</Name>
+                  <CreationDate>2024-01-01T00:00:00.000Z</CreationDate>
+                </Bucket>
+              </Buckets>
+            </ListAllMyBucketsResult>
+
+      # ── Bucket operations ─────────────────────────────────────────────────
+      - id: head-bucket
+        request:
+          method: HEAD
+          path: /my-mock-bucket
+        response:
+          status: 200
+          headers:
+            x-amz-bucket-region: us-east-1
+
+      - id: create-bucket
+        request:
+          method: PUT
+          path: /my-mock-bucket
+        response:
+          status: 200
+
+      # ── List Objects V2 ───────────────────────────────────────────────────
+      - id: list-objects-v2
+        request:
+          method: GET
+          path: /my-mock-bucket
+        response:
+          status: 200
+          headers:
+            Content-Type: application/xml
+          body: |
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ListBucketResult>
+              <Name>my-mock-bucket</Name>
+              <Prefix></Prefix>
+              <KeyCount>3</KeyCount>
+              <MaxKeys>1000</MaxKeys>
+              <IsTruncated>false</IsTruncated>
+              <Contents>
+                <Key>test/file1.txt</Key>
+                <LastModified>2024-01-01T00:00:00.000Z</LastModified>
+                <ETag>&quot;d41d8cd98f00b204e9800998ecf8427e&quot;</ETag>
+                <Size>1024</Size>
+                <StorageClass>STANDARD</StorageClass>
+              </Contents>
+              <Contents>
+                <Key>test/file2.json</Key>
+                <LastModified>2024-01-02T00:00:00.000Z</LastModified>
+                <ETag>&quot;d41d8cd98f00b204e9800998ecf8427e&quot;</ETag>
+                <Size>2048</Size>
+                <StorageClass>STANDARD</StorageClass>
+              </Contents>
+              <Contents>
+                <Key>images/photo.png</Key>
+                <LastModified>2024-01-03T00:00:00.000Z</LastModified>
+                <ETag>&quot;d41d8cd98f00b204e9800998ecf8427e&quot;</ETag>
+                <Size>51200</Size>
+                <StorageClass>STANDARD</StorageClass>
+              </Contents>
+            </ListBucketResult>
+
+      # ── Object operations (error states first) ────────────────────────────
+      - id: error-no-such-key
+        state:
+          key: s3_error
+          value: "no_such_key"
+        request:
+          method: GET
+          path: re:^/my-mock-bucket/.+$
+        response:
+          status: 404
+          headers:
+            Content-Type: application/xml
+          body: |
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Error>
+              <Code>NoSuchKey</Code>
+              <Message>The specified key does not exist.</Message>
+              <Key>mock-key</Key>
+              <RequestId>MOCKREQUESTID404</RequestId>
+              <HostId>mockly</HostId>
+            </Error>
+
+      - id: error-access-denied
+        state:
+          key: s3_error
+          value: "access_denied"
+        request:
+          method: GET
+          path: re:^/my-mock-bucket/.+$
+        response:
+          status: 403
+          headers:
+            Content-Type: application/xml
+          body: |
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Error>
+              <Code>AccessDenied</Code>
+              <Message>Access Denied</Message>
+              <RequestId>MOCKREQUESTID403</RequestId>
+              <HostId>mockly</HostId>
+            </Error>
+
+      - id: get-object
+        request:
+          method: GET
+          path: re:^/my-mock-bucket/.+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/octet-stream
+            ETag: '"d41d8cd98f00b204e9800998ecf8427e"'
+            x-amz-request-id: MOCKREQUESTID001
+            Last-Modified: Mon, 01 Jan 2024 00:00:00 GMT
+          body: |
+            mock file content
+
+      - id: head-object
+        request:
+          method: HEAD
+          path: re:^/my-mock-bucket/.+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/octet-stream
+            Content-Length: "18"
+            ETag: '"d41d8cd98f00b204e9800998ecf8427e"'
+            Last-Modified: Mon, 01 Jan 2024 00:00:00 GMT
+
+      - id: copy-object
+        request:
+          method: PUT
+          path: re:^/my-mock-bucket/.+$
+          headers:
+            x-amz-copy-source: re:.+
+        response:
+          status: 200
+          headers:
+            Content-Type: application/xml
+          body: |
+            <?xml version="1.0" encoding="UTF-8"?>
+            <CopyObjectResult>
+              <ETag>&quot;d41d8cd98f00b204e9800998ecf8427e&quot;</ETag>
+              <LastModified>2024-01-01T00:00:00.000Z</LastModified>
+            </CopyObjectResult>
+
+      - id: put-object
+        request:
+          method: PUT
+          path: re:^/my-mock-bucket/.+$
+        response:
+          status: 200
+          headers:
+            ETag: '"d41d8cd98f00b204e9800998ecf8427e"'
+            x-amz-request-id: MOCKREQUESTID002
+
+      - id: delete-object
+        request:
+          method: DELETE
+          path: re:^/my-mock-bucket/.+$
+        response:
+          status: 204

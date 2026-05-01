@@ -22,6 +22,7 @@ import (
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/tlsutil"
 )
 
 // ProtocolServer is implemented by each protocol server so the API can read
@@ -161,6 +162,10 @@ func (s *Server) Start(ctx context.Context) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("api server listen %s: %w", addr, err)
+	}
+	ln, err = tlsutil.WrapListener(ln, s.cfg.Mockly.API.TLS)
+	if err != nil {
+		return fmt.Errorf("api server tls: %w", err)
 	}
 
 	errCh := make(chan error, 1)
@@ -942,7 +947,7 @@ func (s *Server) updateSMTPRule(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteSMTPRule(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	rules := s.smtp.GetRules()
-	filtered := rules[:0]
+	filtered := make([]config.SMTPRule, 0, len(rules))
 	for _, rule := range rules {
 		if rule.ID != id {
 			filtered = append(filtered, rule)

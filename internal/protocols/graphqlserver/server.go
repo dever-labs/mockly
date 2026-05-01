@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +19,7 @@ import (
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/tlsutil"
 )
 
 // Server is the GraphQL mock server.
@@ -26,8 +28,10 @@ type Server struct {
 	store     *state.Store
 	scenarios *scenarios.Store
 	log       *logger.Logger
-	mocks     []config.GraphQLMock
-	server    *http.Server
+
+	mu     sync.RWMutex
+	mocks  []config.GraphQLMock
+	server *http.Server
 }
 
 // New creates a Server.
@@ -42,10 +46,14 @@ func New(cfg *config.GraphQLConfig, store *state.Store, sc *scenarios.Store, log
 }
 
 func (s *Server) SetMocks(mocks []config.GraphQLMock) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.mocks = append([]config.GraphQLMock(nil), mocks...)
 }
 
 func (s *Server) GetMocks() []config.GraphQLMock {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return append([]config.GraphQLMock(nil), s.mocks...)
 }
 
@@ -61,6 +69,10 @@ func (s *Server) Start(ctx context.Context) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("graphql server listen %s: %w", addr, err)
+	}
+	ln, err = tlsutil.WrapListener(ln, s.cfg.TLS)
+	if err != nil {
+		return fmt.Errorf("graphql server tls: %w", err)
 	}
 
 	errCh := make(chan error, 1)
@@ -203,6 +215,8 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) matchMock(opType, opName string) (config.GraphQLMock, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	for _, m := range s.mocks {
 		if m.State != nil {
 			if val, _ := s.store.Get(m.State.Key); val != m.State.Value {
@@ -247,12 +261,17 @@ func extractOperationType(query string) string {
 
 // StatusInfo returns JSON-serialisable server info.
 func (s *Server) StatusInfo() map[string]interface{} {
+	s.mu.RLock()
+	n := len(s.mocks)
+	s.mu.RUnlock()
+	tlsEnabled := s.cfg.TLS != nil && s.cfg.TLS.Enabled
 	return map[string]interface{}{
 		"protocol": "graphql",
 		"enabled":  s.cfg.Enabled,
 		"port":     s.cfg.Port,
 		"path":     s.cfg.Path,
-		"mocks":    len(s.mocks),
+		"tls":      tlsEnabled,
+		"mocks":    n,
 	}
 }
 

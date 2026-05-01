@@ -23,6 +23,8 @@ import (
 type Server struct {
 	cfg   *config.SMTPConfig
 	log   *logger.Logger
+
+	mu    sync.RWMutex
 	rules []config.SMTPRule
 	inbox *Inbox
 }
@@ -78,10 +80,14 @@ func New(cfg *config.SMTPConfig, log *logger.Logger) *Server {
 }
 
 func (s *Server) SetRules(rules []config.SMTPRule) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.rules = append([]config.SMTPRule(nil), rules...)
 }
 
 func (s *Server) GetRules() []config.SMTPRule {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return append([]config.SMTPRule(nil), s.rules...)
 }
 
@@ -112,6 +118,8 @@ func (s *Server) Start(ctx context.Context) error {
 // matchRule returns the action and message for the first matching rule.
 // Returns "accept", "" if no rule matches.
 func (s *Server) matchRule(from, to, subject string) (action, message string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	for _, rule := range s.rules {
 		if rule.From != "" && !matchSMTPPattern(rule.From, from) {
 			continue
@@ -145,13 +153,16 @@ func matchSMTPPattern(pattern, value string) bool {
 
 // StatusInfo returns JSON-serialisable server info.
 func (s *Server) StatusInfo() map[string]interface{} {
+	s.mu.RLock()
+	n := len(s.rules)
+	s.mu.RUnlock()
 	return map[string]interface{}{
 		"protocol": "smtp",
 		"enabled":  s.cfg.Enabled,
 		"port":     s.cfg.Port,
 		"domain":   s.cfg.Domain,
 		"emails":   len(s.inbox.All()),
-		"rules":    len(s.rules),
+		"rules":    n,
 	}
 }
 

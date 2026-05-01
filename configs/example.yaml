@@ -7,6 +7,10 @@ mockly:
     port: 9090       # The management UI is served here
   api:
     port: 9091       # The management REST API is served here (UI proxies /api → this port)
+    # tls:           # Uncomment to enable HTTPS on the management API
+    #   enabled: true
+    #   cert_file: /path/to/cert.pem
+    #   key_file:  /path/to/key.pem
 
 protocols:
 
@@ -14,6 +18,10 @@ protocols:
   http:
     enabled: true
     port: 8080
+    # tls:           # Uncomment to enable HTTPS on the HTTP mock server
+    #   enabled: true
+    #   cert_file: /path/to/cert.pem
+    #   key_file:  /path/to/key.pem
     mocks:
 
       - id: get-users

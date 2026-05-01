@@ -27,7 +27,8 @@ type UIConfig struct {
 }
 
 type APIConfig struct {
-	Port int `yaml:"port" json:"port"`
+	Port int        `yaml:"port" json:"port"`
+	TLS  *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
 }
 
 // ProtocolsConfig holds configuration for each supported protocol.
@@ -44,12 +45,25 @@ type ProtocolsConfig struct {
 }
 
 // ---------------------------------------------------------------------------
+// TLS
+// ---------------------------------------------------------------------------
+
+// TLSConfig enables TLS on a server. Set enabled: true and provide paths to
+// a PEM-encoded certificate and private key file.
+type TLSConfig struct {
+	Enabled  bool   `yaml:"enabled" json:"enabled"`
+	CertFile string `yaml:"cert_file" json:"cert_file"`
+	KeyFile  string `yaml:"key_file" json:"key_file"`
+}
+
+// ---------------------------------------------------------------------------
 // HTTP
 // ---------------------------------------------------------------------------
 
 type HTTPConfig struct {
 	Enabled bool       `yaml:"enabled" json:"enabled"`
 	Port    int        `yaml:"port" json:"port"`
+	TLS     *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
 	Mocks   []HTTPMock `yaml:"mocks" json:"mocks"`
 }
 
@@ -107,6 +121,7 @@ type HTTPResponse struct {
 type WebSocketConfig struct {
 	Enabled bool            `yaml:"enabled" json:"enabled"`
 	Port    int             `yaml:"port" json:"port"`
+	TLS     *TLSConfig      `yaml:"tls,omitempty" json:"tls,omitempty"`
 	Mocks   []WebSocketMock `yaml:"mocks" json:"mocks"`
 }
 
@@ -166,6 +181,7 @@ type GraphQLConfig struct {
 	Enabled bool          `yaml:"enabled" json:"enabled"`
 	Port    int           `yaml:"port" json:"port"`
 	Path    string        `yaml:"path,omitempty" json:"path,omitempty"` // default: /graphql
+	TLS     *TLSConfig    `yaml:"tls,omitempty" json:"tls,omitempty"`
 	Mocks   []GraphQLMock `yaml:"mocks" json:"mocks"`
 }
 
@@ -193,6 +209,7 @@ type GraphQLError struct {
 type TCPConfig struct {
 	Enabled bool      `yaml:"enabled" json:"enabled"`
 	Port    int       `yaml:"port" json:"port"`
+	TLS     *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
 	Mocks   []TCPMock `yaml:"mocks" json:"mocks"`
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tidwall/redcon"
@@ -20,6 +21,8 @@ type Server struct {
 	cfg   *config.RedisConfig
 	store *state.Store
 	log   *logger.Logger
+
+	mu    sync.RWMutex
 	mocks []config.RedisMock
 }
 
@@ -34,10 +37,14 @@ func New(cfg *config.RedisConfig, store *state.Store, log *logger.Logger) *Serve
 }
 
 func (s *Server) SetMocks(mocks []config.RedisMock) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.mocks = append([]config.RedisMock(nil), mocks...)
 }
 
 func (s *Server) GetMocks() []config.RedisMock {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return append([]config.RedisMock(nil), s.mocks...)
 }
 
@@ -122,6 +129,8 @@ func (s *Server) handleCommand(conn redcon.Conn, cmd redcon.Command) {
 }
 
 func (s *Server) matchMock(command, key string) (config.RedisMock, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	for _, m := range s.mocks {
 		if m.State != nil {
 			if val, _ := s.store.Get(m.State.Key); val != m.State.Value {
@@ -226,10 +235,13 @@ func toStringSlice(v interface{}) []string {
 
 // StatusInfo returns JSON-serialisable server info.
 func (s *Server) StatusInfo() map[string]interface{} {
+	s.mu.RLock()
+	n := len(s.mocks)
+	s.mu.RUnlock()
 	return map[string]interface{}{
 		"protocol": "redis",
 		"enabled":  s.cfg.Enabled,
 		"port":     s.cfg.Port,
-		"mocks":    len(s.mocks),
+		"mocks":    n,
 	}
 }

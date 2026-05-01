@@ -8,11 +8,13 @@ import (
 	"net"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/tlsutil"
 )
 
 // Server is the TCP mock server.
@@ -20,6 +22,8 @@ type Server struct {
 	cfg      *config.TCPConfig
 	store    *state.Store
 	log      *logger.Logger
+
+	mu       sync.RWMutex
 	mocks    []config.TCPMock
 	listener net.Listener
 }
@@ -35,10 +39,14 @@ func New(cfg *config.TCPConfig, store *state.Store, log *logger.Logger) *Server 
 }
 
 func (s *Server) SetMocks(mocks []config.TCPMock) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.mocks = append([]config.TCPMock(nil), mocks...)
 }
 
 func (s *Server) GetMocks() []config.TCPMock {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return append([]config.TCPMock(nil), s.mocks...)
 }
 
@@ -47,6 +55,10 @@ func (s *Server) Start(ctx context.Context) error {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", s.cfg.Port))
 	if err != nil {
 		return fmt.Errorf("tcp server listen :%d: %w", s.cfg.Port, err)
+	}
+	ln, err = tlsutil.WrapListener(ln, s.cfg.TLS)
+	if err != nil {
+		return fmt.Errorf("tcp server tls: %w", err)
 	}
 	s.listener = ln
 
@@ -117,6 +129,8 @@ func (s *Server) handleConn(conn net.Conn) {
 
 func (s *Server) matchMock(data []byte) (config.TCPMock, bool) {
 	text := string(data)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	for _, m := range s.mocks {
 		if m.State != nil {
 			if val, _ := s.store.Get(m.State.Key); val != m.State.Value {
@@ -165,10 +179,15 @@ func decodePayload(s string) []byte {
 
 // StatusInfo returns JSON-serialisable server info.
 func (s *Server) StatusInfo() map[string]interface{} {
+	s.mu.RLock()
+	n := len(s.mocks)
+	s.mu.RUnlock()
+	tlsEnabled := s.cfg.TLS != nil && s.cfg.TLS.Enabled
 	return map[string]interface{}{
 		"protocol": "tcp",
 		"enabled":  s.cfg.Enabled,
 		"port":     s.cfg.Port,
-		"mocks":    len(s.mocks),
+		"tls":      tlsEnabled,
+		"mocks":    n,
 	}
 }

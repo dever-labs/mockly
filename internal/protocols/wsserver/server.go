@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,7 @@ import (
 	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/tlsutil"
 )
 
 var upgrader = websocket.Upgrader{
@@ -26,6 +28,8 @@ type Server struct {
 	cfg   *config.WebSocketConfig
 	store *state.Store
 	log   *logger.Logger
+
+	mu    sync.RWMutex
 	mocks []config.WebSocketMock
 	srv   *http.Server
 }
@@ -42,11 +46,15 @@ func New(cfg *config.WebSocketConfig, store *state.Store, log *logger.Logger) *S
 
 // SetMocks replaces the current mock list.
 func (s *Server) SetMocks(mocks []config.WebSocketMock) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.mocks = append([]config.WebSocketMock(nil), mocks...)
 }
 
 // GetMocks returns the current mock list.
 func (s *Server) GetMocks() []config.WebSocketMock {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return append([]config.WebSocketMock(nil), s.mocks...)
 }
 
@@ -70,6 +78,10 @@ func (s *Server) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("ws server listen %s: %w", addr, err)
 	}
+	ln, err = tlsutil.WrapListener(ln, s.cfg.TLS)
+	if err != nil {
+		return fmt.Errorf("ws server tls: %w", err)
+	}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.srv.Serve(ln) }()
@@ -86,11 +98,19 @@ func (s *Server) Start(ctx context.Context) error {
 
 func (s *Server) handleDynamic(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
+	s.mu.RLock()
+	var found *config.WebSocketMock
 	for i := range s.mocks {
 		if s.mocks[i].Path == path {
-			s.handleConn(w, r, &s.mocks[i])
-			return
+			cp := s.mocks[i]
+			found = &cp
+			break
 		}
+	}
+	s.mu.RUnlock()
+	if found != nil {
+		s.handleConn(w, r, found)
+		return
 	}
 	http.NotFound(w, r)
 }
@@ -157,10 +177,15 @@ func (s *Server) handleConn(w http.ResponseWriter, r *http.Request, mock *config
 
 // StatusInfo returns JSON-serialisable info about this server.
 func (s *Server) StatusInfo() map[string]interface{} {
+	s.mu.RLock()
+	n := len(s.mocks)
+	s.mu.RUnlock()
+	tlsEnabled := s.cfg.TLS != nil && s.cfg.TLS.Enabled
 	return map[string]interface{}{
 		"protocol": "websocket",
 		"enabled":  s.cfg.Enabled,
 		"port":     s.cfg.Port,
-		"mocks":    len(s.mocks),
+		"tls":      tlsEnabled,
+		"mocks":    n,
 	}
 }

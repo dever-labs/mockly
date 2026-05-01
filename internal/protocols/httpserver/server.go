@@ -20,6 +20,7 @@ import (
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/tlsutil"
 )
 
 // Server is the HTTP mock server.
@@ -92,6 +93,10 @@ func (s *Server) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("http mock server listen %s: %w", addr, err)
 	}
+	ln, err = tlsutil.WrapListener(ln, s.cfg.TLS)
+	if err != nil {
+		return fmt.Errorf("http mock server tls: %w", err)
+	}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.server.Serve(ln) }()
@@ -109,8 +114,12 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	body, _ := io.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	defer r.Body.Close() //nolint:errcheck
+	if err != nil {
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return
+	}
 
 	hdrs := make(map[string]string, len(r.Header))
 	for k, v := range r.Header {
@@ -294,10 +303,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) StatusInfo() map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	tlsEnabled := s.cfg.TLS != nil && s.cfg.TLS.Enabled
 	return map[string]interface{}{
 		"protocol": "http",
 		"enabled":  s.cfg.Enabled,
 		"port":     s.cfg.Port,
+		"tls":      tlsEnabled,
 		"mocks":    len(s.mocks),
 	}
 }

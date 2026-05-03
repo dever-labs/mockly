@@ -2,12 +2,14 @@ package httpserver_test
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/dever-labs/mockly/internal/protocols/httpserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/testutil"
 )
 
 // startTestServer starts an HTTP mock server on a free port and returns its base URL.
@@ -600,4 +603,125 @@ func TestHTTPServer_OAuthAuthorize_QueryParamMatching(t *testing.T) {
 	if resp2.StatusCode != 400 {
 		t.Errorf("want 400 for bad client, got %d", resp2.StatusCode)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// TLS tests
+// ---------------------------------------------------------------------------
+
+func startTLSTestServer(t *testing.T, mocks []config.HTTPMock) (string, *http.Client) {
+t.Helper()
+
+dir := t.TempDir()
+certFile := dir + "/cert.pem"
+keyFile := dir + "/key.pem"
+if err := testutil.WriteSelfSignedCert(certFile, keyFile); err != nil {
+t.Fatalf("generate cert: %v", err)
+}
+
+ln, err := net.Listen("tcp", "127.0.0.1:0")
+if err != nil {
+t.Fatalf("failed to listen: %v", err)
+}
+port := ln.Addr().(*net.TCPAddr).Port
+_ = ln.Close()
+
+cfg := &config.HTTPConfig{
+Enabled: true,
+Port:    port,
+TLS:     &config.TLSConfig{Enabled: true, CertFile: certFile, KeyFile: keyFile},
+Mocks:   mocks,
+}
+store := state.New()
+sc := scenarios.New(nil)
+log := logger.New(100)
+srv := httpserver.New(cfg, store, sc, log)
+
+ctx, cancel := context.WithCancel(context.Background())
+t.Cleanup(cancel)
+go srv.Start(ctx) //nolint:errcheck
+
+client := &http.Client{
+Transport: &http.Transport{
+TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+},
+}
+base := fmt.Sprintf("https://127.0.0.1:%d", port)
+
+deadline := time.Now().Add(2 * time.Second)
+for time.Now().Before(deadline) {
+resp, err := client.Get(base + "/")
+if err == nil {
+_ = resp.Body.Close()
+break
+}
+time.Sleep(10 * time.Millisecond)
+}
+return base, client
+}
+
+func TestHTTPServer_TLS(t *testing.T) {
+mocks := []config.HTTPMock{{
+ID:       "ping",
+Request:  config.HTTPRequest{Method: "GET", Path: "/ping"},
+Response: config.HTTPResponse{Status: 200, Body: "pong"},
+}}
+base, client := startTLSTestServer(t, mocks)
+
+resp, err := client.Get(base + "/ping")
+if err != nil {
+t.Fatalf("GET /ping over TLS: %v", err)
+}
+defer resp.Body.Close() //nolint:errcheck
+
+if resp.StatusCode != 200 {
+t.Errorf("want 200, got %d", resp.StatusCode)
+}
+body, err := io.ReadAll(resp.Body)
+if err != nil {
+t.Fatalf("read body: %v", err)
+}
+if string(body) != "pong" {
+t.Errorf("want 'pong', got %q", body)
+}
+}
+
+// ---------------------------------------------------------------------------
+// Concurrency / race-detector tests
+// ---------------------------------------------------------------------------
+
+func TestHTTPServer_SetMocks_ConcurrentAccess(t *testing.T) {
+base, srv := startTestServerWithServer(t, []config.HTTPMock{{
+ID:       "m1",
+Request:  config.HTTPRequest{Method: "GET", Path: "/"},
+Response: config.HTTPResponse{Status: 200, Body: "ok"},
+}}, nil)
+
+var wg sync.WaitGroup
+for i := 0; i < 5; i++ {
+wg.Add(1)
+go func() {
+defer wg.Done()
+for j := 0; j < 50; j++ {
+srv.SetMocks([]config.HTTPMock{{
+ID:       "m",
+Request:  config.HTTPRequest{Method: "GET", Path: "/"},
+Response: config.HTTPResponse{Status: 200, Body: "updated"},
+}})
+}
+}()
+}
+for i := 0; i < 5; i++ {
+wg.Add(1)
+go func() {
+defer wg.Done()
+for j := 0; j < 20; j++ {
+resp, err := http.Get(base + "/")
+if err == nil {
+_ = resp.Body.Close()
+}
+}
+}()
+}
+wg.Wait()
 }

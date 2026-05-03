@@ -2,6 +2,7 @@
 package smtpserver
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/dever-labs/mockly/internal/config"
@@ -128,4 +129,32 @@ func TestMatchRule_RejectBySubject(t *testing.T) {
 	if action != "reject" {
 		t.Errorf("subject regex reject should fire, got %q", action)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Concurrency / race-detector tests
+// ---------------------------------------------------------------------------
+
+func TestSMTPServer_SetRules_ConcurrentAccess(t *testing.T) {
+srv := &Server{
+rules: []config.SMTPRule{{ID: "r1", Action: "accept"}},
+inbox: newInbox(10),
+}
+var wg sync.WaitGroup
+for i := 0; i < 10; i++ {
+wg.Add(2)
+go func() {
+defer wg.Done()
+for j := 0; j < 100; j++ {
+srv.SetRules([]config.SMTPRule{{ID: "r", Action: "accept"}})
+}
+}()
+go func() {
+defer wg.Done()
+for j := 0; j < 100; j++ {
+srv.matchRule("a@b.com", "c@d.com", "hello")
+}
+}()
+}
+wg.Wait()
 }

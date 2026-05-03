@@ -2,11 +2,22 @@
 package graphqlserver
 
 import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/testutil"
 )
 
 func TestExtractOperationType(t *testing.T) {
@@ -156,4 +167,108 @@ func TestMatchMock_WildcardOperationName(t *testing.T) {
 	if ok2 {
 		t.Fatal("wildcard List* should not match GetUser")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Concurrency / race-detector tests
+// ---------------------------------------------------------------------------
+
+func TestMatchMock_ConcurrentAccess(t *testing.T) {
+sc := scenarios.New(nil)
+st := state.New()
+srv := &Server{
+mocks:     []config.GraphQLMock{{ID: "m1", OperationName: "GetUser"}},
+store:     st,
+scenarios: sc,
+log:       logger.New(10),
+}
+var wg sync.WaitGroup
+for i := 0; i < 10; i++ {
+wg.Add(2)
+go func() {
+defer wg.Done()
+for j := 0; j < 100; j++ {
+srv.SetMocks([]config.GraphQLMock{{ID: "updated", OperationName: "GetUser"}})
+}
+}()
+go func() {
+defer wg.Done()
+for j := 0; j < 100; j++ {
+srv.matchMock("query", "GetUser")
+}
+}()
+}
+wg.Wait()
+}
+
+// ---------------------------------------------------------------------------
+// TLS tests
+// ---------------------------------------------------------------------------
+
+func TestGraphQLServer_TLS(t *testing.T) {
+dir := t.TempDir()
+certFile := dir + "/cert.pem"
+keyFile := dir + "/key.pem"
+if err := testutil.WriteSelfSignedCert(certFile, keyFile); err != nil {
+t.Fatalf("generate cert: %v", err)
+}
+
+ln, err := net.Listen("tcp", "127.0.0.1:0")
+if err != nil {
+t.Fatalf("listen: %v", err)
+}
+port := ln.Addr().(*net.TCPAddr).Port
+_ = ln.Close()
+
+cfg := &config.GraphQLConfig{
+Enabled: true,
+Port:    port,
+Path:    "/graphql",
+TLS:     &config.TLSConfig{Enabled: true, CertFile: certFile, KeyFile: keyFile},
+Mocks: []config.GraphQLMock{{
+ID:            "ping",
+OperationName: "Ping",
+Response:      map[string]interface{}{"pong": true},
+}},
+}
+srv := New(cfg, state.New(), scenarios.New(nil), logger.New(10))
+
+ctx, cancel := context.WithCancel(context.Background())
+t.Cleanup(cancel)
+go srv.Start(ctx) //nolint:errcheck
+
+client := &http.Client{
+Transport: &http.Transport{
+TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+},
+}
+base := fmt.Sprintf("https://127.0.0.1:%d", port)
+
+deadline := time.Now().Add(2 * time.Second)
+for time.Now().Before(deadline) {
+resp, err := client.Get(base + "/graphql")
+if err == nil {
+_ = resp.Body.Close()
+break
+}
+time.Sleep(10 * time.Millisecond)
+}
+
+body := `{"query":"query Ping { ping }","operationName":"Ping"}`
+resp, err := client.Post(base+"/graphql", "application/json", strings.NewReader(body))
+if err != nil {
+t.Fatalf("POST /graphql over TLS: %v", err)
+}
+defer resp.Body.Close() //nolint:errcheck
+
+if resp.StatusCode != 200 {
+t.Errorf("want 200, got %d", resp.StatusCode)
+}
+respBody, err := io.ReadAll(resp.Body)
+if err != nil {
+t.Fatalf("read body: %v", err)
+}
+if !strings.Contains(string(respBody), "pong") {
+t.Errorf("expected 'pong' in response, got %q", respBody)
+}
 }

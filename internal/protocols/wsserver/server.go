@@ -60,8 +60,12 @@ func (s *Server) GetMocks() []config.WebSocketMock {
 
 // Start begins listening. It blocks until ctx is cancelled.
 func (s *Server) Start(ctx context.Context) error {
+	s.mu.RLock()
+	initialMocks := append([]config.WebSocketMock(nil), s.mocks...)
+	s.mu.RUnlock()
+
 	r := chi.NewRouter()
-	for _, m := range s.mocks {
+	for _, m := range initialMocks {
 		path := m.Path
 		mock := m
 		r.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {

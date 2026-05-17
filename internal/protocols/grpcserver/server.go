@@ -194,11 +194,14 @@ func safeGRPCCode(n int) codes.Code {
 
 // StatusInfo returns JSON-serialisable info about this server.
 func (s *Server) StatusInfo() map[string]interface{} {
+	s.mu.RLock()
+	n := len(s.mocks)
+	s.mu.RUnlock()
 	return map[string]interface{}{
 		"protocol": "grpc",
 		"enabled":  s.cfg.Enabled,
 		"port":     s.cfg.Port,
-		"mocks":    len(s.mocks),
+		"mocks":    n,
 	}
 }
 

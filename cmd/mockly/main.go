@@ -17,13 +17,23 @@ import (
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/presets"
+	"github.com/dever-labs/mockly/internal/protocols/amqpserver"
+	"github.com/dever-labs/mockly/internal/protocols/coapserver"
+	"github.com/dever-labs/mockly/internal/protocols/dnsserver"
+	"github.com/dever-labs/mockly/internal/protocols/ftpserver"
 	"github.com/dever-labs/mockly/internal/protocols/graphqlserver"
 	"github.com/dever-labs/mockly/internal/protocols/grpcserver"
 	"github.com/dever-labs/mockly/internal/protocols/httpserver"
+	"github.com/dever-labs/mockly/internal/protocols/imapserver"
+	"github.com/dever-labs/mockly/internal/protocols/kafkaserver"
+	"github.com/dever-labs/mockly/internal/protocols/ldapserver"
+	"github.com/dever-labs/mockly/internal/protocols/memcachedserver"
 	"github.com/dever-labs/mockly/internal/protocols/mqttserver"
 	"github.com/dever-labs/mockly/internal/protocols/redisserver"
+	"github.com/dever-labs/mockly/internal/protocols/sipserver"
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
 	"github.com/dever-labs/mockly/internal/protocols/snmpserver"
+	"github.com/dever-labs/mockly/internal/protocols/stompserver"
 	"github.com/dever-labs/mockly/internal/protocols/tcpserver"
 	"github.com/dever-labs/mockly/internal/protocols/wsserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
@@ -102,7 +112,7 @@ func runServers(cfg *config.Config) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	errCh := make(chan error, 8)
+	errCh := make(chan error, 20)
 
 	var httpSrv api.HTTPProtocol
 	var wsSrv api.WSProtocol
@@ -113,6 +123,16 @@ func runServers(cfg *config.Config) error {
 	var smtpSrv api.SMTPProtocol
 	var mqttSrv api.MQTTProtocol
 	var snmpSrv api.SNMPProtocol
+	var dnsSrv api.DNSProtocol
+	var amqpSrv api.AMQPProtocol
+	var kafkaSrv api.KafkaProtocol
+	var ldapSrv api.LDAPProtocol
+	var imapSrv api.IMAPProtocol
+	var ftpSrv api.FTPProtocol
+	var memcachedSrv api.MemcachedProtocol
+	var stompSrv api.STOMPProtocol
+	var coapSrv api.CoAPProtocol
+	var sipSrv api.SIPProtocol
 
 	if cfg.Protocols.HTTP != nil && cfg.Protocols.HTTP.Enabled {
 		srv := httpserver.New(cfg.Protocols.HTTP, store, sc, log)
@@ -177,7 +197,77 @@ func runServers(cfg *config.Config) error {
 		fmt.Printf("→ SNMP agent        on :%d\n", cfg.Protocols.SNMP.Port)
 	}
 
-	apiSrv := api.New(cfg, store, sc, log, httpSrv, wsSrv, grpcSrv, graphqlSrv, tcpSrv, redisSrv, smtpSrv, mqttSrv, snmpSrv)
+	if cfg.Protocols.DNS != nil && cfg.Protocols.DNS.Enabled {
+		srv := dnsserver.New(cfg.Protocols.DNS, store, log)
+		dnsSrv = srv
+		go func() { errCh <- srv.Start(ctx) }()
+		fmt.Printf("→ DNS server        on :%d\n", cfg.Protocols.DNS.Port)
+	}
+
+	if cfg.Protocols.AMQP != nil && cfg.Protocols.AMQP.Enabled {
+		srv := amqpserver.New(cfg.Protocols.AMQP, store, log)
+		amqpSrv = srv
+		go func() { errCh <- srv.Start(ctx) }()
+		fmt.Printf("→ AMQP server       on :%d\n", cfg.Protocols.AMQP.Port)
+	}
+
+	if cfg.Protocols.Kafka != nil && cfg.Protocols.Kafka.Enabled {
+		srv := kafkaserver.New(cfg.Protocols.Kafka, store, log)
+		kafkaSrv = srv
+		go func() { errCh <- srv.Start(ctx) }()
+		fmt.Printf("→ Kafka server      on :%d\n", cfg.Protocols.Kafka.Port)
+	}
+
+	if cfg.Protocols.LDAP != nil && cfg.Protocols.LDAP.Enabled {
+		srv := ldapserver.New(cfg.Protocols.LDAP, store, log)
+		ldapSrv = srv
+		go func() { errCh <- srv.Start(ctx) }()
+		fmt.Printf("→ LDAP server       on :%d\n", cfg.Protocols.LDAP.Port)
+	}
+
+	if cfg.Protocols.IMAP != nil && cfg.Protocols.IMAP.Enabled {
+		srv := imapserver.New(cfg.Protocols.IMAP, log)
+		imapSrv = srv
+		go func() { errCh <- srv.Start(ctx) }()
+		fmt.Printf("→ IMAP server       on :%d\n", cfg.Protocols.IMAP.Port)
+	}
+
+	if cfg.Protocols.FTP != nil && cfg.Protocols.FTP.Enabled {
+		srv := ftpserver.New(cfg.Protocols.FTP, log)
+		ftpSrv = srv
+		go func() { errCh <- srv.Start(ctx) }()
+		fmt.Printf("→ FTP server        on :%d\n", cfg.Protocols.FTP.Port)
+	}
+
+	if cfg.Protocols.Memcached != nil && cfg.Protocols.Memcached.Enabled {
+		srv := memcachedserver.New(cfg.Protocols.Memcached, store, log)
+		memcachedSrv = srv
+		go func() { errCh <- srv.Start(ctx) }()
+		fmt.Printf("→ Memcached server  on :%d\n", cfg.Protocols.Memcached.Port)
+	}
+
+	if cfg.Protocols.STOMP != nil && cfg.Protocols.STOMP.Enabled {
+		srv := stompserver.New(cfg.Protocols.STOMP, store, log)
+		stompSrv = srv
+		go func() { errCh <- srv.Start(ctx) }()
+		fmt.Printf("→ STOMP server      on :%d\n", cfg.Protocols.STOMP.Port)
+	}
+
+	if cfg.Protocols.CoAP != nil && cfg.Protocols.CoAP.Enabled {
+		srv := coapserver.New(cfg.Protocols.CoAP, store, log)
+		coapSrv = srv
+		go func() { errCh <- srv.Start(ctx) }()
+		fmt.Printf("→ CoAP server       on :%d\n", cfg.Protocols.CoAP.Port)
+	}
+
+	if cfg.Protocols.SIP != nil && cfg.Protocols.SIP.Enabled {
+		srv := sipserver.New(cfg.Protocols.SIP, store, log)
+		sipSrv = srv
+		go func() { errCh <- srv.Start(ctx) }()
+		fmt.Printf("→ SIP server        on :%d\n", cfg.Protocols.SIP.Port)
+	}
+
+	apiSrv := api.New(cfg, store, sc, log, httpSrv, wsSrv, grpcSrv, graphqlSrv, tcpSrv, redisSrv, smtpSrv, mqttSrv, snmpSrv, dnsSrv, amqpSrv, kafkaSrv, ldapSrv, imapSrv, ftpSrv, memcachedSrv, stompSrv, coapSrv, sipSrv)
 
 	if cfg.Mockly.UI.Enabled {
 		apiSrv.AttachUI(assets.DistFS())
@@ -467,8 +557,6 @@ func presetShowCmd() *cobra.Command {
 		},
 	}
 }
-
-
 
 // ---------------------------------------------------------------------------
 // scenario

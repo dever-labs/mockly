@@ -81,6 +81,16 @@ type ProtocolsConfig struct {
 	SMTP      *SMTPConfig      `yaml:"smtp,omitempty" json:"smtp,omitempty"`
 	MQTT      *MQTTConfig      `yaml:"mqtt,omitempty" json:"mqtt,omitempty"`
 	SNMP      *SNMPConfig      `yaml:"snmp,omitempty" json:"snmp,omitempty"`
+	DNS       *DNSConfig       `yaml:"dns,omitempty" json:"dns,omitempty"`
+	AMQP      *AMQPConfig      `yaml:"amqp,omitempty" json:"amqp,omitempty"`
+	Kafka     *KafkaConfig     `yaml:"kafka,omitempty" json:"kafka,omitempty"`
+	LDAP      *LDAPConfig      `yaml:"ldap,omitempty" json:"ldap,omitempty"`
+	IMAP      *IMAPConfig      `yaml:"imap,omitempty" json:"imap,omitempty"`
+	FTP       *FTPConfig       `yaml:"ftp,omitempty" json:"ftp,omitempty"`
+	Memcached *MemcachedConfig `yaml:"memcached,omitempty" json:"memcached,omitempty"`
+	STOMP     *STOMPConfig     `yaml:"stomp,omitempty" json:"stomp,omitempty"`
+	CoAP      *CoAPConfig      `yaml:"coap,omitempty" json:"coap,omitempty"`
+	SIP       *SIPConfig       `yaml:"sip,omitempty" json:"sip,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +243,7 @@ type GraphQLMock struct {
 	ID            string                 `yaml:"id" json:"id"`
 	OperationType string                 `yaml:"operation_type,omitempty" json:"operation_type,omitempty"` // query|mutation|subscription (empty = any)
 	OperationName string                 `yaml:"operation_name,omitempty" json:"operation_name,omitempty"` // exact or wildcard, empty = any
-	Response      map[string]interface{} `yaml:"response,omitempty" json:"response,omitempty"`              // data field
+	Response      map[string]interface{} `yaml:"response,omitempty" json:"response,omitempty"`             // data field
 	Errors        []GraphQLError         `yaml:"errors,omitempty" json:"errors,omitempty"`
 	Delay         Duration               `yaml:"delay,omitempty" json:"delay,omitempty"`
 	State         *StateCondition        `yaml:"state,omitempty" json:"state,omitempty"`
@@ -250,10 +260,10 @@ type GraphQLError struct {
 // ---------------------------------------------------------------------------
 
 type TCPConfig struct {
-	Enabled bool      `yaml:"enabled" json:"enabled"`
-	Port    int       `yaml:"port" json:"port"`
+	Enabled bool       `yaml:"enabled" json:"enabled"`
+	Port    int        `yaml:"port" json:"port"`
 	TLS     *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
-	Mocks   []TCPMock `yaml:"mocks" json:"mocks"`
+	Mocks   []TCPMock  `yaml:"mocks" json:"mocks"`
 }
 
 // TCPMock matches incoming raw TCP data and sends a response.
@@ -302,11 +312,11 @@ type RedisResponse struct {
 // ---------------------------------------------------------------------------
 
 type SMTPConfig struct {
-	Enabled    bool       `yaml:"enabled" json:"enabled"`
-	Port       int        `yaml:"port" json:"port"`
-	Domain     string     `yaml:"domain,omitempty" json:"domain,omitempty"` // default: mockly.local
-	MaxEmails  int        `yaml:"max_emails,omitempty" json:"max_emails,omitempty"`
-	Rules      []SMTPRule `yaml:"rules,omitempty" json:"rules,omitempty"`
+	Enabled   bool       `yaml:"enabled" json:"enabled"`
+	Port      int        `yaml:"port" json:"port"`
+	Domain    string     `yaml:"domain,omitempty" json:"domain,omitempty"` // default: mockly.local
+	MaxEmails int        `yaml:"max_emails,omitempty" json:"max_emails,omitempty"`
+	Rules     []SMTPRule `yaml:"rules,omitempty" json:"rules,omitempty"`
 }
 
 // SMTPRule defines accept/reject behaviour for incoming emails.
@@ -317,18 +327,18 @@ type SMTPRule struct {
 	From    string `yaml:"from,omitempty" json:"from,omitempty"`
 	To      string `yaml:"to,omitempty" json:"to,omitempty"`
 	Subject string `yaml:"subject,omitempty" json:"subject,omitempty"`
-	Action  string `yaml:"action" json:"action"` // accept | reject
+	Action  string `yaml:"action" json:"action"`                       // accept | reject
 	Message string `yaml:"message,omitempty" json:"message,omitempty"` // SMTP reject error message
 }
 
 // ReceivedEmail is a captured inbound email stored in the SMTP inbox.
 type ReceivedEmail struct {
-	ID          string   `json:"id"`
-	From        string   `json:"from"`
-	To          []string `json:"to"`
-	Subject     string   `json:"subject"`
-	Body        string   `json:"body"`
-	ReceivedAt  string   `json:"received_at"`
+	ID         string   `json:"id"`
+	From       string   `json:"from"`
+	To         []string `json:"to"`
+	Subject    string   `json:"subject"`
+	Body       string   `json:"body"`
+	ReceivedAt string   `json:"received_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -345,10 +355,10 @@ type MQTTConfig struct {
 // publishes Response to ResponseTopic (defaults to <topic>/response).
 // Topic supports MQTT wildcards: + (single level) and # (multi-level).
 type MQTTMock struct {
-	ID            string          `yaml:"id" json:"id"`
-	Topic         string          `yaml:"topic" json:"topic"`
-	Response      *MQTTResponse   `yaml:"response,omitempty" json:"response,omitempty"`
-	State         *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+	ID       string          `yaml:"id" json:"id"`
+	Topic    string          `yaml:"topic" json:"topic"`
+	Response *MQTTResponse   `yaml:"response,omitempty" json:"response,omitempty"`
+	State    *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
 }
 
 type MQTTResponse struct {
@@ -365,15 +375,15 @@ type MQTTResponse struct {
 
 // SNMPConfig configures the SNMP agent mock server.
 type SNMPConfig struct {
-	Enabled  bool       `yaml:"enabled" json:"enabled"`
-	Port     int        `yaml:"port" json:"port"`
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	Port    int  `yaml:"port" json:"port"`
 	// Community is the v1/v2c community string accepted by the agent (default: public).
-	Community string     `yaml:"community,omitempty" json:"community,omitempty"`
+	Community string `yaml:"community,omitempty" json:"community,omitempty"`
 	// V3Users lists SNMPv3 USM user credentials.
-	V3Users  []SNMPUser `yaml:"v3_users,omitempty" json:"v3_users,omitempty"`
-	Mocks    []SNMPMock `yaml:"mocks,omitempty" json:"mocks,omitempty"`
+	V3Users []SNMPUser `yaml:"v3_users,omitempty" json:"v3_users,omitempty"`
+	Mocks   []SNMPMock `yaml:"mocks,omitempty" json:"mocks,omitempty"`
 	// Traps lists outbound TRAP configurations that can be triggered via API.
-	Traps    []SNMPTrap `yaml:"traps,omitempty" json:"traps,omitempty"`
+	Traps []SNMPTrap `yaml:"traps,omitempty" json:"traps,omitempty"`
 }
 
 // SNMPMock defines a single OID value returned by the agent.
@@ -389,21 +399,21 @@ type SNMPMock struct {
 
 // SNMPUser defines a SNMPv3 USM user credential set.
 type SNMPUser struct {
-	Username          string `yaml:"username" json:"username"`
-	AuthProtocol      string `yaml:"auth_protocol,omitempty" json:"auth_protocol,omitempty"`       // md5|sha|sha224|sha256|sha384|sha512
-	AuthPassphrase    string `yaml:"auth_passphrase,omitempty" json:"auth_passphrase,omitempty"`
-	PrivProtocol      string `yaml:"priv_protocol,omitempty" json:"priv_protocol,omitempty"`       // des|aes|aes192|aes256
-	PrivPassphrase    string `yaml:"priv_passphrase,omitempty" json:"priv_passphrase,omitempty"`
+	Username       string `yaml:"username" json:"username"`
+	AuthProtocol   string `yaml:"auth_protocol,omitempty" json:"auth_protocol,omitempty"` // md5|sha|sha224|sha256|sha384|sha512
+	AuthPassphrase string `yaml:"auth_passphrase,omitempty" json:"auth_passphrase,omitempty"`
+	PrivProtocol   string `yaml:"priv_protocol,omitempty" json:"priv_protocol,omitempty"` // des|aes|aes192|aes256
+	PrivPassphrase string `yaml:"priv_passphrase,omitempty" json:"priv_passphrase,omitempty"`
 }
 
 // SNMPTrap is an outbound TRAP definition that can be triggered via the management API.
 type SNMPTrap struct {
-	ID        string             `yaml:"id" json:"id"`
-	Target    string             `yaml:"target" json:"target"`       // host:port
-	Version   string             `yaml:"version,omitempty" json:"version,omitempty"` // "1"|"2c"|"3"
-	Community string             `yaml:"community,omitempty" json:"community,omitempty"`
-	OID       string             `yaml:"oid" json:"oid"`
-	Bindings  []SNMPTrapBinding  `yaml:"bindings,omitempty" json:"bindings,omitempty"`
+	ID        string            `yaml:"id" json:"id"`
+	Target    string            `yaml:"target" json:"target"`                       // host:port
+	Version   string            `yaml:"version,omitempty" json:"version,omitempty"` // "1"|"2c"|"3"
+	Community string            `yaml:"community,omitempty" json:"community,omitempty"`
+	OID       string            `yaml:"oid" json:"oid"`
+	Bindings  []SNMPTrapBinding `yaml:"bindings,omitempty" json:"bindings,omitempty"`
 }
 
 // SNMPTrapBinding is a variable binding attached to an outbound TRAP.
@@ -421,6 +431,272 @@ type SNMPTrapBinding struct {
 type StateCondition struct {
 	Key   string `yaml:"key" json:"key"`
 	Value string `yaml:"value" json:"value"`
+}
+
+// ---------------------------------------------------------------------------
+// DNS
+// ---------------------------------------------------------------------------
+
+type DNSConfig struct {
+	Enabled bool      `yaml:"enabled" json:"enabled"`
+	Port    int       `yaml:"port" json:"port"`
+	Mocks   []DNSMock `yaml:"mocks" json:"mocks"`
+}
+
+type DNSMock struct {
+	ID      string          `yaml:"id" json:"id"`
+	Name    string          `yaml:"name" json:"name"`
+	Type    string          `yaml:"type" json:"type"`
+	Records []string        `yaml:"records" json:"records"`
+	TTL     uint32          `yaml:"ttl,omitempty" json:"ttl,omitempty"`
+	Delay   Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State   *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// AMQP
+// ---------------------------------------------------------------------------
+
+type AMQPConfig struct {
+	Enabled bool       `yaml:"enabled" json:"enabled"`
+	Port    int        `yaml:"port" json:"port"`
+	Mocks   []AMQPMock `yaml:"mocks" json:"mocks"`
+}
+
+type AMQPMock struct {
+	ID         string          `yaml:"id" json:"id"`
+	Exchange   string          `yaml:"exchange,omitempty" json:"exchange,omitempty"`
+	RoutingKey string          `yaml:"routing_key,omitempty" json:"routing_key,omitempty"`
+	Response   *AMQPResponse   `yaml:"response,omitempty" json:"response,omitempty"`
+	Delay      Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State      *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+type AMQPResponse struct {
+	Exchange   string `yaml:"exchange,omitempty" json:"exchange,omitempty"`
+	RoutingKey string `yaml:"routing_key,omitempty" json:"routing_key,omitempty"`
+	Body       string `yaml:"body" json:"body"`
+}
+
+type ReceivedAMQPMessage struct {
+	ID         string `json:"id"`
+	Exchange   string `json:"exchange"`
+	RoutingKey string `json:"routing_key"`
+	Body       string `json:"body"`
+	Timestamp  string `json:"timestamp"`
+}
+
+// ---------------------------------------------------------------------------
+// Kafka
+// ---------------------------------------------------------------------------
+
+type KafkaConfig struct {
+	Enabled bool        `yaml:"enabled" json:"enabled"`
+	Port    int         `yaml:"port" json:"port"`
+	Mocks   []KafkaMock `yaml:"mocks" json:"mocks"`
+}
+
+type KafkaMock struct {
+	ID      string          `yaml:"id" json:"id"`
+	Topic   string          `yaml:"topic" json:"topic"`
+	Records []KafkaRecord   `yaml:"records" json:"records"`
+	Delay   Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State   *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+type KafkaRecord struct {
+	Key     string            `yaml:"key,omitempty" json:"key,omitempty"`
+	Value   string            `yaml:"value" json:"value"`
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+}
+
+type ProducedKafkaMessage struct {
+	ID        string `json:"id"`
+	Topic     string `json:"topic"`
+	Partition int32  `json:"partition"`
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	Timestamp string `json:"timestamp"`
+}
+
+// ---------------------------------------------------------------------------
+// LDAP
+// ---------------------------------------------------------------------------
+
+type LDAPConfig struct {
+	Enabled bool       `yaml:"enabled" json:"enabled"`
+	Port    int        `yaml:"port" json:"port"`
+	Mocks   []LDAPMock `yaml:"mocks" json:"mocks"`
+}
+
+type LDAPMock struct {
+	ID         string              `yaml:"id" json:"id"`
+	BaseDN     string              `yaml:"base_dn" json:"base_dn"`
+	Filter     string              `yaml:"filter,omitempty" json:"filter,omitempty"`
+	Attributes map[string][]string `yaml:"attributes" json:"attributes"`
+	Delay      Duration            `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State      *StateCondition     `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// IMAP
+// ---------------------------------------------------------------------------
+
+type IMAPConfig struct {
+	Enabled   bool          `yaml:"enabled" json:"enabled"`
+	Port      int           `yaml:"port" json:"port"`
+	Users     []IMAPUser    `yaml:"users,omitempty" json:"users,omitempty"`
+	Mailboxes []IMAPMailbox `yaml:"mailboxes" json:"mailboxes"`
+}
+
+type IMAPUser struct {
+	Username string `yaml:"username" json:"username"`
+	Password string `yaml:"password" json:"password"`
+}
+
+type IMAPMailbox struct {
+	ID       string        `yaml:"id" json:"id"`
+	Name     string        `yaml:"name" json:"name"`
+	Messages []IMAPMessage `yaml:"messages" json:"messages"`
+}
+
+type IMAPMessage struct {
+	SeqNum  int      `yaml:"seq_num" json:"seq_num"`
+	UID     uint32   `yaml:"uid,omitempty" json:"uid,omitempty"`
+	From    string   `yaml:"from" json:"from"`
+	To      string   `yaml:"to" json:"to"`
+	Subject string   `yaml:"subject" json:"subject"`
+	Body    string   `yaml:"body" json:"body"`
+	Flags   []string `yaml:"flags,omitempty" json:"flags,omitempty"`
+	Date    string   `yaml:"date,omitempty" json:"date,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// FTP
+// ---------------------------------------------------------------------------
+
+type FTPConfig struct {
+	Enabled          bool      `yaml:"enabled" json:"enabled"`
+	Port             int       `yaml:"port" json:"port"`
+	PassivePortStart int       `yaml:"passive_port_start,omitempty" json:"passive_port_start,omitempty"`
+	Files            []FTPFile `yaml:"files" json:"files"`
+}
+
+type FTPFile struct {
+	ID          string `yaml:"id" json:"id"`
+	Path        string `yaml:"path" json:"path"`
+	Content     string `yaml:"content" json:"content"`
+	Permissions string `yaml:"permissions,omitempty" json:"permissions,omitempty"`
+	Size        int64  `yaml:"size,omitempty" json:"size,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Memcached
+// ---------------------------------------------------------------------------
+
+type MemcachedConfig struct {
+	Enabled bool            `yaml:"enabled" json:"enabled"`
+	Port    int             `yaml:"port" json:"port"`
+	Mocks   []MemcachedMock `yaml:"mocks" json:"mocks"`
+}
+
+type MemcachedMock struct {
+	ID       string            `yaml:"id" json:"id"`
+	Command  string            `yaml:"command" json:"command"`
+	Key      string            `yaml:"key,omitempty" json:"key,omitempty"`
+	Response MemcachedResponse `yaml:"response" json:"response"`
+	Delay    Duration          `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State    *StateCondition   `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+type MemcachedResponse struct {
+	Value  string `yaml:"value,omitempty" json:"value,omitempty"`
+	Flags  uint32 `yaml:"flags,omitempty" json:"flags,omitempty"`
+	Status string `yaml:"status,omitempty" json:"status,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// STOMP
+// ---------------------------------------------------------------------------
+
+type STOMPConfig struct {
+	Enabled bool        `yaml:"enabled" json:"enabled"`
+	Port    int         `yaml:"port" json:"port"`
+	Mocks   []STOMPMock `yaml:"mocks" json:"mocks"`
+}
+
+type STOMPMock struct {
+	ID          string          `yaml:"id" json:"id"`
+	Destination string          `yaml:"destination" json:"destination"`
+	Response    *STOMPResponse  `yaml:"response,omitempty" json:"response,omitempty"`
+	Delay       Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State       *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+type STOMPResponse struct {
+	Destination string            `yaml:"destination,omitempty" json:"destination,omitempty"`
+	Body        string            `yaml:"body" json:"body"`
+	ContentType string            `yaml:"content_type,omitempty" json:"content_type,omitempty"`
+	Headers     map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+}
+
+type ReceivedSTOMPMessage struct {
+	ID          string            `json:"id"`
+	Destination string            `json:"destination"`
+	Body        string            `json:"body"`
+	Headers     map[string]string `json:"headers"`
+	Timestamp   string            `json:"timestamp"`
+}
+
+// ---------------------------------------------------------------------------
+// CoAP
+// ---------------------------------------------------------------------------
+
+type CoAPConfig struct {
+	Enabled bool       `yaml:"enabled" json:"enabled"`
+	Port    int        `yaml:"port" json:"port"`
+	Mocks   []CoAPMock `yaml:"mocks" json:"mocks"`
+}
+
+type CoAPMock struct {
+	ID       string          `yaml:"id" json:"id"`
+	Method   string          `yaml:"method" json:"method"`
+	Path     string          `yaml:"path" json:"path"`
+	Response CoAPResponse    `yaml:"response" json:"response"`
+	Delay    Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State    *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+type CoAPResponse struct {
+	Code          string `yaml:"code" json:"code"`
+	Payload       string `yaml:"payload,omitempty" json:"payload,omitempty"`
+	ContentFormat int    `yaml:"content_format,omitempty" json:"content_format,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// SIP
+// ---------------------------------------------------------------------------
+
+type SIPConfig struct {
+	Enabled bool      `yaml:"enabled" json:"enabled"`
+	Port    int       `yaml:"port" json:"port"`
+	Mocks   []SIPMock `yaml:"mocks" json:"mocks"`
+}
+
+type SIPMock struct {
+	ID       string          `yaml:"id" json:"id"`
+	Method   string          `yaml:"method" json:"method"`
+	URI      string          `yaml:"uri,omitempty" json:"uri,omitempty"`
+	Response SIPResponse     `yaml:"response" json:"response"`
+	Delay    Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State    *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+type SIPResponse struct {
+	Status  int               `yaml:"status" json:"status"`
+	Reason  string            `yaml:"reason,omitempty" json:"reason,omitempty"`
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	Body    string            `yaml:"body,omitempty" json:"body,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -596,5 +872,40 @@ func applyDefaults(cfg *Config) {
 		if cfg.Protocols.SNMP.Community == "" {
 			cfg.Protocols.SNMP.Community = "public"
 		}
+	}
+	if cfg.Protocols.DNS != nil && cfg.Protocols.DNS.Port == 0 {
+		cfg.Protocols.DNS.Port = 5353
+	}
+	if cfg.Protocols.AMQP != nil && cfg.Protocols.AMQP.Port == 0 {
+		cfg.Protocols.AMQP.Port = 5672
+	}
+	if cfg.Protocols.Kafka != nil && cfg.Protocols.Kafka.Port == 0 {
+		cfg.Protocols.Kafka.Port = 9092
+	}
+	if cfg.Protocols.LDAP != nil && cfg.Protocols.LDAP.Port == 0 {
+		cfg.Protocols.LDAP.Port = 3893
+	}
+	if cfg.Protocols.IMAP != nil && cfg.Protocols.IMAP.Port == 0 {
+		cfg.Protocols.IMAP.Port = 1143
+	}
+	if cfg.Protocols.FTP != nil {
+		if cfg.Protocols.FTP.Port == 0 {
+			cfg.Protocols.FTP.Port = 2121
+		}
+		if cfg.Protocols.FTP.PassivePortStart == 0 {
+			cfg.Protocols.FTP.PassivePortStart = 50000
+		}
+	}
+	if cfg.Protocols.Memcached != nil && cfg.Protocols.Memcached.Port == 0 {
+		cfg.Protocols.Memcached.Port = 11211
+	}
+	if cfg.Protocols.STOMP != nil && cfg.Protocols.STOMP.Port == 0 {
+		cfg.Protocols.STOMP.Port = 61613
+	}
+	if cfg.Protocols.CoAP != nil && cfg.Protocols.CoAP.Port == 0 {
+		cfg.Protocols.CoAP.Port = 5683
+	}
+	if cfg.Protocols.SIP != nil && cfg.Protocols.SIP.Port == 0 {
+		cfg.Protocols.SIP.Port = 5060
 	}
 }

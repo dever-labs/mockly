@@ -116,6 +116,16 @@ type Server struct {
 	smtp      SMTPProtocol
 	mqtt      MQTTProtocol
 	snmp      SNMPProtocol
+	dns       DNSProtocol
+	amqp      AMQPProtocol
+	kafka     KafkaProtocol
+	ldap      LDAPProtocol
+	imap      IMAPProtocol
+	ftp       FTPProtocol
+	memcached MemcachedProtocol
+	stomp     STOMPProtocol
+	coap      CoAPProtocol
+	sip       SIPProtocol
 	server    *http.Server
 	uiFiles   http.FileSystem
 }
@@ -135,6 +145,16 @@ func New(
 	smtpSrv SMTPProtocol,
 	mqttSrv MQTTProtocol,
 	snmpSrv SNMPProtocol,
+	dnsSrv DNSProtocol,
+	amqpSrv AMQPProtocol,
+	kafkaSrv KafkaProtocol,
+	ldapSrv LDAPProtocol,
+	imapSrv IMAPProtocol,
+	ftpSrv FTPProtocol,
+	memcachedSrv MemcachedProtocol,
+	stompSrv STOMPProtocol,
+	coapSrv CoAPProtocol,
+	sipSrv SIPProtocol,
 ) *Server {
 	return &Server{
 		cfg:       cfg,
@@ -150,6 +170,16 @@ func New(
 		smtp:      smtpSrv,
 		mqtt:      mqttSrv,
 		snmp:      snmpSrv,
+		dns:       dnsSrv,
+		amqp:      amqpSrv,
+		kafka:     kafkaSrv,
+		ldap:      ldapSrv,
+		imap:      imapSrv,
+		ftp:       ftpSrv,
+		memcached: memcachedSrv,
+		stomp:     stompSrv,
+		coap:      coapSrv,
+		sip:       sipSrv,
 	}
 }
 
@@ -278,6 +308,62 @@ func (s *Server) buildRouter() http.Handler {
 		r.Post("/api/snmp/traps", s.addSNMPTrap)
 		r.Post("/api/snmp/traps/{id}/send", s.sendSNMPTrap)
 
+		r.Get("/api/mocks/dns", s.listDNSMocks)
+		r.Post("/api/mocks/dns", s.addDNSMock)
+		r.Put("/api/mocks/dns/{id}", s.updateDNSMock)
+		r.Delete("/api/mocks/dns/{id}", s.deleteDNSMock)
+
+		r.Get("/api/mocks/amqp", s.listAMQPMocks)
+		r.Post("/api/mocks/amqp", s.addAMQPMock)
+		r.Put("/api/mocks/amqp/{id}", s.updateAMQPMock)
+		r.Delete("/api/mocks/amqp/{id}", s.deleteAMQPMock)
+		r.Get("/api/amqp/messages", s.listAMQPMessages)
+		r.Delete("/api/amqp/messages", s.clearAMQPMessages)
+
+		r.Get("/api/mocks/kafka", s.listKafkaMocks)
+		r.Post("/api/mocks/kafka", s.addKafkaMock)
+		r.Put("/api/mocks/kafka/{id}", s.updateKafkaMock)
+		r.Delete("/api/mocks/kafka/{id}", s.deleteKafkaMock)
+		r.Get("/api/kafka/messages", s.listKafkaMessages)
+		r.Delete("/api/kafka/messages", s.clearKafkaMessages)
+
+		r.Get("/api/mocks/ldap", s.listLDAPMocks)
+		r.Post("/api/mocks/ldap", s.addLDAPMock)
+		r.Put("/api/mocks/ldap/{id}", s.updateLDAPMock)
+		r.Delete("/api/mocks/ldap/{id}", s.deleteLDAPMock)
+
+		r.Get("/api/mocks/imap", s.listIMAPMailboxes)
+		r.Post("/api/mocks/imap", s.addIMAPMailbox)
+		r.Put("/api/mocks/imap/{id}", s.updateIMAPMailbox)
+		r.Delete("/api/mocks/imap/{id}", s.deleteIMAPMailbox)
+
+		r.Get("/api/mocks/ftp", s.listFTPFiles)
+		r.Post("/api/mocks/ftp", s.addFTPFile)
+		r.Put("/api/mocks/ftp/{id}", s.updateFTPFile)
+		r.Delete("/api/mocks/ftp/{id}", s.deleteFTPFile)
+
+		r.Get("/api/mocks/memcached", s.listMemcachedMocks)
+		r.Post("/api/mocks/memcached", s.addMemcachedMock)
+		r.Put("/api/mocks/memcached/{id}", s.updateMemcachedMock)
+		r.Delete("/api/mocks/memcached/{id}", s.deleteMemcachedMock)
+
+		r.Get("/api/mocks/stomp", s.listSTOMPMocks)
+		r.Post("/api/mocks/stomp", s.addSTOMPMock)
+		r.Put("/api/mocks/stomp/{id}", s.updateSTOMPMock)
+		r.Delete("/api/mocks/stomp/{id}", s.deleteSTOMPMock)
+		r.Get("/api/stomp/messages", s.listSTOMPMessages)
+		r.Delete("/api/stomp/messages", s.clearSTOMPMessages)
+
+		r.Get("/api/mocks/coap", s.listCoAPMocks)
+		r.Post("/api/mocks/coap", s.addCoAPMock)
+		r.Put("/api/mocks/coap/{id}", s.updateCoAPMock)
+		r.Delete("/api/mocks/coap/{id}", s.deleteCoAPMock)
+
+		r.Get("/api/mocks/sip", s.listSIPMocks)
+		r.Post("/api/mocks/sip", s.addSIPMock)
+		r.Put("/api/mocks/sip/{id}", s.updateSIPMock)
+		r.Delete("/api/mocks/sip/{id}", s.deleteSIPMock)
+
 		r.Get("/api/state", s.getState)
 		r.Post("/api/state", s.setState)
 		r.Delete("/api/state/{key}", s.deleteState)
@@ -338,7 +424,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listProtocols(w http.ResponseWriter, r *http.Request) {
 	var protocols []map[string]interface{}
-	for _, p := range []ProtocolServer{s.http, s.ws, s.grpc, s.graphql, s.tcp, s.redis, s.smtp, s.mqtt, s.snmp} {
+	for _, p := range []ProtocolServer{s.http, s.ws, s.grpc, s.graphql, s.tcp, s.redis, s.smtp, s.mqtt, s.snmp, s.dns, s.amqp, s.kafka, s.ldap, s.imap, s.ftp, s.memcached, s.stomp, s.coap, s.sip} {
 		if p != nil {
 			protocols = append(protocols, p.StatusInfo())
 		}
@@ -1294,6 +1380,79 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 		}
 		s.snmp.SetMocks(mocks)
 	}
+	if s.dns != nil {
+		var mocks []config.DNSMock
+		if s.cfg.Protocols.DNS != nil {
+			mocks = s.cfg.Protocols.DNS.Mocks
+		}
+		s.dns.SetMocks(mocks)
+	}
+	if s.amqp != nil {
+		var mocks []config.AMQPMock
+		if s.cfg.Protocols.AMQP != nil {
+			mocks = s.cfg.Protocols.AMQP.Mocks
+		}
+		s.amqp.SetMocks(mocks)
+		s.amqp.GetMessageStore().Clear()
+	}
+	if s.kafka != nil {
+		var mocks []config.KafkaMock
+		if s.cfg.Protocols.Kafka != nil {
+			mocks = s.cfg.Protocols.Kafka.Mocks
+		}
+		s.kafka.SetMocks(mocks)
+		s.kafka.GetMessageStore().Clear()
+	}
+	if s.ldap != nil {
+		var mocks []config.LDAPMock
+		if s.cfg.Protocols.LDAP != nil {
+			mocks = s.cfg.Protocols.LDAP.Mocks
+		}
+		s.ldap.SetMocks(mocks)
+	}
+	if s.imap != nil {
+		var items []config.IMAPMailbox
+		if s.cfg.Protocols.IMAP != nil {
+			items = s.cfg.Protocols.IMAP.Mailboxes
+		}
+		s.imap.SetMailboxes(items)
+	}
+	if s.ftp != nil {
+		var items []config.FTPFile
+		if s.cfg.Protocols.FTP != nil {
+			items = s.cfg.Protocols.FTP.Files
+		}
+		s.ftp.SetFiles(items)
+	}
+	if s.memcached != nil {
+		var mocks []config.MemcachedMock
+		if s.cfg.Protocols.Memcached != nil {
+			mocks = s.cfg.Protocols.Memcached.Mocks
+		}
+		s.memcached.SetMocks(mocks)
+	}
+	if s.stomp != nil {
+		var mocks []config.STOMPMock
+		if s.cfg.Protocols.STOMP != nil {
+			mocks = s.cfg.Protocols.STOMP.Mocks
+		}
+		s.stomp.SetMocks(mocks)
+		s.stomp.GetMessageStore().Clear()
+	}
+	if s.coap != nil {
+		var mocks []config.CoAPMock
+		if s.cfg.Protocols.CoAP != nil {
+			mocks = s.cfg.Protocols.CoAP.Mocks
+		}
+		s.coap.SetMocks(mocks)
+	}
+	if s.sip != nil {
+		var mocks []config.SIPMock
+		if s.cfg.Protocols.SIP != nil {
+			mocks = s.cfg.Protocols.SIP.Mocks
+		}
+		s.sip.SetMocks(mocks)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})
 }
@@ -1387,6 +1546,7 @@ func (s *Server) waitHTTPCalls(w http.ResponseWriter, r *http.Request) {
 		Calls:  entries,
 	})
 }
+
 // ---------------------------------------------------------------------------
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

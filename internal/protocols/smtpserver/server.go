@@ -209,7 +209,8 @@ func (s *session) Rcpt(to string, opts *gosmtp.RcptOptions) error {
 }
 
 func (s *session) Data(r io.Reader) error {
-	raw, err := io.ReadAll(r)
+	const maxEmailSize = 25 * 1024 * 1024
+	raw, err := io.ReadAll(io.LimitReader(r, maxEmailSize))
 	if err != nil {
 		return err
 	}

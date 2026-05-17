@@ -321,3 +321,108 @@ func TestFuncs_UpperLower(t *testing.T) {
 		t.Errorf("lower: got %q", out)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// rand_int error path
+// ---------------------------------------------------------------------------
+
+func TestFuncs_RandInt_MinGreaterThanMax(t *testing.T) {
+	fm := engine.BuildFuncMap()
+	tpl, _ := template.New("t").Funcs(fm).Parse(`{{rand_int 10 5}}`)
+	var sb strings.Builder
+	if err := tpl.Execute(&sb, nil); err == nil {
+		t.Error("rand_int min>max: expected error, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// rand_string error paths
+// ---------------------------------------------------------------------------
+
+func TestFuncs_RandString_ZeroLength(t *testing.T) {
+	fm := engine.BuildFuncMap()
+	tpl, _ := template.New("t").Funcs(fm).Parse(`{{rand_string 0}}`)
+	var sb strings.Builder
+	if err := tpl.Execute(&sb, nil); err == nil {
+		t.Error("rand_string 0: expected error, got nil")
+	}
+}
+
+func TestFuncs_RandString_NegativeLength(t *testing.T) {
+	fm := engine.BuildFuncMap()
+	tpl, _ := template.New("t").Funcs(fm).Parse(`{{rand_string -3}}`)
+	var sb strings.Builder
+	if err := tpl.Execute(&sb, nil); err == nil {
+		t.Error("rand_string -3: expected error, got nil")
+	}
+}
+
+func TestFuncs_RandString_EmptyCustomCharset(t *testing.T) {
+	fm := engine.BuildFuncMap()
+	tpl, _ := template.New("t").Funcs(fm).Parse(`{{rand_string 5 ""}}`)
+	var sb strings.Builder
+	if err := tpl.Execute(&sb, nil); err == nil {
+		t.Error("rand_string empty charset: expected error, got nil")
+	}
+}
+
+func TestFuncs_RandString_CustomCharset(t *testing.T) {
+	out := execute(t, `{{rand_string 8 "abc"}}`)
+	if len(out) != 8 {
+		t.Errorf("expected 8 chars, got %d", len(out))
+	}
+	for _, c := range out {
+		if !strings.ContainsRune("abc", c) {
+			t.Errorf("rand_string custom charset: unexpected char %q in %q", c, out)
+		}
+	}
+}
+
+func TestFuncs_RandString_Alpha(t *testing.T) {
+	out := execute(t, `{{rand_string 10 "alpha"}}`)
+	for _, c := range out {
+		if !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", c) {
+			t.Errorf("rand_string alpha: unexpected char %q in %q", c, out)
+		}
+	}
+}
+
+func TestFuncs_RandString_Lower(t *testing.T) {
+	out := execute(t, `{{rand_string 10 "lower"}}`)
+	if out != strings.ToLower(out) {
+		t.Errorf("rand_string lower: expected all lowercase, got %q", out)
+	}
+}
+
+func TestFuncs_RandString_Upper(t *testing.T) {
+	out := execute(t, `{{rand_string 10 "upper"}}`)
+	if out != strings.ToUpper(out) {
+		t.Errorf("rand_string upper: expected all uppercase, got %q", out)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// date_add error path
+// ---------------------------------------------------------------------------
+
+func TestFuncs_DateAdd_InvalidDuration(t *testing.T) {
+	fm := engine.BuildFuncMap()
+	tpl, _ := template.New("t").Funcs(fm).Parse(`{{date_add "2006-01-02" "not-a-duration"}}`)
+	var sb strings.Builder
+	if err := tpl.Execute(&sb, nil); err == nil {
+		t.Error("date_add invalid duration: expected error, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// pick error path
+// ---------------------------------------------------------------------------
+
+func TestFuncs_Pick_NoOptions(t *testing.T) {
+	fm := engine.BuildFuncMap()
+	tpl, _ := template.New("t").Funcs(fm).Parse(`{{pick}}`)
+	var sb strings.Builder
+	if err := tpl.Execute(&sb, nil); err == nil {
+		t.Error("pick with no options: expected error, got nil")
+	}
+}

@@ -328,3 +328,197 @@ func TestHTTPMatch_OAuthAuthorize(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Header matching
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_HeaderMatch(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "auth",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/secure", Headers: map[string]string{"X-Auth": "secret"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	// Matching header value → should match.
+	_, ok := engine.HTTPMatch(mocks, "GET", "/secure", nil, map[string]string{"X-Auth": "secret"}, "", nil)
+	if !ok {
+		t.Fatal("expected match with correct header")
+	}
+
+	// Wrong header value → should not match.
+	_, ok2 := engine.HTTPMatch(mocks, "GET", "/secure", nil, map[string]string{"X-Auth": "wrong"}, "", nil)
+	if ok2 {
+		t.Fatal("expected no match with wrong header value")
+	}
+
+	// Missing header → should not match.
+	_, ok3 := engine.HTTPMatch(mocks, "GET", "/secure", nil, nil, "", nil)
+	if ok3 {
+		t.Fatal("expected no match when required header is absent")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Body pattern matching
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_BodyPattern(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "subscribe",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/events", Body: "subscribe"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	// Body contains the pattern → match.
+	_, ok := engine.HTTPMatch(mocks, "POST", "/events", nil, nil, "please subscribe now", nil)
+	if !ok {
+		t.Fatal("expected match when body contains pattern")
+	}
+
+	// Body does not contain the pattern → no match.
+	_, ok2 := engine.HTTPMatch(mocks, "POST", "/events", nil, nil, "cancel registration", nil)
+	if ok2 {
+		t.Fatal("expected no match when body does not contain pattern")
+	}
+}
+
+func TestHTTPMatch_BodyPattern_Regex(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/data", Body: `re:\d{4}`},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	_, ok := engine.HTTPMatch(mocks, "POST", "/data", nil, nil, "code 1234 issued", nil)
+	if !ok {
+		t.Fatal("expected regex body match")
+	}
+
+	_, ok2 := engine.HTTPMatch(mocks, "POST", "/data", nil, nil, "no digits here", nil)
+	if ok2 {
+		t.Fatal("expected no regex body match")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// matchBodyJSON edge cases
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_BodyJSON_EmptyBody(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/x", BodyJSON: map[string]string{"key": "val"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	_, ok := engine.HTTPMatch(mocks, "POST", "/x", nil, nil, "", nil)
+	if ok {
+		t.Fatal("expected no match for empty body with body_json requirement")
+	}
+}
+
+func TestHTTPMatch_BodyJSON_InvalidJSON(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/x", BodyJSON: map[string]string{"key": "val"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	_, ok := engine.HTTPMatch(mocks, "POST", "/x", nil, nil, "not json at all", nil)
+	if ok {
+		t.Fatal("expected no match for invalid JSON body")
+	}
+}
+
+func TestHTTPMatch_BodyJSON_MissingNestedKey(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/x", BodyJSON: map[string]string{"user.role": "admin"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	// Flat body without nested structure.
+	_, ok := engine.HTTPMatch(mocks, "POST", "/x", nil, nil, `{"user":"alice"}`, nil)
+	if ok {
+		t.Fatal("expected no match when nested key path does not exist")
+	}
+}
+
+func TestHTTPMatch_BodyJSON_NumericValue(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/x", BodyJSON: map[string]string{"count": "42"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	_, ok := engine.HTTPMatch(mocks, "POST", "/x", nil, nil, `{"count":42}`, nil)
+	if !ok {
+		t.Fatal("expected match for numeric JSON value compared as string")
+	}
+}
+
+func TestHTTPMatch_BodyJSON_BoolValue(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/x", BodyJSON: map[string]string{"active": "true"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	_, ok := engine.HTTPMatch(mocks, "POST", "/x", nil, nil, `{"active":true}`, nil)
+	if !ok {
+		t.Fatal("expected match for bool JSON value compared as string")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Default status 200 when response.status is 0
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_DefaultStatus200(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/no-status"},
+		Response: config.HTTPResponse{}, // status is 0 → should default to 200
+	}}
+	result, ok := engine.HTTPMatch(mocks, "GET", "/no-status", nil, nil, "", nil)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if result.Status != 200 {
+		t.Errorf("expected default status 200, got %d", result.Status)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+
+func TestRender_WithTemplate(t *testing.T) {
+	out := engine.Render(`{"id":"{{uuid}}"}`, nil, nil, "")
+	if out == `{"id":"{{uuid}}"}` {
+		t.Error("Render: template was not rendered")
+	}
+	if len(out) < 10 {
+		t.Errorf("Render: output looks too short: %q", out)
+	}
+}
+
+func TestRender_NoTemplate(t *testing.T) {
+	in := `{"static":"value"}`
+	out := engine.Render(in, nil, nil, "")
+	if out != in {
+		t.Errorf("Render: plain string modified unexpectedly, got %q", out)
+	}
+}
+
+func TestRender_InvalidTemplate_ReturnsOriginal(t *testing.T) {
+	in := `{{invalid template syntax`
+	out := engine.Render(in, nil, nil, "")
+	// On template error Render returns the original string unchanged.
+	if out != in {
+		t.Errorf("Render: expected original on error, got %q", out)
+	}
+}
+
+func TestRender_QueryParam(t *testing.T) {
+	out := engine.Render(`hello {{.query.name}}`, map[string]string{"name": "world"}, nil, "")
+	if out != "hello world" {
+		t.Errorf("Render: unexpected output %q", out)
+	}
+}
+

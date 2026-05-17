@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/mail"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
 )
 
@@ -29,18 +29,21 @@ type Server struct {
 	inbox *Inbox
 }
 
-// Inbox is a bounded, thread-safe store of received emails.
+// Inbox is a bounded, thread-safe ring-buffer store of received emails.
+// When full, the oldest entry is overwritten (O(1) add, no allocation).
 type Inbox struct {
-	mu       sync.RWMutex
-	emails   []config.ReceivedEmail
-	maxSize  int
+	mu      sync.RWMutex
+	buf     []config.ReceivedEmail
+	head    int // index of the oldest element
+	count   int // number of valid elements
+	maxSize int
 }
 
 func newInbox(maxSize int) *Inbox {
 	if maxSize <= 0 {
-		maxSize = 1000
+		maxSize = config.DefaultInboxSize
 	}
-	return &Inbox{maxSize: maxSize}
+	return &Inbox{buf: make([]config.ReceivedEmail, maxSize), maxSize: maxSize}
 }
 
 // NewInbox creates a new Inbox with the given capacity. Exported for testing.
@@ -49,24 +52,31 @@ func NewInbox(maxSize int) *Inbox { return newInbox(maxSize) }
 func (b *Inbox) Add(e config.ReceivedEmail) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if len(b.emails) >= b.maxSize {
-		b.emails = b.emails[1:]
+	tail := (b.head + b.count) % b.maxSize
+	b.buf[tail] = e
+	if b.count == b.maxSize {
+		// Ring is full — advance head to discard oldest.
+		b.head = (b.head + 1) % b.maxSize
+	} else {
+		b.count++
 	}
-	b.emails = append(b.emails, e)
 }
 
 func (b *Inbox) All() []config.ReceivedEmail {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	out := make([]config.ReceivedEmail, len(b.emails))
-	copy(out, b.emails)
+	out := make([]config.ReceivedEmail, b.count)
+	for i := 0; i < b.count; i++ {
+		out[i] = b.buf[(b.head+i)%b.maxSize]
+	}
 	return out
 }
 
 func (b *Inbox) Clear() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.emails = nil
+	b.head = 0
+	b.count = 0
 }
 
 // New creates a Server.
@@ -137,7 +147,7 @@ func (s *Server) matchRule(from, to, subject string) (action, message string) {
 
 func matchSMTPPattern(pattern, value string) bool {
 	if strings.HasPrefix(pattern, "re:") {
-		re, err := regexp.Compile(pattern[3:])
+		re, err := engine.CachedRegex(pattern[3:])
 		if err != nil {
 			return false
 		}

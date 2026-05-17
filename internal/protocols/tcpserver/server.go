@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/state"
 	"github.com/dever-labs/mockly/internal/tlsutil"
@@ -84,9 +84,9 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) handleConn(conn net.Conn) {
 	defer conn.Close() //nolint:errcheck
 
-	buf := make([]byte, 65536)
+	buf := make([]byte, config.DefaultTCPReadBufferSize)
 	for {
-		_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(config.DefaultTCPReadDeadline))
 		n, err := conn.Read(buf)
 		if err != nil {
 			return
@@ -147,7 +147,7 @@ func (s *Server) matchMock(data []byte) (config.TCPMock, bool) {
 // matchTCPPattern supports: "re:…" regex, "hex:…" hex prefix, or exact string.
 func matchTCPPattern(pattern, text string, raw []byte) bool {
 	if strings.HasPrefix(pattern, "re:") {
-		re, err := regexp.Compile(pattern[3:])
+		re, err := engine.CachedRegex(pattern[3:])
 		if err != nil {
 			return false
 		}

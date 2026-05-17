@@ -9,12 +9,51 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/state"
 )
+
+// regexCache caches compiled regexes by pattern to avoid recompiling per request.
+var regexCache sync.Map // map[string]*regexp.Regexp
+
+// templateCache caches parsed templates by template string.
+var templateCache sync.Map // map[string]*template.Template
+
+// CachedRegex returns a cached *regexp.Regexp for pattern, compiling on first use.
+// Exported so protocol servers can share the same cache without reimporting regexp.
+func CachedRegex(pattern string) (*regexp.Regexp, error) {
+	return compiledRegex(pattern)
+}
+
+// compiledRegex returns a cached *regexp.Regexp for pattern, compiling it on first use.
+func compiledRegex(pattern string) (*regexp.Regexp, error) {
+	if v, ok := regexCache.Load(pattern); ok {
+		return v.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	regexCache.Store(pattern, re)
+	return re, nil
+}
+
+// cachedTemplate returns a cached *template.Template for tmpl, parsing it on first use.
+func cachedTemplate(tmpl string) (*template.Template, error) {
+	if v, ok := templateCache.Load(tmpl); ok {
+		return v.(*template.Template), nil
+	}
+	t, err := template.New("response").Funcs(BuildFuncMap()).Parse(tmpl)
+	if err != nil {
+		return nil, err
+	}
+	templateCache.Store(tmpl, t)
+	return t, nil
+}
 
 // MatchResult is the result of matching a request against a set of mocks.
 type MatchResult struct {
@@ -119,7 +158,7 @@ func matchPath(pattern, path string) bool {
 		return true
 	}
 	if strings.HasPrefix(pattern, "re:") {
-		re, err := regexp.Compile(strings.TrimPrefix(pattern, "re:"))
+		re, err := compiledRegex(strings.TrimPrefix(pattern, "re:"))
 		if err != nil {
 			return false
 		}
@@ -137,7 +176,7 @@ func matchPattern(pattern, text string) bool {
 		return true
 	}
 	if strings.HasPrefix(pattern, "re:") {
-		re, err := regexp.Compile(strings.TrimPrefix(pattern, "re:"))
+		re, err := compiledRegex(strings.TrimPrefix(pattern, "re:"))
 		if err != nil {
 			return false
 		}
@@ -250,7 +289,7 @@ func renderTemplate(tmpl string, query, headers map[string]string, body string) 
 	if !strings.Contains(tmpl, "{{") {
 		return tmpl, nil
 	}
-	t, err := template.New("response").Funcs(BuildFuncMap()).Parse(tmpl)
+	t, err := cachedTemplate(tmpl)
 	if err != nil {
 		return "", fmt.Errorf("parsing template: %w", err)
 	}

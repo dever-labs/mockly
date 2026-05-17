@@ -29,18 +29,21 @@ type ReceivedMessage struct {
 	Timestamp string `json:"timestamp"`
 }
 
-// MessageStore holds captured MQTT messages.
+// MessageStore holds captured MQTT messages using a ring buffer (O(1) add).
+// When full, the oldest entry is overwritten.
 type MessageStore struct {
-	mu       sync.RWMutex
-	messages []ReceivedMessage
-	maxSize  int
+	mu      sync.RWMutex
+	buf     []ReceivedMessage
+	head    int
+	count   int
+	maxSize int
 }
 
 func newMessageStore(maxSize int) *MessageStore {
 	if maxSize <= 0 {
-		maxSize = 1000
+		maxSize = config.DefaultMessageStoreSize
 	}
-	return &MessageStore{maxSize: maxSize}
+	return &MessageStore{buf: make([]ReceivedMessage, maxSize), maxSize: maxSize}
 }
 
 // NewMessageStore creates a new MessageStore with the given capacity. Exported for testing.
@@ -49,24 +52,30 @@ func NewMessageStore(maxSize int) *MessageStore { return newMessageStore(maxSize
 func (m *MessageStore) Add(msg ReceivedMessage) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if len(m.messages) >= m.maxSize {
-		m.messages = m.messages[1:]
+	tail := (m.head + m.count) % m.maxSize
+	m.buf[tail] = msg
+	if m.count == m.maxSize {
+		m.head = (m.head + 1) % m.maxSize
+	} else {
+		m.count++
 	}
-	m.messages = append(m.messages, msg)
 }
 
 func (m *MessageStore) All() []ReceivedMessage {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]ReceivedMessage, len(m.messages))
-	copy(out, m.messages)
+	out := make([]ReceivedMessage, m.count)
+	for i := 0; i < m.count; i++ {
+		out[i] = m.buf[(m.head+i)%m.maxSize]
+	}
 	return out
 }
 
 func (m *MessageStore) Clear() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.messages = nil
+	m.head = 0
+	m.count = 0
 }
 
 // Server is the MQTT broker mock server.

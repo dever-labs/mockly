@@ -9,6 +9,28 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+// Sequence exhaustion strategies for HTTPMock.SequenceExhausted.
+const (
+	SequenceExhaustedHoldLast = "hold_last" // keep returning the last entry (default)
+	SequenceExhaustedLoop     = "loop"      // restart from the first entry
+	SequenceExhaustedNotFound = "not_found" // return 404
+)
+
+// Default capacities for bounded in-memory stores.
+const (
+	DefaultInboxSize        = 1000
+	DefaultMessageStoreSize = 1000
+)
+
+// Default network constants.
+const (
+	DefaultTCPReadBufferSize = 65536
+	DefaultTCPReadDeadline   = 30 * time.Second
+)
 // Config is the top-level Mockly configuration.
 type Config struct {
 	Mockly    MocklyConfig    `yaml:"mockly" json:"mockly"`
@@ -29,6 +51,23 @@ type UIConfig struct {
 type APIConfig struct {
 	Port int        `yaml:"port" json:"port"`
 	TLS  *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
+	// CORS configures Cross-Origin Resource Sharing for the management API.
+	// Defaults to wide-open (AllowedOrigins: ["*"]) for maximum compatibility
+	// as a local mock tool. Set Enabled: false to strip the CORS middleware
+	// entirely (useful when running behind a reverse proxy that handles CORS).
+	CORS *CORSConfig `yaml:"cors,omitempty" json:"cors,omitempty"`
+}
+
+// CORSConfig controls the CORS middleware on the management API server.
+// All fields are optional; omitting the cors block keeps the default
+// wide-open behaviour (AllowedOrigins: ["*"]).
+type CORSConfig struct {
+	// Enabled controls whether CORS headers are sent at all.
+	// Set to false to disable the middleware entirely (default: true).
+	Enabled        *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	AllowedOrigins []string `yaml:"allowed_origins,omitempty" json:"allowed_origins,omitempty"`
+	AllowedMethods []string `yaml:"allowed_methods,omitempty" json:"allowed_methods,omitempty"`
+	AllowedHeaders []string `yaml:"allowed_headers,omitempty" json:"allowed_headers,omitempty"`
 }
 
 // ProtocolsConfig holds configuration for each supported protocol.
@@ -64,7 +103,11 @@ type HTTPConfig struct {
 	Enabled bool       `yaml:"enabled" json:"enabled"`
 	Port    int        `yaml:"port" json:"port"`
 	TLS     *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
-	Mocks   []HTTPMock `yaml:"mocks" json:"mocks"`
+	// MaxBodyBytes limits the size of incoming request bodies in bytes.
+	// 0 (default) means unlimited, which is appropriate when simulating
+	// endpoints that accept large payloads (file uploads, bulk imports, etc.).
+	MaxBodyBytes int64      `yaml:"max_body_bytes,omitempty" json:"max_body_bytes,omitempty"`
+	Mocks        []HTTPMock `yaml:"mocks" json:"mocks"`
 }
 
 type HTTPMock struct {

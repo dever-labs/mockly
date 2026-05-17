@@ -2,10 +2,16 @@
 package smtpserver
 
 import (
+	"context"
+	"fmt"
+	"net"
+	"net/smtp"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/logger"
 )
 
 func makeEmail(id, from string) config.ReceivedEmail {
@@ -157,4 +163,184 @@ srv.matchRule("a@b.com", "c@d.com", "hello")
 }()
 }
 wg.Wait()
+}
+
+// ---------------------------------------------------------------------------
+// NewInbox (exported constructor)
+// ---------------------------------------------------------------------------
+
+func TestNewInbox_Positive(t *testing.T) {
+b := NewInbox(10)
+if b == nil {
+t.Fatal("NewInbox returned nil")
+}
+}
+
+func TestNewInbox_Default(t *testing.T) {
+b := NewInbox(0)
+if b == nil {
+t.Fatal("NewInbox(0) returned nil")
+}
+if b.maxSize <= 0 {
+t.Error("default maxSize should be positive")
+}
+}
+
+// ---------------------------------------------------------------------------
+// New / GetRules / GetInbox / StatusInfo
+// ---------------------------------------------------------------------------
+
+func TestSMTP_New_InitialRules(t *testing.T) {
+cfg := &config.SMTPConfig{
+Enabled: true,
+Port:    0,
+Domain:  "test.local",
+Rules: []config.SMTPRule{
+{ID: "r1", Action: "accept"},
+},
+}
+srv := New(cfg, logger.New(100))
+rules := srv.GetRules()
+if len(rules) != 1 || rules[0].ID != "r1" {
+t.Fatalf("unexpected rules from New: %+v", rules)
+}
+}
+
+func TestSMTP_GetInbox_NotNil(t *testing.T) {
+cfg := &config.SMTPConfig{Domain: "test.local"}
+srv := New(cfg, logger.New(10))
+if srv.GetInbox() == nil {
+t.Fatal("GetInbox should not return nil")
+}
+}
+
+func TestSMTP_SetRules_IsolatesSlice(t *testing.T) {
+cfg := &config.SMTPConfig{Domain: "test.local"}
+srv := New(cfg, logger.New(10))
+original := []config.SMTPRule{{ID: "r1", Action: "accept"}}
+srv.SetRules(original)
+original[0].Action = "reject"
+if srv.GetRules()[0].Action != "accept" {
+t.Error("SetRules should copy the slice")
+}
+}
+
+func TestSMTP_StatusInfo(t *testing.T) {
+cfg := &config.SMTPConfig{Enabled: true, Port: 2525, Domain: "mockly.local"}
+srv := New(cfg, logger.New(100))
+srv.SetRules([]config.SMTPRule{{ID: "r1"}, {ID: "r2"}})
+srv.GetInbox().Add(config.ReceivedEmail{ID: "e1"})
+
+info := srv.StatusInfo()
+if info["protocol"] != "smtp" {
+t.Errorf("unexpected protocol %v", info["protocol"])
+}
+if info["port"] != 2525 {
+t.Errorf("want port 2525, got %v", info["port"])
+}
+if info["domain"] != "mockly.local" {
+t.Errorf("want domain mockly.local, got %v", info["domain"])
+}
+if info["rules"] != 2 {
+t.Errorf("want rules=2, got %v", info["rules"])
+}
+if info["emails"] != 1 {
+t.Errorf("want emails=1, got %v", info["emails"])
+}
+}
+
+// ---------------------------------------------------------------------------
+// Integration — real SMTP send
+// ---------------------------------------------------------------------------
+
+func TestSMTP_Integration_ReceiveEmail(t *testing.T) {
+port := freePort(t)
+cfg := &config.SMTPConfig{
+Enabled: true,
+Port:    port,
+Domain:  "test.local",
+}
+srv := New(cfg, logger.New(100))
+
+ctx, cancel := context.WithCancel(context.Background())
+t.Cleanup(cancel)
+go srv.Start(ctx) //nolint:errcheck
+
+waitForTCP(t, port, 2*time.Second)
+
+addr := fmt.Sprintf("127.0.0.1:%d", port)
+if err := smtp.SendMail(addr, nil, "alice@example.com", []string{"bob@example.com"}, []byte("Subject: Hello\r\n\r\nHello World")); err != nil {
+t.Fatalf("SendMail: %v", err)
+}
+
+emails := srv.GetInbox().All()
+if len(emails) != 1 {
+t.Fatalf("expected 1 email in inbox, got %d", len(emails))
+}
+if emails[0].From != "alice@example.com" {
+t.Errorf("unexpected from %q", emails[0].From)
+}
+if len(emails[0].To) != 1 || emails[0].To[0] != "bob@example.com" {
+t.Errorf("unexpected to %v", emails[0].To)
+}
+}
+
+func TestSMTP_Integration_RejectedEmail(t *testing.T) {
+port := freePort(t)
+cfg := &config.SMTPConfig{
+Enabled: true,
+Port:    port,
+Domain:  "test.local",
+Rules: []config.SMTPRule{
+{ID: "block-spam", From: "spam@*", Action: "reject", Message: "spam not allowed"},
+},
+}
+srv := New(cfg, logger.New(100))
+
+ctx, cancel := context.WithCancel(context.Background())
+t.Cleanup(cancel)
+go srv.Start(ctx) //nolint:errcheck
+
+waitForTCP(t, port, 2*time.Second)
+
+addr := fmt.Sprintf("127.0.0.1:%d", port)
+err := smtp.SendMail(addr, nil, "spam@badactor.com", []string{"me@example.com"}, []byte("Subject: Buy now\r\n\r\nspam"))
+if err == nil {
+t.Fatal("expected rejection error, got nil")
+}
+
+// Inbox should be empty — rejected email should not be stored.
+if n := len(srv.GetInbox().All()); n != 0 {
+t.Errorf("expected empty inbox after rejection, got %d", n)
+}
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+func freePort(t *testing.T) int {
+t.Helper()
+ln, err := net.Listen("tcp", "127.0.0.1:0")
+if err != nil {
+t.Fatalf("listen: %v", err)
+}
+port := ln.Addr().(*net.TCPAddr).Port
+_ = ln.Close()
+return port
+}
+
+func waitForTCP(t *testing.T, port int, timeout time.Duration) {
+t.Helper()
+addr := fmt.Sprintf("127.0.0.1:%d", port)
+deadline := time.Now().Add(timeout)
+for time.Now().Before(deadline) {
+conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+if err == nil {
+_ = conn.Close()
+return
+}
+time.Sleep(20 * time.Millisecond)
+}
+t.Fatalf("server at %s not ready within %v", addr, timeout)
 }

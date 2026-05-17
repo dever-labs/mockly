@@ -114,7 +114,11 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	body, err := io.ReadAll(r.Body)
+	bodyReader := io.Reader(r.Body)
+	if s.cfg.MaxBodyBytes > 0 {
+		bodyReader = io.LimitReader(r.Body, s.cfg.MaxBodyBytes)
+	}
+	body, err := io.ReadAll(bodyReader)
 	defer r.Body.Close() //nolint:errcheck
 	if err != nil {
 		http.Error(w, "failed to read request body", http.StatusBadRequest)
@@ -192,10 +196,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			default:
 				exhausted := matchedMock.SequenceExhausted
 				if exhausted == "" {
-					exhausted = "hold_last"
+					exhausted = config.SequenceExhaustedHoldLast
 				}
 				switch exhausted {
-				case "loop":
+				case config.SequenceExhaustedLoop:
 					loopIdx := (idx) % len(seq)
 					entry := seq[loopIdx]
 					if entry.Status != 0 {
@@ -210,7 +214,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 					if entry.Delay.Duration > 0 {
 						delay = entry.Delay.Duration
 					}
-				case "not_found":
+				case config.SequenceExhaustedNotFound:
 					status = http.StatusNotFound
 					respBody = `{"error":"sequence exhausted"}`
 				default: // hold_last

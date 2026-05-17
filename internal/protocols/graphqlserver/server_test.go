@@ -272,3 +272,89 @@ if !strings.Contains(string(respBody), "pong") {
 t.Errorf("expected 'pong' in response, got %q", respBody)
 }
 }
+
+// ---------------------------------------------------------------------------
+// GetMocks
+// ---------------------------------------------------------------------------
+
+func TestGraphQL_GetMocks_Empty(t *testing.T) {
+cfg := &config.GraphQLConfig{Enabled: true, Port: 0, Path: "/graphql"}
+srv := New(cfg, state.New(), scenarios.New(nil), logger.New(10))
+if mocks := srv.GetMocks(); len(mocks) != 0 {
+t.Fatalf("expected empty mock list, got %d", len(mocks))
+}
+}
+
+func TestGraphQL_GetMocks_PopulatedFromConfig(t *testing.T) {
+cfg := &config.GraphQLConfig{
+Enabled: true,
+Port:    0,
+Path:    "/graphql",
+Mocks: []config.GraphQLMock{
+{ID: "m1", OperationName: "GetUser"},
+{ID: "m2", OperationName: "ListUsers"},
+},
+}
+srv := New(cfg, state.New(), scenarios.New(nil), logger.New(10))
+mocks := srv.GetMocks()
+if len(mocks) != 2 {
+t.Fatalf("want 2 mocks, got %d", len(mocks))
+}
+}
+
+func TestGraphQL_GetMocks_IsolatesSlice(t *testing.T) {
+cfg := &config.GraphQLConfig{
+Mocks: []config.GraphQLMock{{ID: "m1", OperationName: "Op"}},
+}
+srv := New(cfg, state.New(), scenarios.New(nil), logger.New(10))
+got := srv.GetMocks()
+got[0].OperationName = "mutated"
+if srv.GetMocks()[0].OperationName != "Op" {
+t.Error("GetMocks should return a copy, not the internal slice")
+}
+}
+
+func TestGraphQL_SetMocks_IsolatesSlice(t *testing.T) {
+cfg := &config.GraphQLConfig{}
+srv := New(cfg, state.New(), scenarios.New(nil), logger.New(10))
+original := []config.GraphQLMock{{ID: "m1", OperationName: "Foo"}}
+srv.SetMocks(original)
+original[0].OperationName = "mutated"
+if srv.GetMocks()[0].OperationName != "Foo" {
+t.Error("SetMocks should copy the slice")
+}
+}
+
+// ---------------------------------------------------------------------------
+// StatusInfo
+// ---------------------------------------------------------------------------
+
+func TestGraphQL_StatusInfo(t *testing.T) {
+cfg := &config.GraphQLConfig{
+Enabled: true,
+Port:    8082,
+Path:    "/graphql",
+Mocks:   []config.GraphQLMock{{ID: "m1"}, {ID: "m2"}, {ID: "m3"}},
+}
+srv := New(cfg, state.New(), scenarios.New(nil), logger.New(10))
+info := srv.StatusInfo()
+
+if info["protocol"] != "graphql" {
+t.Errorf("unexpected protocol %v", info["protocol"])
+}
+if info["enabled"] != true {
+t.Errorf("unexpected enabled %v", info["enabled"])
+}
+if info["port"] != 8082 {
+t.Errorf("want port 8082, got %v", info["port"])
+}
+if info["path"] != "/graphql" {
+t.Errorf("want path /graphql, got %v", info["path"])
+}
+if info["mocks"] != 3 {
+t.Errorf("want mocks=3, got %v", info["mocks"])
+}
+if info["tls"] != false {
+t.Errorf("expected tls=false, got %v", info["tls"])
+}
+}

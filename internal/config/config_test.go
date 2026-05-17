@@ -234,3 +234,116 @@ protocols:
 		t.Errorf("want type bulk, got %q", m.Response.Type)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Duration — marshal / unmarshal
+// ---------------------------------------------------------------------------
+
+func TestDuration_UnmarshalText_Valid(t *testing.T) {
+	var d config.Duration
+	if err := d.UnmarshalText([]byte("500ms")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d.Milliseconds() != 500 {
+		t.Errorf("want 500ms, got %v", d.Duration)
+	}
+}
+
+func TestDuration_UnmarshalText_Invalid(t *testing.T) {
+	var d config.Duration
+	if err := d.UnmarshalText([]byte("not-a-duration")); err == nil {
+		t.Fatal("expected error for invalid duration, got nil")
+	}
+}
+
+func TestDuration_MarshalJSON(t *testing.T) {
+	d := config.Duration{}
+	d.Duration = 2 * 1e9 // 2s
+	b, err := d.MarshalJSON()
+	if err != nil {
+		t.Fatalf("MarshalJSON: %v", err)
+	}
+	// Should be a JSON-quoted string like "2s".
+	if string(b) != `"2s"` {
+		t.Errorf("want \"2s\", got %s", b)
+	}
+}
+
+func TestDuration_UnmarshalJSON_Valid(t *testing.T) {
+	var d config.Duration
+	if err := d.UnmarshalJSON([]byte(`"1m30s"`)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d.Seconds() != 90 {
+		t.Errorf("want 90s, got %v", d.Duration)
+	}
+}
+
+func TestDuration_UnmarshalJSON_EmptyString(t *testing.T) {
+	var d config.Duration
+	d.Duration = 5 * 1e9 // pre-set to non-zero
+	if err := d.UnmarshalJSON([]byte(`""`)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d.Duration != 0 {
+		t.Errorf("empty string should set duration to 0, got %v", d.Duration)
+	}
+}
+
+func TestDuration_UnmarshalJSON_ZeroS(t *testing.T) {
+	var d config.Duration
+	d.Duration = 5 * 1e9
+	if err := d.UnmarshalJSON([]byte(`"0s"`)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d.Duration != 0 {
+		t.Errorf("\"0s\" should set duration to 0, got %v", d.Duration)
+	}
+}
+
+func TestDuration_UnmarshalJSON_Invalid(t *testing.T) {
+	var d config.Duration
+	if err := d.UnmarshalJSON([]byte(`"not-valid"`)); err == nil {
+		t.Fatal("expected error for invalid duration JSON, got nil")
+	}
+}
+
+func TestDuration_MarshalYAML(t *testing.T) {
+	d := config.Duration{}
+	d.Duration = 100 * 1e6 // 100ms
+	v, err := d.MarshalYAML()
+	if err != nil {
+		t.Fatalf("MarshalYAML: %v", err)
+	}
+	if v != "100ms" {
+		t.Errorf("want \"100ms\", got %v", v)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Save
+// ---------------------------------------------------------------------------
+
+func TestSave_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.yaml")
+
+	original, err := config.Load("nonexistent.yaml")
+	if err != nil {
+		t.Fatalf("Load defaults: %v", err)
+	}
+	original.Mockly.UI.Port = 7777
+
+	if err := config.Save(path, original); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load saved: %v", err)
+	}
+	if loaded.Mockly.UI.Port != 7777 {
+		t.Errorf("round-trip: want port 7777, got %d", loaded.Mockly.UI.Port)
+	}
+}
+

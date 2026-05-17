@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -53,6 +54,7 @@ type Server struct {
 	cfg    *config.GRPCConfig
 	store  *state.Store
 	log    *logger.Logger
+	mu     sync.RWMutex
 	mocks  []config.GRPCMock
 	server *grpc.Server
 }
@@ -73,11 +75,15 @@ func New(cfg *config.GRPCConfig, store *state.Store, log *logger.Logger) *Server
 
 // SetMocks replaces the current mock list.
 func (s *Server) SetMocks(mocks []config.GRPCMock) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.mocks = append([]config.GRPCMock(nil), mocks...)
 }
 
 // GetMocks returns the current mock list.
 func (s *Server) GetMocks() []config.GRPCMock {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return append([]config.GRPCMock(nil), s.mocks...)
 }
 
@@ -147,6 +153,8 @@ func (s *Server) unknownServiceHandler(_ interface{}, stream grpc.ServerStream) 
 }
 
 func (s *Server) findMock(method string) (config.GRPCMock, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	for _, m := range s.mocks {
 		if m.Method == method || m.Method == "*" {
 			return m, true

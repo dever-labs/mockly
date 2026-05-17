@@ -184,11 +184,32 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) buildRouter() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins: []string{"*"},
-		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"*"},
-	}))
+
+	corsEnabled := true
+	if s.cfg.Mockly.API.CORS != nil && s.cfg.Mockly.API.CORS.Enabled != nil {
+		corsEnabled = *s.cfg.Mockly.API.CORS.Enabled
+	}
+	if corsEnabled {
+		origins := []string{"*"}
+		methods := []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
+		headers := []string{"*"}
+		if c := s.cfg.Mockly.API.CORS; c != nil {
+			if len(c.AllowedOrigins) > 0 {
+				origins = c.AllowedOrigins
+			}
+			if len(c.AllowedMethods) > 0 {
+				methods = c.AllowedMethods
+			}
+			if len(c.AllowedHeaders) > 0 {
+				headers = c.AllowedHeaders
+			}
+		}
+		r.Use(cors.Handler(cors.Options{
+			AllowedOrigins: origins,
+			AllowedMethods: methods,
+			AllowedHeaders: headers,
+		}))
+	}
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))

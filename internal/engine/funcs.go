@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"text/template"
 	"time"
 )
@@ -54,9 +55,10 @@ func BuildFuncMap() template.FuncMap {
 // ResetSequences resets all named sequence counters to zero.
 // Called by the management API /api/reset endpoint.
 func ResetSequences() {
-	seqMu.Lock()
-	defer seqMu.Unlock()
-	seqCounters = make(map[string]int64)
+	seqCounters.Range(func(k, v interface{}) bool {
+		v.(*atomic.Int64).Store(0)
+		return true
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -297,17 +299,13 @@ func fnFake(kind string) (string, error) {
 // Sequences
 // ---------------------------------------------------------------------------
 
-var (
-	seqMu       sync.Mutex
-	seqCounters = make(map[string]int64)
-)
+// seqCounters maps counter name → *atomic.Int64 for lock-free per-counter increments.
+var seqCounters sync.Map // map[string]*atomic.Int64
 
 // fnSeq returns the next value of a named monotonic counter (starts at 1).
 func fnSeq(name string) int64 {
-	seqMu.Lock()
-	defer seqMu.Unlock()
-	seqCounters[name]++
-	return seqCounters[name]
+	v, _ := seqCounters.LoadOrStore(name, &atomic.Int64{})
+	return v.(*atomic.Int64).Add(1)
 }
 
 // ---------------------------------------------------------------------------

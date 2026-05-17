@@ -228,3 +228,110 @@ func TestWSServer_TLS(t *testing.T) {
 		t.Errorf("on_connect over TLS: want 'tls-ok', got %q", msg)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// handleDynamic — path routing for mocks not in the static config
+// ---------------------------------------------------------------------------
+
+func TestWSServer_HandleDynamic_Found(t *testing.T) {
+// The WS server uses a static route per mock path AND a catch-all dynamic
+// handler. We test the dynamic path by using SetMocks after construction.
+srv, port := newWSServerRaw(t, nil)
+
+srv.SetMocks([]config.WebSocketMock{{
+ID:   "dyn",
+Path: "/dynamic",
+OnConnect: &config.WebSocketAction{Send: "dynamic-ok"},
+}})
+
+base := fmt.Sprintf("ws://127.0.0.1:%d", port)
+conn := dialWS(t, base+"/dynamic", nil)
+defer conn.Close() //nolint:errcheck
+
+conn.SetReadDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck
+_, msg, err := conn.ReadMessage()
+if err != nil {
+t.Fatalf("ReadMessage: %v", err)
+}
+if string(msg) != "dynamic-ok" {
+t.Errorf("want 'dynamic-ok', got %q", msg)
+}
+}
+
+func TestWSServer_HandleDynamic_NotFound(t *testing.T) {
+base := newWSServer(t, nil, nil)
+// Connect to a path that has no mock — should get HTTP 404 upgrade failure.
+dialer := websocket.Dialer{}
+_, resp, err := dialer.Dial(base+"/nonexistent", nil)
+if err == nil {
+t.Fatal("expected dial error for unmocked path, got nil")
+}
+if resp != nil && resp.StatusCode != 404 {
+t.Errorf("expected 404, got %d", resp.StatusCode)
+}
+}
+
+// ---------------------------------------------------------------------------
+// StatusInfo
+// ---------------------------------------------------------------------------
+
+func TestWSServer_StatusInfo(t *testing.T) {
+mocks := []config.WebSocketMock{
+{ID: "m1", Path: "/a"},
+{ID: "m2", Path: "/b"},
+}
+_, port := newWSServerRaw(t, mocks)
+_ = port // server is already running
+
+cfg := &config.WebSocketConfig{Enabled: true, Port: port, Mocks: mocks}
+srv := wsserver.New(cfg, state.New(), logger.New(10))
+info := srv.StatusInfo()
+
+if info["protocol"] != "websocket" {
+t.Errorf("unexpected protocol %v", info["protocol"])
+}
+if info["enabled"] != true {
+t.Errorf("unexpected enabled %v", info["enabled"])
+}
+if info["mocks"] != 2 {
+t.Errorf("want mocks=2, got %v", info["mocks"])
+}
+}
+
+// ---------------------------------------------------------------------------
+// Helper: newWSServerRaw returns the server + port
+// ---------------------------------------------------------------------------
+
+func newWSServerRaw(t *testing.T, mocks []config.WebSocketMock) (*wsserver.Server, int) {
+t.Helper()
+
+ln, err := net.Listen("tcp", "127.0.0.1:0")
+if err != nil {
+t.Fatalf("listen: %v", err)
+}
+port := ln.Addr().(*net.TCPAddr).Port
+_ = ln.Close()
+
+cfg := &config.WebSocketConfig{
+Enabled: true,
+Port:    port,
+Mocks:   mocks,
+}
+srv := wsserver.New(cfg, state.New(), logger.New(10))
+
+ctx, cancel := context.WithCancel(context.Background())
+t.Cleanup(cancel)
+go srv.Start(ctx) //nolint:errcheck
+
+addr := fmt.Sprintf("127.0.0.1:%d", port)
+deadline := time.Now().Add(2 * time.Second)
+for time.Now().Before(deadline) {
+conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+if err == nil {
+_ = conn.Close()
+break
+}
+time.Sleep(10 * time.Millisecond)
+}
+return srv, port
+}

@@ -91,11 +91,17 @@ Mockly is driven by a YAML config file. Every section is optional.
 mockly:
   api:
     port: 9091   # Management API + Web UI port (default: 9091)
+    # cors:      # CORS for the management API. Defaults to wide-open ("*").
+    #   enabled: true                          # Set false to disable CORS headers entirely
+    #   allowed_origins: ["http://localhost:3000"]
+    #   allowed_methods: ["GET","POST","PUT","DELETE","OPTIONS"]
+    #   allowed_headers: ["Content-Type","Authorization"]
 
 protocols:
   http:
     enabled: true
     port: 8080
+    # max_body_bytes: 10485760  # Request body size limit in bytes (0 = unlimited, default)
     mocks:
       - id: list-users
         request:
@@ -115,19 +121,20 @@ protocols:
       - id: echo
         path: /ws/echo
         on_message:
-          match: ping
-          respond: pong
+          - match: ping
+            respond: pong
 
   grpc:
     enabled: true
     port: 50051
     services:
-      - name: users
+      - proto: ./protos/users.proto
         mocks:
           - id: get-user
             method: GetUser
             response:
-              body: '{"id":"1","name":"Alice"}'
+              id: "1"
+              name: Alice
 
   graphql:
     enabled: true
@@ -147,7 +154,7 @@ protocols:
     port: 8083
     mocks:
       - id: hello
-        pattern: "HELLO"
+        match: "HELLO"
         response: "WORLD\n"
 
   redis:
@@ -270,6 +277,7 @@ protocols:
   http:
     enabled: true
     port: 8080
+    max_body_bytes: 10485760  # optional: limit request body size (bytes); 0 = unlimited (default)
     mocks:
       - id: create-user
         request:
@@ -392,12 +400,13 @@ protocols:
     enabled: true
     port: 50051
     services:
-      - name: payments
+      - proto: ./protos/payments.proto   # informational — no compilation needed
         mocks:
           - id: charge
             method: Charge
             response:
-              body: '{"success":true,"charge_id":"ch_123"}'
+              success: true
+              charge_id: ch_123
 ```
 
 ### GraphQL
@@ -432,11 +441,11 @@ protocols:
     port: 8083
     mocks:
       - id: ping
-        pattern: "PING\r\n"
+        match: "PING\r\n"
         response: "+PONG\r\n"
       - id: hex-response
-        pattern: "re:^\\x02.*\\x03$"
-        response_hex: "060000"
+        match: "re:^\\x02.*\\x03$"
+        response: "hex:060000"
 ```
 
 ### Redis

@@ -16,7 +16,7 @@ func TestMatchSIPURI(t *testing.T) {
 }
 
 func TestStatusInfo(t *testing.T) {
-	srv := New(&config.SIPConfig{Enabled: true, Port: 5060, Mocks: []config.SIPMock{{ID: "1"}}}, nil, nil)
+	srv := New(&config.SIPConfig{Enabled: true, Port: 5060, Mocks: []config.SIPMock{{ID: "1"}}}, nil, nil, nil)
 	info := srv.StatusInfo()
 	if info["protocol"] != "sip" || info["port"] != 5060 {
 		t.Fatalf("unexpected status info: %#v", info)

@@ -13,21 +13,23 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
 type Server struct {
-	cfg   *config.SIPConfig
-	store *state.Store
-	log   *logger.Logger
+	cfg       *config.SIPConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu    sync.RWMutex
 	mocks []config.SIPMock
 	conn  net.PacketConn
 }
 
-func New(cfg *config.SIPConfig, store *state.Store, log *logger.Logger) *Server {
-	return &Server{cfg: cfg, store: store, log: log, mocks: append([]config.SIPMock(nil), cfg.Mocks...)}
+func New(cfg *config.SIPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
+	return &Server{cfg: cfg, store: store, scenarios: sc, log: log, mocks: append([]config.SIPMock(nil), cfg.Mocks...)}
 }
 
 func (s *Server) SetMocks(mocks []config.SIPMock) {
@@ -69,11 +71,29 @@ func (s *Server) Start(ctx context.Context) error {
 
 func (s *Server) handlePacket(conn net.PacketConn, addr net.Addr, data []byte) {
 	method, uri, headers, body := parseSIPMessage(data)
+	fault := s.scenarios.EffectiveSIPFault()
+	if fault != nil && fault.Delay.Duration > 0 {
+		time.Sleep(fault.Delay.Duration)
+	}
 	if method == "" {
 		return
 	}
 	s.log.Log(logger.Entry{Protocol: "sip", Method: method, Path: uri, Status: 0, Body: body})
 	if method == "ACK" {
+		return
+	}
+	if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+		status := fault.Status
+		if status == 0 {
+			status = 503
+		}
+		reason := fault.Reason
+		if reason == "" {
+			reason = defaultSIPReason(status)
+		}
+		resp := config.SIPResponse{Status: status, Reason: reason}
+		message := buildSIPResponse(resp, headers)
+		_, _ = conn.WriteTo(message, addr)
 		return
 	}
 	mock, ok := s.matchMock(method, uri)

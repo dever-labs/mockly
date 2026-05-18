@@ -12,21 +12,23 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
 type Server struct {
-	cfg   *config.CoAPConfig
-	store *state.Store
-	log   *logger.Logger
+	cfg       *config.CoAPConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu    sync.RWMutex
 	mocks []config.CoAPMock
 	conn  net.PacketConn
 }
 
-func New(cfg *config.CoAPConfig, store *state.Store, log *logger.Logger) *Server {
-	return &Server{cfg: cfg, store: store, log: log, mocks: append([]config.CoAPMock(nil), cfg.Mocks...)}
+func New(cfg *config.CoAPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
+	return &Server{cfg: cfg, store: store, scenarios: sc, log: log, mocks: append([]config.CoAPMock(nil), cfg.Mocks...)}
 }
 
 func (s *Server) SetMocks(mocks []config.CoAPMock) {
@@ -68,7 +70,19 @@ func (s *Server) Start(ctx context.Context) error {
 
 func (s *Server) handlePacket(conn net.PacketConn, addr net.Addr, data []byte) {
 	method, path, msgID, token, _ := parseCoAPPacket(data)
+	fault := s.scenarios.EffectiveCoAPFault()
+	if fault != nil && fault.Delay.Duration > 0 {
+		time.Sleep(fault.Delay.Duration)
+	}
 	if method == "" {
+		return
+	}
+	if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+		code := fault.Code
+		if code == "" {
+			code = "5.00"
+		}
+		_, _ = conn.WriteTo(buildCoAPResponse(msgID, token, config.CoAPResponse{Code: code}), addr)
 		return
 	}
 	mock, ok := s.matchMock(method, path)

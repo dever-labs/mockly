@@ -9,22 +9,25 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 )
 
 type Server struct {
-	cfg *config.FTPConfig
-	log *logger.Logger
+	cfg       *config.FTPConfig
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu       sync.RWMutex
 	files    []config.FTPFile
 	listener net.Listener
 }
 
-func New(cfg *config.FTPConfig, log *logger.Logger) *Server {
-	return &Server{cfg: cfg, log: log, files: normalizeFTPFiles(cfg.Files)}
+func New(cfg *config.FTPConfig, sc *scenarios.Store, log *logger.Logger) *Server {
+	return &Server{cfg: cfg, scenarios: sc, log: log, files: normalizeFTPFiles(cfg.Files)}
 }
 
 func (s *Server) SetFiles(files []config.FTPFile) {
@@ -134,6 +137,9 @@ func (s *Server) handleConn(conn net.Conn) {
 			p1, p2 := port/256, port%256
 			_, _ = fmt.Fprintf(conn, "227 Entering Passive Mode (127,0,0,1,%d,%d)\r\n", p1, p2)
 		case "LIST", "NLST":
+			if s.maybeInjectFault(conn) {
+				return
+			}
 			if passive == nil {
 				_, _ = conn.Write([]byte("425 Use PASV first\r\n"))
 				continue
@@ -154,6 +160,9 @@ func (s *Server) handleConn(conn net.Conn) {
 			_ = dataConn.Close()
 			_, _ = conn.Write([]byte("226 Transfer complete\r\n"))
 		case "RETR":
+			if s.maybeInjectFault(conn) {
+				return
+			}
 			if passive == nil {
 				_, _ = conn.Write([]byte("425 Use PASV first\r\n"))
 				continue
@@ -175,6 +184,9 @@ func (s *Server) handleConn(conn net.Conn) {
 			_ = dataConn.Close()
 			_, _ = conn.Write([]byte("226 Transfer complete\r\n"))
 		case "STOR":
+			if s.maybeInjectFault(conn) {
+				return
+			}
 			if passive == nil {
 				_, _ = conn.Write([]byte("425 Use PASV first\r\n"))
 				continue
@@ -205,6 +217,29 @@ func (s *Server) handleConn(conn net.Conn) {
 			_, _ = conn.Write([]byte("502 Command not implemented\r\n"))
 		}
 	}
+}
+
+func (s *Server) maybeInjectFault(conn net.Conn) bool {
+	fault := s.scenarios.EffectiveFTPFault()
+	if fault == nil {
+		return false
+	}
+	if fault.Delay.Duration > 0 {
+		time.Sleep(fault.Delay.Duration)
+	}
+	if s.scenarios.RollFault(fault.ErrorRate) {
+		code := fault.Code
+		if code == 0 {
+			code = 421
+		}
+		msg := fault.Message
+		if msg == "" {
+			msg = "Service not available"
+		}
+		_, _ = conn.Write([]byte(fmt.Sprintf("%d %s\r\n", code, msg)))
+		return true
+	}
+	return false
 }
 
 func ftpAbsPath(cwd, p string) string {

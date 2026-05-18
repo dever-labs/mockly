@@ -19,7 +19,7 @@ func TestMatchMemcachedKey(t *testing.T) {
 }
 
 func TestStatusInfo(t *testing.T) {
-	srv := New(&config.MemcachedConfig{Enabled: true, Port: 11211, Mocks: []config.MemcachedMock{{ID: "1"}}}, nil, nil)
+	srv := New(&config.MemcachedConfig{Enabled: true, Port: 11211, Mocks: []config.MemcachedMock{{ID: "1"}}}, nil, nil, nil)
 	info := srv.StatusInfo()
 	if info["protocol"] != "memcached" || info["port"] != 11211 {
 		t.Fatalf("unexpected status info: %#v", info)

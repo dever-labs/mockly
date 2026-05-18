@@ -708,10 +708,11 @@ type SIPResponse struct {
 // their preset configs to let consuming teams toggle error states, latency,
 // and other failure modes deterministically.
 type Scenario struct {
-	ID          string      `yaml:"id" json:"id"`
-	Name        string      `yaml:"name" json:"name"`
-	Description string      `yaml:"description" json:"description"`
-	Patches     []MockPatch `yaml:"patches" json:"patches"`
+	ID          string          `yaml:"id" json:"id"`
+	Name        string          `yaml:"name" json:"name"`
+	Description string          `yaml:"description" json:"description"`
+	Patches     []MockPatch     `yaml:"patches" json:"patches"`
+	Faults      *ProtocolFaults `yaml:"faults,omitempty" json:"faults,omitempty"`
 }
 
 // MockPatch overrides specific response fields for a named mock when a
@@ -725,15 +726,149 @@ type MockPatch struct {
 	Disabled bool              `yaml:"disabled,omitempty" json:"disabled,omitempty"`
 }
 
-// GlobalFault injects faults across all mock responses. Delay adds latency to
-// every request. StatusOverride replaces response status codes at the given
-// ErrorRate probability (0.0–1.0; omit or set to 0 to always override).
-type GlobalFault struct {
-	Enabled        bool     `yaml:"enabled" json:"enabled"`
-	StatusOverride int      `yaml:"status_override,omitempty" json:"status_override,omitempty"`
-	Delay          Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
-	Body           string   `yaml:"body,omitempty" json:"body,omitempty"`
-	ErrorRate      float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+// ---------------------------------------------------------------------------
+// Per-protocol fault types
+// ---------------------------------------------------------------------------
+
+type DNSFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Rcode     string   `yaml:"rcode,omitempty" json:"rcode,omitempty"` // NXDOMAIN|SERVFAIL|REFUSED|NOTIMP|FORMERR (default SERVFAIL)
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type GRPCFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Code      string   `yaml:"code,omitempty" json:"code,omitempty"` // gRPC status code: UNAVAILABLE|NOT_FOUND|DEADLINE_EXCEEDED|PERMISSION_DENIED|RESOURCE_EXHAUSTED|INTERNAL (default UNAVAILABLE)
+	Message   string   `yaml:"message,omitempty" json:"message,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type HTTPFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Status    int      `yaml:"status,omitempty" json:"status,omitempty"` // HTTP status code (default 503)
+	Body      string   `yaml:"body,omitempty" json:"body,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type WebSocketFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	CloseCode int      `yaml:"close_code,omitempty" json:"close_code,omitempty"` // WS close code (default 1011)
+	Message   string   `yaml:"message,omitempty" json:"message,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type TCPFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Response  string   `yaml:"response,omitempty" json:"response,omitempty"` // bytes to send before closing (default: just close)
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type RedisFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Error     string   `yaml:"error,omitempty" json:"error,omitempty"` // Redis error string, e.g. "LOADING" (default "ERR fault injected")
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type MQTTFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+	// When injected: response publish is silently dropped
+}
+
+type SMTPFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Code      int      `yaml:"code,omitempty" json:"code,omitempty"` // SMTP error code: 421|450|550 (default 421)
+	Message   string   `yaml:"message,omitempty" json:"message,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type SNMPFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Message   string   `yaml:"message,omitempty" json:"message,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type AMQPFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+	// When injected: delivery silently dropped
+}
+
+type KafkaFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	ErrorCode int16    `yaml:"error_code,omitempty" json:"error_code,omitempty"` // Kafka error code: 3=UNKNOWN_TOPIC|5=LEADER_NOT_AVAILABLE|7=REQUEST_TIMED_OUT (default 5)
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type LDAPFault struct {
+	Delay      Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	ResultCode int      `yaml:"result_code,omitempty" json:"result_code,omitempty"` // LDAP result code: 32=NO_SUCH_OBJECT|49=INVALID_CREDENTIALS|50=INSUFFICIENT_ACCESS|52=UNAVAILABLE (default 52)
+	Message    string   `yaml:"message,omitempty" json:"message,omitempty"`
+	ErrorRate  float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type IMAPFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Response  string   `yaml:"response,omitempty" json:"response,omitempty"` // NO|BAD|BYE (default NO)
+	Message   string   `yaml:"message,omitempty" json:"message,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type FTPFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Code      int      `yaml:"code,omitempty" json:"code,omitempty"` // FTP error code: 421|530|550 (default 421)
+	Message   string   `yaml:"message,omitempty" json:"message,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type MemcachedFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	ErrorType string   `yaml:"error_type,omitempty" json:"error_type,omitempty"` // SERVER_ERROR|CLIENT_ERROR (default SERVER_ERROR)
+	Message   string   `yaml:"message,omitempty" json:"message,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type STOMPFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Message   string   `yaml:"message,omitempty" json:"message,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type CoAPFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Code      string   `yaml:"code,omitempty" json:"code,omitempty"` // CoAP code: "4.01"|"4.03"|"4.04"|"5.00"|"5.03" (default "5.00")
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+type SIPFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Status    int      `yaml:"status,omitempty" json:"status,omitempty"` // SIP status: 404|408|486|503 (default 503)
+	Reason    string   `yaml:"reason,omitempty" json:"reason,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+// ProtocolFaults holds optional fault configs for each protocol.
+// Only non-nil fields are active.
+type ProtocolFaults struct {
+	HTTP      *HTTPFault      `yaml:"http,omitempty" json:"http,omitempty"`
+	GraphQL   *HTTPFault      `yaml:"graphql,omitempty" json:"graphql,omitempty"`
+	WebSocket *WebSocketFault `yaml:"websocket,omitempty" json:"websocket,omitempty"`
+	GRPC      *GRPCFault      `yaml:"grpc,omitempty" json:"grpc,omitempty"`
+	TCP       *TCPFault       `yaml:"tcp,omitempty" json:"tcp,omitempty"`
+	Redis     *RedisFault     `yaml:"redis,omitempty" json:"redis,omitempty"`
+	MQTT      *MQTTFault      `yaml:"mqtt,omitempty" json:"mqtt,omitempty"`
+	SMTP      *SMTPFault      `yaml:"smtp,omitempty" json:"smtp,omitempty"`
+	SNMP      *SNMPFault      `yaml:"snmp,omitempty" json:"snmp,omitempty"`
+	DNS       *DNSFault       `yaml:"dns,omitempty" json:"dns,omitempty"`
+	AMQP      *AMQPFault      `yaml:"amqp,omitempty" json:"amqp,omitempty"`
+	Kafka     *KafkaFault     `yaml:"kafka,omitempty" json:"kafka,omitempty"`
+	LDAP      *LDAPFault      `yaml:"ldap,omitempty" json:"ldap,omitempty"`
+	IMAP      *IMAPFault      `yaml:"imap,omitempty" json:"imap,omitempty"`
+	FTP       *FTPFault       `yaml:"ftp,omitempty" json:"ftp,omitempty"`
+	Memcached *MemcachedFault `yaml:"memcached,omitempty" json:"memcached,omitempty"`
+	STOMP     *STOMPFault     `yaml:"stomp,omitempty" json:"stomp,omitempty"`
+	CoAP      *CoAPFault      `yaml:"coap,omitempty" json:"coap,omitempty"`
+	SIP       *SIPFault       `yaml:"sip,omitempty" json:"sip,omitempty"`
 }
 
 // Duration is a yaml-decodable time.Duration.

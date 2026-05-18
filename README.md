@@ -1,6 +1,6 @@
 # Mockly
 
-**Cross-platform, multi-protocol mock server** — HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, and SNMP in a single binary with a built-in web UI, REST management API, scenario system, and fault injection.
+**Cross-platform, multi-protocol mock server** — HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, and SIP in a single binary with a built-in web UI, REST management API, scenario system, and fault injection.
 
 [![CI](https://github.com/dever-labs/mockly/actions/workflows/ci.yml/badge.svg)](https://github.com/dever-labs/mockly/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/dever-labs/mockly)](https://github.com/dever-labs/mockly/releases/latest)
@@ -34,15 +34,15 @@
 
 | Feature | Details |
 |---|---|
-| **Protocols** | HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP |
+| **Protocols** | HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, SIP |
 | **Request matching** | Method + path (exact / wildcard / regex), headers, query params, JSON body fields |
 | **Response sequences** | Return a different response on each successive call — loop, hold last, or 404 when exhausted |
 | **Response control** | Status code, headers, body, artificial delay |
 | **Template responses** | Go template syntax in response bodies and headers (`{{now}}`, `{{.query.foo}}`, `{{.body}}`, etc.) |
 | **State conditions** | Fire a mock only when a runtime state variable matches |
 | **Scenarios** | Named sets of mock patches — activate/deactivate atomically via API or CLI |
-| **Global fault injection** | Delay, status override, and probabilistic error rate across all requests |
-| **Per-mock fault injection** | Fault fields on individual mocks — independently of the global fault |
+| **Per-protocol fault injection** | Each protocol exposes its own native fault fields (DNS rcode, gRPC status code, Kafka error code, etc.) — activate via API or bundled inside a scenario |
+| **Per-mock fault injection** | Fault fields on individual HTTP mocks with independent delay, status/body override, and error rate |
 | **Call verification** | Track how many times each mock was hit; block until an expected count is reached |
 | **PATCH mocks** | Change only specific response fields at runtime without replacing the whole mock |
 | **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid |
@@ -356,7 +356,7 @@ Return a different response on each successive call. Useful for simulating trans
 
 #### Per-mock fault injection
 
-Every mock can have its own `fault:` block — independently of the global fault:
+Every HTTP mock can have its own `fault:` block — independently of protocol-level faults. This is useful for targeted latency tests or intermittent failures on one endpoint without affecting the rest of the protocol server.
 
 ```yaml
       - id: slow-search
@@ -364,10 +364,8 @@ Every mock can have its own `fault:` block — independently of the global fault
           method: GET
           path: /search
         fault:
-          delay: 2s              # add latency
-          status_override: 429   # replace status code
-          body: '{"error":"rate limited"}'
-          error_rate: 0.5        # only apply 50% of the time (0 = always)
+          delay: 2s       # add latency
+          error_rate: 0.5 # only apply 50% of the time (0 = always)
         response:
           status: 200
           body: '[]'
@@ -571,6 +569,207 @@ protocols:
 
 **TRAP sending** — POST to `/api/snmp/traps/{id}/send` to trigger any configured trap. The agent connects to the trap's `target` over UDP and sends the PDU.
 
+### DNS
+
+Full DNS mock server over UDP and TCP. Responds to `A`, `AAAA`, `CNAME`, `MX`, `TXT`, `PTR`, `SRV`, and `NS` queries. `records` hold the raw answer values; for `MX` use `"<priority> <host>"`, and for `SRV` use `"<priority> <weight> <port> <target>"`.
+
+```yaml
+protocols:
+  dns:
+    enabled: true
+    port: 5353
+    mocks:
+      - id: api-host
+        name: "api.example.com"
+        type: A
+        records:
+          - "127.0.0.1"
+        ttl: 60
+      - id: mail
+        name: "example.com"
+        type: MX
+        records:
+          - "10 mail.example.com"
+```
+
+### AMQP
+
+AMQP 0.9.1 mock broker. Handles connection, channel, and basic frames, supports publish/consume flows, and captures published messages for inspection via the management API.
+
+```yaml
+protocols:
+  amqp:
+    enabled: true
+    port: 5672
+    mocks:
+      - id: order-created
+        exchange: orders
+        routing_key: "order.created"
+        response:
+          body: '{"status":"accepted"}'
+```
+
+### Kafka
+
+Kafka wire-protocol mock covering ApiVersions, Metadata, Produce, and Fetch flows. Published messages are stored for later inspection.
+
+```yaml
+protocols:
+  kafka:
+    enabled: true
+    port: 9092
+    mocks:
+      - id: orders-topic
+        topic: orders
+        records:
+          - key: "order-1"
+            value: '{"id":1,"status":"pending"}'
+```
+
+### LDAP
+
+LDAP mock server handling Bind (success) and Search requests. Matches on base DN and filter, then returns configured attributes.
+
+```yaml
+protocols:
+  ldap:
+    enabled: true
+    port: 3893
+    mocks:
+      - id: user-lookup
+        base_dn: "dc=example,dc=com"
+        filter: "*"
+        attributes:
+          cn:
+            - "Alice Smith"
+          mail:
+            - "alice@example.com"
+          uid:
+            - "alice"
+```
+
+### IMAP
+
+IMAP4rev1 mock server serving pre-configured mailboxes and messages. Supports LOGIN, SELECT, FETCH, SEARCH, and LOGOUT.
+
+```yaml
+protocols:
+  imap:
+    enabled: true
+    port: 1143
+    mailboxes:
+      - id: inbox
+        name: INBOX
+        messages:
+          - seq_num: 1
+            from: "sender@example.com"
+            to: "user@example.com"
+            subject: "Test email"
+            body: "Hello world"
+```
+
+### FTP
+
+FTP mock server with PASV support plus LIST, RETR, STOR, and DELE. Files are pre-loaded from config.
+
+```yaml
+protocols:
+  ftp:
+    enabled: true
+    port: 2121
+    files:
+      - id: daily-report
+        path: /reports/daily.csv
+        content: |
+          date,revenue
+          2024-01-01,1000
+      - id: app-config
+        path: /data/config.json
+        content: '{"version":"1.0"}'
+```
+
+### Memcached
+
+Memcached text-protocol mock handling `get`, `set`, `delete`, `flush_all`, `stats`, and `quit`. Keys support `*` wildcards and `re:` regex patterns.
+
+```yaml
+protocols:
+  memcached:
+    enabled: true
+    port: 11211
+    mocks:
+      - id: session-cache
+        command: get
+        key: "session:*"
+        response:
+          value: '{"user_id":42,"role":"admin"}'
+      - id: any-delete
+        command: delete
+        key: "*"
+        response:
+          status: DELETED
+```
+
+### STOMP
+
+STOMP 1.2 broker mock handling CONNECT, SEND, SUBSCRIBE, UNSUBSCRIBE, and DISCONNECT. Matching destinations can publish configured MESSAGE frames and captured inbound messages are stored for inspection.
+
+```yaml
+protocols:
+  stomp:
+    enabled: true
+    port: 61613
+    mocks:
+      - id: process-order
+        destination: "/queue/orders"
+        response:
+          body: '{"status":"queued"}'
+          content_type: application/json
+```
+
+### CoAP
+
+CoAP UDP mock server handling GET, POST, PUT, and DELETE requests. Matches on method + path with exact, wildcard, or regex patterns.
+
+```yaml
+protocols:
+  coap:
+    enabled: true
+    port: 5683
+    mocks:
+      - id: temperature
+        method: GET
+        path: /sensors/temperature
+        response:
+          code: "2.05"
+          payload: "23.5"
+          content_format: 0   # text/plain
+```
+
+### SIP
+
+SIP UDP mock server handling INVITE, REGISTER, OPTIONS, BYE, CANCEL, and ACK. Matches on method + URI using exact, wildcard, or regex patterns.
+
+```yaml
+protocols:
+  sip:
+    enabled: true
+    port: 5060
+    mocks:
+      - id: invite-ok
+        method: INVITE
+        uri: "sip:*@example.com"
+        response:
+          status: 200
+          reason: "OK"
+      - id: register
+        method: REGISTER
+        uri: "*"
+        response:
+          status: 200
+          reason: "OK"
+```
+
 ---
 
 ## Component Testing
@@ -723,44 +922,115 @@ curl -X DELETE http://localhost:9091/api/scenarios/payment-timeout/activate
 curl http://localhost:9091/api/scenarios/active
 ```
 
+### Fault injection in scenarios
+
+Scenarios can bundle protocol faults alongside mock patches — activating a scenario sets both atomically:
+
+```yaml
+scenarios:
+  - id: backend-degraded
+    name: Backend Degraded
+    patches:
+      - mock_id: get-user
+        status: 503
+    faults:
+      redis:
+        error: "LOADING Redis is loading the dataset in memory"
+        error_rate: 1.0
+      grpc:
+        code: UNAVAILABLE
+        delay: 500ms
+        error_rate: 0.8
+
+  - id: dns-failure
+    name: DNS Resolution Failure
+    faults:
+      dns:
+        rcode: NXDOMAIN
+        error_rate: 0.5
+```
+
+When `backend-degraded` is activated: the `get-user` mock is patched and Redis/gRPC start returning faults. Deactivating the scenario restores normal behaviour.
+
 ---
 
 ## Fault Injection
 
-Inject global faults to test your application's resilience — without touching individual mocks.
+Inject protocol-native faults to test your application's resilience without touching individual mocks. Each protocol has its own fault shape using native error codes.
+
+### Via CLI
 
 ```sh
-# Inject 100ms latency on all requests
-mockly fault set --delay 100ms
+# DNS: 50% of queries return NXDOMAIN
+mockly fault set --protocol dns --rcode NXDOMAIN --rate 0.5
 
-# Make 30% of requests return 503
-mockly fault set --status 503 --rate 0.3
+# gRPC: always return UNAVAILABLE
+mockly fault set --protocol grpc --code UNAVAILABLE
 
-# Always return 429 (rate limit)
-mockly fault set --status 429
+# Redis: always return LOADING error
+mockly fault set --protocol redis --error "LOADING"
 
-# Remove the fault
+# Add 200ms latency to all Kafka requests
+mockly fault set --protocol kafka --delay 200ms
+
+# Clear a specific protocol's fault
+mockly fault clear --protocol dns
+
+# Clear all faults
 mockly fault clear
 ```
 
-Or via API:
+### Via API
 
 ```sh
-curl -X POST http://localhost:9091/api/fault \
+# Set DNS fault
+curl -X POST http://localhost:9091/api/fault/dns \
   -H 'Content-Type: application/json' \
-  -d '{"enabled":true,"delay":"100ms","status_override":503,"error_rate":0.3}'
+  -d '{"rcode":"NXDOMAIN","error_rate":0.5}'
 
+# Set gRPC fault
+curl -X POST http://localhost:9091/api/fault/grpc \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"UNAVAILABLE","delay":"500ms","error_rate":1.0}'
+
+# Get all active faults
+curl http://localhost:9091/api/fault
+
+# Clear DNS fault only
+curl -X DELETE http://localhost:9091/api/fault/dns
+
+# Clear all faults
 curl -X DELETE http://localhost:9091/api/fault
 ```
 
-Fault fields:
+### Fault fields per protocol
 
-| Field | Type | Description |
+| Protocol | Fields | Values / notes |
 |---|---|---|
-| `enabled` | bool | Master switch |
-| `delay` | duration | Delay added to every request before matching |
-| `status_override` | int | Replace response status after matching |
-| `error_rate` | float | Probability (0–1) that the override fires; 0 = always |
+| `http` / `graphql` | `status`, `body`, `delay`, `error_rate` | HTTP status code (default 503) |
+| `websocket` | `close_code`, `message`, `delay`, `error_rate` | WS close code (default 1011) |
+| `grpc` | `code`, `message`, `delay`, `error_rate` | `UNAVAILABLE` \| `NOT_FOUND` \| `DEADLINE_EXCEEDED` \| `PERMISSION_DENIED` \| `RESOURCE_EXHAUSTED` \| `INTERNAL` |
+| `tcp` | `response`, `delay`, `error_rate` | Send `response` bytes then close (default: just close) |
+| `redis` | `error`, `delay`, `error_rate` | Raw Redis error string e.g. `"LOADING"` (default `"ERR fault injected"`) |
+| `dns` | `rcode`, `delay`, `error_rate` | `NXDOMAIN` \| `SERVFAIL` \| `REFUSED` \| `NOTIMP` \| `FORMERR` (default `SERVFAIL`) |
+| `smtp` | `code`, `message`, `delay`, `error_rate` | SMTP code e.g. 421, 450, 550 (default 421) |
+| `imap` | `response`, `message`, `delay`, `error_rate` | `NO` \| `BAD` \| `BYE` (default `NO`) |
+| `ftp` | `code`, `message`, `delay`, `error_rate` | FTP code e.g. 421, 530, 550 (default 421) |
+| `ldap` | `result_code`, `message`, `delay`, `error_rate` | LDAP result code: 32=NO_SUCH_OBJECT, 49=INVALID_CREDENTIALS, 50=INSUFFICIENT_ACCESS, 52=UNAVAILABLE (default 52) |
+| `kafka` | `error_code`, `delay`, `error_rate` | Kafka error code: 3=UNKNOWN_TOPIC, 5=LEADER_NOT_AVAILABLE, 7=REQUEST_TIMED_OUT (default 5) |
+| `memcached` | `error_type`, `message`, `delay`, `error_rate` | `SERVER_ERROR` \| `CLIENT_ERROR` (default `SERVER_ERROR`) |
+| `stomp` | `message`, `delay`, `error_rate` | Sends STOMP ERROR frame |
+| `amqp` | `delay`, `error_rate` | Silently drops message delivery |
+| `mqtt` | `delay`, `error_rate` | Silently drops response publish |
+| `coap` | `code`, `delay`, `error_rate` | CoAP code: `4.01`, `4.03`, `4.04`, `5.00`, `5.03` (default `5.00`) |
+| `sip` | `status`, `reason`, `delay`, `error_rate` | SIP status: 404, 408, 486, 503 (default 503) |
+| `snmp` | `message`, `delay`, `error_rate` | Returns error from OID callback |
+
+`error_rate`: probability 0.0–1.0 that the fault fires; 0 = always (default).
+
+### Via scenarios (recommended for reproducible tests)
+
+See [Fault injection in scenarios](#fault-injection-in-scenarios).
 
 ---
 
@@ -822,7 +1092,7 @@ mockly status
 mockly reset
 mockly preset      list | show <name> | use <name>
 mockly scenario    list | show <id> | activate <id> | deactivate <id>
-mockly fault       set [--delay <d>] [--status <n>] [--rate <f>] | clear | show
+mockly fault       set --protocol <proto> [--delay <d>] [--rate <f>] [protocol-specific flags] | clear [--protocol <proto>] | show
 ```
 
 ---
@@ -855,7 +1125,7 @@ Base URL: `http://localhost:9091`
 | `PATCH` | `/api/mocks/http/{id}` | Partial update HTTP mock |
 | `DELETE` | `/api/mocks/http/{id}` | Delete HTTP mock |
 
-Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), GraphQL (`/api/mocks/graphql`), TCP (`/api/mocks/tcp`), Redis (`/api/mocks/redis`), SMTP (`/api/mocks/smtp`), MQTT (`/api/mocks/mqtt`), and SNMP (`/api/mocks/snmp`).
+Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), GraphQL (`/api/mocks/graphql`), TCP (`/api/mocks/tcp`), Redis (`/api/mocks/redis`), SMTP (`/api/mocks/smtp`), MQTT (`/api/mocks/mqtt`), SNMP (`/api/mocks/snmp`), DNS (`/api/mocks/dns`), AMQP (`/api/mocks/amqp`), Kafka (`/api/mocks/kafka`), LDAP (`/api/mocks/ldap`), IMAP (`/api/mocks/imap`), FTP (`/api/mocks/ftp`), Memcached (`/api/mocks/memcached`), STOMP (`/api/mocks/stomp`), CoAP (`/api/mocks/coap`), and SIP (`/api/mocks/sip`).
 
 ### Call Verification (HTTP)
 
@@ -879,6 +1149,17 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 |---|---|---|
 | `GET` | `/api/mqtt/messages` | List captured MQTT messages |
 | `DELETE` | `/api/mqtt/messages` | Clear message store |
+
+### Message stores (AMQP, Kafka, STOMP)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/amqp/messages` | List captured AMQP messages |
+| `DELETE` | `/api/amqp/messages` | Clear AMQP message store |
+| `GET` | `/api/kafka/messages` | List captured Kafka messages |
+| `DELETE` | `/api/kafka/messages` | Clear Kafka message store |
+| `GET` | `/api/stomp/messages` | List captured STOMP messages |
+| `DELETE` | `/api/stomp/messages` | Clear STOMP message store |
 
 ### SNMP Mocks & Traps
 
@@ -909,9 +1190,13 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/fault` | Get current fault config |
-| `POST` | `/api/fault` | Set fault config |
-| `DELETE` | `/api/fault` | Clear fault |
+| `GET` | `/api/fault` | Get all active direct faults |
+| `DELETE` | `/api/fault` | Clear all direct faults |
+| `GET` | `/api/fault/{protocol}` | Get fault config for a protocol |
+| `POST` | `/api/fault/{protocol}` | Set fault config for a protocol |
+| `DELETE` | `/api/fault/{protocol}` | Clear fault for a protocol |
+
+`{protocol}` is one of: `http`, `graphql`, `websocket`, `grpc`, `tcp`, `redis`, `mqtt`, `smtp`, `snmp`, `dns`, `amqp`, `kafka`, `ldap`, `imap`, `ftp`, `memcached`, `stomp`, `coap`, `sip`.
 
 ### State Store
 

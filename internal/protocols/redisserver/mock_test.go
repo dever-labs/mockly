@@ -11,7 +11,7 @@ import (
 
 func makeServer(mocks []config.RedisMock) *Server {
 	cfg := &config.RedisConfig{Enabled: true, Port: 6399, Mocks: mocks}
-	return New(cfg, state.New(), logger.New(10))
+	return New(cfg, state.New(), nil, logger.New(10))
 }
 
 func TestMatchMock_FirstMatchByCommandAndKey(t *testing.T) {
@@ -102,7 +102,7 @@ func TestMatchMock_StateGuard_MatchesWhenSet(t *testing.T) {
 			},
 		},
 	}
-	srv := New(cfg, st, logger.New(10))
+	srv := New(cfg, st, nil, logger.New(10))
 
 	st.Set("auth", "ok")
 	m, ok := srv.matchMock("GET", "user")
@@ -125,7 +125,7 @@ func TestMatchMock_StateGuard_WrongValue(t *testing.T) {
 			},
 		},
 	}
-	srv := New(cfg, st, logger.New(10))
+	srv := New(cfg, st, nil, logger.New(10))
 
 	st.Set("auth", "wrong")
 	_, ok := srv.matchMock("GET", "user")

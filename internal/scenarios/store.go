@@ -1,4 +1,4 @@
-// Package scenarios manages test scenarios and global fault injection.
+// Package scenarios manages test scenarios and fault injection.
 package scenarios
 
 import (
@@ -11,12 +11,12 @@ import (
 )
 
 // Store holds scenario definitions, tracks which are active, and manages the
-// global fault configuration used for chaos/latency injection.
+// direct fault configuration used for chaos/latency injection.
 type Store struct {
 	mu        sync.RWMutex
 	scenarios map[string]config.Scenario
 	active    map[string]bool
-	fault     *config.GlobalFault
+	direct    config.ProtocolFaults
 	rng       *rand.Rand
 }
 
@@ -138,34 +138,30 @@ func (s *Store) PatchFor(mockID string) *config.MockPatch {
 	return nil
 }
 
-// GetFault returns a copy of the current global fault config, or nil if none.
-func (s *Store) GetFault() *config.GlobalFault {
+// SetDirectFaults replaces all direct protocol faults.
+func (s *Store) SetDirectFaults(f config.ProtocolFaults) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.direct = f
+}
+
+// DirectFaults returns the current direct (non-scenario) fault config.
+func (s *Store) DirectFaults() config.ProtocolFaults {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.fault == nil {
-		return nil
-	}
-	cp := *s.fault
-	return &cp
+	return s.direct
 }
 
-// SetFault replaces the global fault configuration.
-func (s *Store) SetFault(f *config.GlobalFault) {
+// ClearDirectFaults removes all direct faults.
+func (s *Store) ClearDirectFaults() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.fault = f
+	s.direct = config.ProtocolFaults{}
 }
 
-// ClearFault removes the global fault so normal behaviour resumes.
-func (s *Store) ClearFault() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.fault = nil
-}
-
-// RollFault returns true if the global fault status override should apply to
-// this particular request, based on the configured error_rate probability.
-// A rate of 0 (or unset) means always apply; 1.0 also always applies.
+// RollFault returns true if a fault should apply to this particular request,
+// based on the configured error_rate probability. A rate of 0 (or unset) means
+// always apply; 1.0 also always applies.
 func (s *Store) RollFault(rate float64) bool {
 	if rate <= 0 || rate >= 1.0 {
 		return true
@@ -173,4 +169,9 @@ func (s *Store) RollFault(rate float64) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.rng.Float64() < rate
+}
+
+// ShouldFault returns true if a fault with the given error rate should apply.
+func (s *Store) ShouldFault(rate float64) bool {
+	return s.RollFault(rate)
 }

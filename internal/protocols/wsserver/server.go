@@ -15,6 +15,7 @@ import (
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 	"github.com/dever-labs/mockly/internal/tlsutil"
 )
@@ -25,9 +26,10 @@ var upgrader = websocket.Upgrader{
 
 // Server is the WebSocket mock server.
 type Server struct {
-	cfg   *config.WebSocketConfig
-	store *state.Store
-	log   *logger.Logger
+	cfg       *config.WebSocketConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu    sync.RWMutex
 	mocks []config.WebSocketMock
@@ -35,12 +37,13 @@ type Server struct {
 }
 
 // New creates a Server.
-func New(cfg *config.WebSocketConfig, store *state.Store, log *logger.Logger) *Server {
+func New(cfg *config.WebSocketConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
 	return &Server{
-		cfg:   cfg,
-		store: store,
-		log:   log,
-		mocks: append([]config.WebSocketMock(nil), cfg.Mocks...),
+		cfg:       cfg,
+		store:     store,
+		scenarios: sc,
+		log:       log,
+		mocks:     append([]config.WebSocketMock(nil), cfg.Mocks...),
 	}
 }
 
@@ -137,9 +140,9 @@ func (s *Server) handleConn(w http.ResponseWriter, r *http.Request, mock *config
 	}
 
 	s.log.Log(logger.Entry{
-		Protocol: "websocket",
-		Path:     r.URL.Path,
-		Duration: time.Since(start).Milliseconds(),
+		Protocol:  "websocket",
+		Path:      r.URL.Path,
+		Duration:  time.Since(start).Milliseconds(),
 		MatchedID: mock.ID,
 	})
 
@@ -150,9 +153,28 @@ func (s *Server) handleConn(w http.ResponseWriter, r *http.Request, mock *config
 		}
 
 		text := string(msg)
+
+		fault := s.scenarios.EffectiveWebSocketFault()
+		if fault != nil && fault.Delay.Duration > 0 {
+			time.Sleep(fault.Delay.Duration)
+		}
+
 		rule, ok := engine.WSMatch(mock.OnMessage, text)
 		if !ok {
 			continue
+		}
+
+		if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+			msg := fault.Message
+			if msg == "" {
+				msg = "fault injected"
+			}
+			closeCode := fault.CloseCode
+			if closeCode == 0 {
+				closeCode = websocket.CloseInternalServerErr
+			}
+			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(closeCode, msg), time.Now().Add(time.Second))
+			return
 		}
 
 		if rule.Delay.Duration > 0 {

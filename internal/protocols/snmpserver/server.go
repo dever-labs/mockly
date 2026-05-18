@@ -15,31 +15,34 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
 // Server is the SNMP mock agent server.
 type Server struct {
-	cfg   *config.SNMPConfig
-	store *state.Store
-	log   *logger.Logger
+	cfg       *config.SNMPConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu     sync.RWMutex
 	mocks  []config.SNMPMock
 	traps  []config.SNMPTrap
 	values sync.Map // OID → current value (for SET support)
 
-	srv    *GoSNMPServer.SNMPServer
+	srv     *GoSNMPServer.SNMPServer
 	restart chan struct{} // closed to signal a restart is needed
 }
 
 // New creates a new SNMP Server.
-func New(cfg *config.SNMPConfig, store *state.Store, log *logger.Logger) *Server {
+func New(cfg *config.SNMPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
 	s := &Server{
-		cfg:     cfg,
-		store:   store,
-		log:     log,
-		restart: make(chan struct{}),
+		cfg:       cfg,
+		store:     store,
+		scenarios: sc,
+		log:       log,
+		restart:   make(chan struct{}),
 	}
 	s.mocks = append([]config.SNMPMock(nil), cfg.Mocks...)
 	s.traps = append([]config.SNMPTrap(nil), cfg.Traps...)
@@ -200,10 +203,21 @@ func (s *Server) buildOIDs(mocks []config.SNMPMock) []*GoSNMPServer.PDUValueCont
 			Type:     asn1Type,
 			Document: mock.ID,
 			OnGet: func() (interface{}, error) {
+				fault := s.scenarios.EffectiveSNMPFault()
+				if fault != nil && fault.Delay.Duration > 0 {
+					time.Sleep(fault.Delay.Duration)
+				}
 				if mock.State != nil {
 					if val, _ := s.store.Get(mock.State.Key); val != mock.State.Value {
 						return nil, fmt.Errorf("state condition not met")
 					}
+				}
+				if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+					msg := fault.Message
+					if msg == "" {
+						msg = "fault injected"
+					}
+					return nil, fmt.Errorf("%s", msg)
 				}
 				raw, _ := s.values.Load(mock.OID)
 				wrapped, err := wrapValue(asn1Type, raw)
@@ -216,6 +230,17 @@ func (s *Server) buildOIDs(mocks []config.SNMPMock) []*GoSNMPServer.PDUValueCont
 				return wrapped, err
 			},
 			OnSet: func(value interface{}) error {
+				fault := s.scenarios.EffectiveSNMPFault()
+				if fault != nil && fault.Delay.Duration > 0 {
+					time.Sleep(fault.Delay.Duration)
+				}
+				if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+					msg := fault.Message
+					if msg == "" {
+						msg = "fault injected"
+					}
+					return fmt.Errorf("%s", msg)
+				}
 				s.values.Store(mock.OID, value)
 				s.log.Log(logger.Entry{
 					Protocol:  "snmp",
@@ -237,10 +262,10 @@ func (s *Server) buildUsers() []gosnmp.UsmSecurityParameters {
 	for _, u := range s.cfg.V3Users {
 		usp := gosnmp.UsmSecurityParameters{
 			UserName:                 u.Username,
-			AuthenticationProtocol:  authProtocol(u.AuthProtocol),
+			AuthenticationProtocol:   authProtocol(u.AuthProtocol),
 			AuthenticationPassphrase: u.AuthPassphrase,
-			PrivacyProtocol:         privProtocol(u.PrivProtocol),
-			PrivacyPassphrase:       u.PrivPassphrase,
+			PrivacyProtocol:          privProtocol(u.PrivProtocol),
+			PrivacyPassphrase:        u.PrivPassphrase,
 		}
 		GoSNMPServer.GenKeys(&usp)
 		users = append(users, usp)

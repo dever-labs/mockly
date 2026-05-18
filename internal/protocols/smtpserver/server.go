@@ -17,12 +17,14 @@ import (
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 )
 
 // Server is the SMTP mock server.
 type Server struct {
-	cfg   *config.SMTPConfig
-	log   *logger.Logger
+	cfg       *config.SMTPConfig
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu    sync.RWMutex
 	rules []config.SMTPRule
@@ -80,12 +82,13 @@ func (b *Inbox) Clear() {
 }
 
 // New creates a Server.
-func New(cfg *config.SMTPConfig, log *logger.Logger) *Server {
+func New(cfg *config.SMTPConfig, sc *scenarios.Store, log *logger.Logger) *Server {
 	return &Server{
-		cfg:   cfg,
-		log:   log,
-		rules: append([]config.SMTPRule(nil), cfg.Rules...),
-		inbox: newInbox(cfg.MaxEmails),
+		cfg:       cfg,
+		scenarios: sc,
+		log:       log,
+		rules:     append([]config.SMTPRule(nil), cfg.Rules...),
+		inbox:     newInbox(cfg.MaxEmails),
 	}
 }
 
@@ -189,9 +192,9 @@ func (b *backend) NewSession(c *gosmtp.Conn) (gosmtp.Session, error) {
 }
 
 type session struct {
-	server  *Server
-	from    string
-	to      []string
+	server *Server
+	from   string
+	to     []string
 }
 
 func (s *session) AuthPlain(username, password string) error {
@@ -213,6 +216,26 @@ func (s *session) Data(r io.Reader) error {
 	raw, err := io.ReadAll(io.LimitReader(r, maxEmailSize))
 	if err != nil {
 		return err
+	}
+
+	fault := s.server.scenarios.EffectiveSMTPFault()
+	if fault != nil && fault.Delay.Duration > 0 {
+		time.Sleep(fault.Delay.Duration)
+	}
+	if fault != nil && s.server.scenarios.RollFault(fault.ErrorRate) {
+		code := fault.Code
+		if code == 0 {
+			code = 421
+		}
+		msg := fault.Message
+		if msg == "" {
+			msg = "fault injected"
+		}
+		return &gosmtp.SMTPError{
+			Code:         code,
+			EnhancedCode: gosmtp.EnhancedCode{4, 3, 0},
+			Message:      msg,
+		}
 	}
 
 	// Parse subject from the message headers.

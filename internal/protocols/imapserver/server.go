@@ -8,22 +8,25 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 )
 
 type Server struct {
-	cfg *config.IMAPConfig
-	log *logger.Logger
+	cfg       *config.IMAPConfig
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu        sync.RWMutex
 	mailboxes []config.IMAPMailbox
 	listener  net.Listener
 }
 
-func New(cfg *config.IMAPConfig, log *logger.Logger) *Server {
-	return &Server{cfg: cfg, log: log, mailboxes: append([]config.IMAPMailbox(nil), cfg.Mailboxes...)}
+func New(cfg *config.IMAPConfig, sc *scenarios.Store, log *logger.Logger) *Server {
+	return &Server{cfg: cfg, scenarios: sc, log: log, mailboxes: append([]config.IMAPMailbox(nil), cfg.Mailboxes...)}
 }
 
 func (s *Server) SetMailboxes(mailboxes []config.IMAPMailbox) {
@@ -115,6 +118,22 @@ func (s *Server) handleConn(conn net.Conn) {
 				_, _ = fmt.Fprintf(conn, "%s NO Select mailbox first\r\n", tag)
 				continue
 			}
+			fault := s.scenarios.EffectiveIMAPFault()
+			if fault != nil && fault.Delay.Duration > 0 {
+				time.Sleep(fault.Delay.Duration)
+			}
+			if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+				resp := fault.Response
+				if resp == "" {
+					resp = "NO"
+				}
+				msg := fault.Message
+				if msg == "" {
+					msg = "fault injected"
+				}
+				_, _ = fmt.Fprintf(conn, "%s %s %s\r\n", tag, resp, msg)
+				continue
+			}
 			for _, msg := range fetchMessages(selected.Messages, firstArg(args)) {
 				resp := buildFetchResponse(msg, strings.Join(args[1:], " "))
 				_, _ = conn.Write([]byte(resp))
@@ -123,6 +142,22 @@ func (s *Server) handleConn(conn net.Conn) {
 		case "SEARCH":
 			if state != "SELECTED" {
 				_, _ = fmt.Fprintf(conn, "%s NO Select mailbox first\r\n", tag)
+				continue
+			}
+			fault := s.scenarios.EffectiveIMAPFault()
+			if fault != nil && fault.Delay.Duration > 0 {
+				time.Sleep(fault.Delay.Duration)
+			}
+			if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+				resp := fault.Response
+				if resp == "" {
+					resp = "NO"
+				}
+				msg := fault.Message
+				if msg == "" {
+					msg = "fault injected"
+				}
+				_, _ = fmt.Fprintf(conn, "%s %s %s\r\n", tag, resp, msg)
 				continue
 			}
 			seqs := make([]string, 0, len(selected.Messages))

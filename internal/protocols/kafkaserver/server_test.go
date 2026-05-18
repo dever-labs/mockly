@@ -16,7 +16,7 @@ func TestMatchKafkaTopic(t *testing.T) {
 }
 
 func TestStatusInfo(t *testing.T) {
-	srv := New(&config.KafkaConfig{Enabled: true, Port: 9092, Mocks: []config.KafkaMock{{ID: "1"}}}, nil, nil)
+	srv := New(&config.KafkaConfig{Enabled: true, Port: 9092, Mocks: []config.KafkaMock{{ID: "1"}}}, nil, nil, nil)
 	info := srv.StatusInfo()
 	if info["protocol"] != "kafka" || info["port"] != 9092 {
 		t.Fatalf("unexpected status info: %#v", info)

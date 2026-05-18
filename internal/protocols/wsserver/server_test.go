@@ -37,7 +37,7 @@ func newWSServer(t *testing.T, mocks []config.WebSocketMock, tlsCfg *config.TLSC
 		TLS:     tlsCfg,
 		Mocks:   mocks,
 	}
-	srv := wsserver.New(cfg, state.New(), logger.New(10))
+	srv := wsserver.New(cfg, state.New(), nil, logger.New(10))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -129,7 +129,7 @@ func TestWSServer_GetMocks_SetMocks(t *testing.T) {
 	// Retrieve mocks from a running server by creating a second server
 	// in memory and verifying SetMocks/GetMocks isolation.
 	cfg := &config.WebSocketConfig{Enabled: true, Port: 0, Mocks: initial}
-	srv := wsserver.New(cfg, state.New(), logger.New(10))
+	srv := wsserver.New(cfg, state.New(), nil, logger.New(10))
 
 	updated := []config.WebSocketMock{
 		{ID: "m2", Path: "/b"},
@@ -164,7 +164,7 @@ func TestWSServer_SetMocks_ConcurrentAccess(t *testing.T) {
 
 	// Writers: replace the mock list concurrently.
 	cfg := &config.WebSocketConfig{Enabled: true, Port: 0, Mocks: mocks}
-	srv := wsserver.New(cfg, state.New(), logger.New(10))
+	srv := wsserver.New(cfg, state.New(), nil, logger.New(10))
 
 	for i := 0; i < 5; i++ {
 		wg.Add(1)

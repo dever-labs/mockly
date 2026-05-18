@@ -14,21 +14,23 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
 type Server struct {
-	cfg   *config.MemcachedConfig
-	store *state.Store
-	log   *logger.Logger
+	cfg       *config.MemcachedConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu       sync.RWMutex
 	mocks    []config.MemcachedMock
 	listener net.Listener
 }
 
-func New(cfg *config.MemcachedConfig, store *state.Store, log *logger.Logger) *Server {
-	return &Server{cfg: cfg, store: store, log: log, mocks: append([]config.MemcachedMock(nil), cfg.Mocks...)}
+func New(cfg *config.MemcachedConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
+	return &Server{cfg: cfg, store: store, scenarios: sc, log: log, mocks: append([]config.MemcachedMock(nil), cfg.Mocks...)}
 }
 
 func (s *Server) SetMocks(mocks []config.MemcachedMock) {
@@ -106,6 +108,9 @@ func (s *Server) handleConn(conn net.Conn) {
 }
 
 func (s *Server) handleGet(conn net.Conn, keys []string) {
+	if s.maybeInjectFault(conn) {
+		return
+	}
 	for _, key := range keys {
 		mock, ok := s.matchMock("get", key)
 		if !ok || mock.Response.Value == "" {
@@ -121,6 +126,9 @@ func (s *Server) handleGet(conn net.Conn, keys []string) {
 }
 
 func (s *Server) handleStore(conn net.Conn, reader *bufio.Reader, command string, parts []string) {
+	if s.maybeInjectFault(conn) {
+		return
+	}
 	if len(parts) < 5 {
 		_, _ = conn.Write([]byte("ERROR\r\n"))
 		return
@@ -150,6 +158,9 @@ func (s *Server) handleStore(conn net.Conn, reader *bufio.Reader, command string
 }
 
 func (s *Server) handleSimpleMutation(conn net.Conn, command string, parts []string) {
+	if s.maybeInjectFault(conn) {
+		return
+	}
 	if len(parts) < 2 {
 		_, _ = conn.Write([]byte("ERROR\r\n"))
 		return
@@ -167,6 +178,26 @@ func (s *Server) handleSimpleMutation(conn net.Conn, command string, parts []str
 	if !noreply {
 		_, _ = conn.Write([]byte(status + "\r\n"))
 	}
+}
+
+func (s *Server) maybeInjectFault(conn net.Conn) bool {
+	fault := s.scenarios.EffectiveMemcachedFault()
+	if fault != nil && fault.Delay.Duration > 0 {
+		time.Sleep(fault.Delay.Duration)
+	}
+	if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+		errType := fault.ErrorType
+		if errType == "" {
+			errType = "SERVER_ERROR"
+		}
+		msg := fault.Message
+		if msg == "" {
+			msg = "fault injected"
+		}
+		_, _ = conn.Write([]byte(fmt.Sprintf("%s %s\r\n", errType, msg)))
+		return true
+	}
+	return false
 }
 
 func (s *Server) matchMock(command, key string) (config.MemcachedMock, bool) {

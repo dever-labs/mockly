@@ -72,9 +72,9 @@ func TestHTTPServer_BasicGET(t *testing.T) {
 		t.Errorf("want 200, got %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
-if err != nil {
-t.Fatalf("reading response body: %v", err)
-}
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
 	if string(body) != `[{"id":1}]` {
 		t.Errorf("unexpected body: %q", body)
 	}
@@ -167,9 +167,9 @@ func TestHTTPServer_ScenarioPatch_OverridesStatus(t *testing.T) {
 		t.Errorf("after activation: want 503, got %d", r2.StatusCode)
 	}
 	body, err := io.ReadAll(r2.Body)
-if err != nil {
-t.Fatalf("reading response body: %v", err)
-}
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
 	if !strings.Contains(string(body), "down") {
 		t.Errorf("expected 'down' in body, got %q", body)
 	}
@@ -204,7 +204,7 @@ func TestHTTPServer_GlobalFault_StatusOverride(t *testing.T) {
 	sc := scenarios.New(nil)
 	base := startTestServer(t, mocks, sc)
 
-	sc.SetFault(&config.GlobalFault{Enabled: true, StatusOverride: 503, ErrorRate: 0})
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{Status: 503, ErrorRate: 0}})
 
 	resp, _ := http.Get(base + "/ok")
 	_ = resp.Body.Close()
@@ -212,7 +212,7 @@ func TestHTTPServer_GlobalFault_StatusOverride(t *testing.T) {
 		t.Errorf("global fault should override to 503, got %d", resp.StatusCode)
 	}
 
-	sc.ClearFault()
+	sc.ClearDirectFaults()
 	resp2, _ := http.Get(base + "/ok")
 	_ = resp2.Body.Close()
 	if resp2.StatusCode != 200 {
@@ -235,11 +235,11 @@ func TestHTTPServer_GlobalFault_Delay(t *testing.T) {
 	baseline := time.Since(t0)
 
 	// Add 100ms fault delay.
-	sc.SetFault(&config.GlobalFault{Enabled: true, Delay: config.Duration{Duration: 100 * time.Millisecond}})
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{Delay: config.Duration{Duration: 100 * time.Millisecond}}})
 	t1 := time.Now()
 	http.Get(base + "/fast") //nolint:errcheck
 	withFault := time.Since(t1)
-	sc.ClearFault()
+	sc.ClearDirectFaults()
 
 	if withFault < 80*time.Millisecond {
 		t.Errorf("expected ≥80ms with fault, got %v (baseline %v)", withFault, baseline)
@@ -260,9 +260,9 @@ func TestHTTPServer_TemplateResponse(t *testing.T) {
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	body, err := io.ReadAll(resp.Body)
-if err != nil {
-t.Fatalf("reading response body: %v", err)
-}
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
 
 	var m map[string]string
 	if err := json.Unmarshal(body, &m); err != nil {
@@ -344,9 +344,9 @@ func TestHTTPServer_QueryParams(t *testing.T) {
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	body, err := io.ReadAll(resp.Body)
-if err != nil {
-t.Fatalf("reading response body: %v", err)
-}
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
 	if !strings.Contains(string(body), `"admin"`) {
 		t.Errorf("expected admin response, got %q", body)
 	}
@@ -357,9 +357,9 @@ t.Fatalf("reading response body: %v", err)
 	}
 	defer resp2.Body.Close() //nolint:errcheck
 	body2, err := io.ReadAll(resp2.Body)
-if err != nil {
-t.Fatalf("reading response body: %v", err)
-}
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
 	if !strings.Contains(string(body2), `"other"`) {
 		t.Errorf("expected fallback response, got %q", body2)
 	}
@@ -401,8 +401,8 @@ func TestHTTPServer_BodyJSON(t *testing.T) {
 
 func TestHTTPServer_Sequence_HoldLast(t *testing.T) {
 	mocks := []config.HTTPMock{{
-		ID:      "flaky",
-		Request: config.HTTPRequest{Method: "GET", Path: "/data"},
+		ID:       "flaky",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/data"},
 		Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
 		Sequence: []config.HTTPResponse{
 			{Status: 503, Body: `{"error":"down"}`},
@@ -425,8 +425,8 @@ func TestHTTPServer_Sequence_HoldLast(t *testing.T) {
 
 func TestHTTPServer_Sequence_Loop(t *testing.T) {
 	mocks := []config.HTTPMock{{
-		ID:      "cycler",
-		Request: config.HTTPRequest{Method: "GET", Path: "/cycle"},
+		ID:       "cycler",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/cycle"},
 		Response: config.HTTPResponse{Status: 200},
 		Sequence: []config.HTTPResponse{
 			{Status: 200, Body: `"a"`},
@@ -440,9 +440,9 @@ func TestHTTPServer_Sequence_Loop(t *testing.T) {
 	for i, want := range expected {
 		resp, _ := http.Get(base + "/cycle")
 		body, err := io.ReadAll(resp.Body)
-if err != nil {
-t.Fatalf("reading response body: %v", err)
-}
+		if err != nil {
+			t.Fatalf("reading response body: %v", err)
+		}
 		_ = resp.Body.Close()
 		if strings.TrimSpace(string(body)) != want {
 			t.Errorf("call %d: want %q, got %q", i+1, want, body)
@@ -610,80 +610,80 @@ func TestHTTPServer_OAuthAuthorize_QueryParamMatching(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func startTLSTestServer(t *testing.T, mocks []config.HTTPMock) (string, *http.Client) {
-t.Helper()
+	t.Helper()
 
-dir := t.TempDir()
-certFile := dir + "/cert.pem"
-keyFile := dir + "/key.pem"
-if err := testutil.WriteSelfSignedCert(certFile, keyFile); err != nil {
-t.Fatalf("generate cert: %v", err)
-}
+	dir := t.TempDir()
+	certFile := dir + "/cert.pem"
+	keyFile := dir + "/key.pem"
+	if err := testutil.WriteSelfSignedCert(certFile, keyFile); err != nil {
+		t.Fatalf("generate cert: %v", err)
+	}
 
-ln, err := net.Listen("tcp", "127.0.0.1:0")
-if err != nil {
-t.Fatalf("failed to listen: %v", err)
-}
-port := ln.Addr().(*net.TCPAddr).Port
-_ = ln.Close()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
 
-cfg := &config.HTTPConfig{
-Enabled: true,
-Port:    port,
-TLS:     &config.TLSConfig{Enabled: true, CertFile: certFile, KeyFile: keyFile},
-Mocks:   mocks,
-}
-store := state.New()
-sc := scenarios.New(nil)
-log := logger.New(100)
-srv := httpserver.New(cfg, store, sc, log)
+	cfg := &config.HTTPConfig{
+		Enabled: true,
+		Port:    port,
+		TLS:     &config.TLSConfig{Enabled: true, CertFile: certFile, KeyFile: keyFile},
+		Mocks:   mocks,
+	}
+	store := state.New()
+	sc := scenarios.New(nil)
+	log := logger.New(100)
+	srv := httpserver.New(cfg, store, sc, log)
 
-ctx, cancel := context.WithCancel(context.Background())
-t.Cleanup(cancel)
-go srv.Start(ctx) //nolint:errcheck
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go srv.Start(ctx) //nolint:errcheck
 
-client := &http.Client{
-Transport: &http.Transport{
-TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
-},
-}
-base := fmt.Sprintf("https://127.0.0.1:%d", port)
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+		},
+	}
+	base := fmt.Sprintf("https://127.0.0.1:%d", port)
 
-deadline := time.Now().Add(2 * time.Second)
-for time.Now().Before(deadline) {
-resp, err := client.Get(base + "/")
-if err == nil {
-_ = resp.Body.Close()
-break
-}
-time.Sleep(10 * time.Millisecond)
-}
-return base, client
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(base + "/")
+		if err == nil {
+			_ = resp.Body.Close()
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return base, client
 }
 
 func TestHTTPServer_TLS(t *testing.T) {
-mocks := []config.HTTPMock{{
-ID:       "ping",
-Request:  config.HTTPRequest{Method: "GET", Path: "/ping"},
-Response: config.HTTPResponse{Status: 200, Body: "pong"},
-}}
-base, client := startTLSTestServer(t, mocks)
+	mocks := []config.HTTPMock{{
+		ID:       "ping",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/ping"},
+		Response: config.HTTPResponse{Status: 200, Body: "pong"},
+	}}
+	base, client := startTLSTestServer(t, mocks)
 
-resp, err := client.Get(base + "/ping")
-if err != nil {
-t.Fatalf("GET /ping over TLS: %v", err)
-}
-defer resp.Body.Close() //nolint:errcheck
+	resp, err := client.Get(base + "/ping")
+	if err != nil {
+		t.Fatalf("GET /ping over TLS: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
 
-if resp.StatusCode != 200 {
-t.Errorf("want 200, got %d", resp.StatusCode)
-}
-body, err := io.ReadAll(resp.Body)
-if err != nil {
-t.Fatalf("read body: %v", err)
-}
-if string(body) != "pong" {
-t.Errorf("want 'pong', got %q", body)
-}
+	if resp.StatusCode != 200 {
+		t.Errorf("want 200, got %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(body) != "pong" {
+		t.Errorf("want 'pong', got %q", body)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -691,37 +691,53 @@ t.Errorf("want 'pong', got %q", body)
 // ---------------------------------------------------------------------------
 
 func TestHTTPServer_SetMocks_ConcurrentAccess(t *testing.T) {
-base, srv := startTestServerWithServer(t, []config.HTTPMock{{
-ID:       "m1",
-Request:  config.HTTPRequest{Method: "GET", Path: "/"},
-Response: config.HTTPResponse{Status: 200, Body: "ok"},
-}}, nil)
+	base, srv := startTestServerWithServer(t, []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/"},
+		Response: config.HTTPResponse{Status: 200, Body: "ok"},
+	}}, nil)
 
-var wg sync.WaitGroup
-for i := 0; i < 5; i++ {
-wg.Add(1)
-go func() {
-defer wg.Done()
-for j := 0; j < 50; j++ {
-srv.SetMocks([]config.HTTPMock{{
-ID:       "m",
-Request:  config.HTTPRequest{Method: "GET", Path: "/"},
-Response: config.HTTPResponse{Status: 200, Body: "updated"},
-}})
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				srv.SetMocks([]config.HTTPMock{{
+					ID:       "m",
+					Request:  config.HTTPRequest{Method: "GET", Path: "/"},
+					Response: config.HTTPResponse{Status: 200, Body: "updated"},
+				}})
+			}
+		}()
+	}
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				resp, err := http.Get(base + "/")
+				if err == nil {
+					_ = resp.Body.Close()
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
-}()
-}
-for i := 0; i < 5; i++ {
-wg.Add(1)
-go func() {
-defer wg.Done()
-for j := 0; j < 20; j++ {
-resp, err := http.Get(base + "/")
-if err == nil {
-_ = resp.Body.Close()
-}
-}
-}()
-}
-wg.Wait()
+
+func TestHTTPServer_HTTPFault_CustomStatus(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "ok",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{Status: http.StatusTeapot, ErrorRate: 0}})
+	resp, _ := http.Get(base + "/ok")
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusTeapot {
+		t.Fatalf("HTTP fault should override to 418, got %d", resp.StatusCode)
+	}
 }

@@ -318,19 +318,18 @@ func TestAPI_Scenarios_CRUD(t *testing.T) {
 func TestAPI_Fault_SetClear(t *testing.T) {
 	base, _, _, sc, _ := startAPI(t)
 
-	// Set fault.
+	// Set HTTP fault.
 	fault := map[string]interface{}{
-		"enabled":         true,
-		"status_override": 503,
-		"error_rate":      1.0,
+		"status":     503,
+		"error_rate": 1.0,
 	}
 	body, _ := json.Marshal(fault)
-	resp, _ := http.Post(base+"/api/fault", "application/json", bytes.NewReader(body))
+	resp, _ := http.Post(base+"/api/fault/http", "application/json", bytes.NewReader(body))
 	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Errorf("set fault: want 200, got %d", resp.StatusCode)
 	}
-	if f := sc.GetFault(); f == nil || !f.Enabled || f.StatusOverride != 503 {
+	if f := sc.DirectFaults().HTTP; f == nil || f.Status != 503 {
 		t.Errorf("fault not set correctly: %+v", f)
 	}
 
@@ -338,10 +337,10 @@ func TestAPI_Fault_SetClear(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodDelete, base+"/api/fault", nil)
 	resp2, _ := http.DefaultClient.Do(req)
 	_ = resp2.Body.Close()
-	if resp2.StatusCode != 200 {
-		t.Errorf("clear fault: want 200, got %d", resp2.StatusCode)
+	if resp2.StatusCode != 204 {
+		t.Errorf("clear fault: want 204, got %d", resp2.StatusCode)
 	}
-	if sc.GetFault() != nil {
+	if sc.DirectFaults().HTTP != nil {
 		t.Error("fault should be nil after clear")
 	}
 }
@@ -350,7 +349,7 @@ func TestAPI_Reset(t *testing.T) {
 	base, _, _, sc, _ := startAPI(t)
 
 	// Set some state.
-	sc.SetFault(&config.GlobalFault{Enabled: true, StatusOverride: 500})
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{Status: 500}})
 
 	// Reset.
 	resp, _ := http.Post(base+"/api/reset", "application/json", nil)
@@ -358,7 +357,7 @@ func TestAPI_Reset(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Errorf("reset: want 200, got %d", resp.StatusCode)
 	}
-	if sc.GetFault() != nil {
+	if sc.DirectFaults().HTTP != nil {
 		t.Error("fault should be cleared after reset")
 	}
 }

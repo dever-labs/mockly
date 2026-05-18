@@ -16,6 +16,7 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
@@ -73,9 +74,10 @@ type connState struct {
 }
 
 type Server struct {
-	cfg   *config.AMQPConfig
-	store *state.Store
-	log   *logger.Logger
+	cfg       *config.AMQPConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu       sync.RWMutex
 	mocks    []config.AMQPMock
@@ -84,8 +86,8 @@ type Server struct {
 	delivery uint64
 }
 
-func New(cfg *config.AMQPConfig, store *state.Store, log *logger.Logger) *Server {
-	return &Server{cfg: cfg, store: store, log: log, mocks: append([]config.AMQPMock(nil), cfg.Mocks...), messages: newMessageStore(1000)}
+func New(cfg *config.AMQPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
+	return &Server{cfg: cfg, store: store, scenarios: sc, log: log, mocks: append([]config.AMQPMock(nil), cfg.Mocks...), messages: newMessageStore(1000)}
 }
 
 func (s *Server) SetMocks(mocks []config.AMQPMock) {
@@ -202,6 +204,11 @@ func (s *Server) handleMethod(state *connState, channel, classID, methodID uint1
 }
 
 func (s *Server) processPublish(state *connState, channel uint16, pub *publishState) {
+	fault := s.scenarios.EffectiveAMQPFault()
+	if fault != nil && fault.Delay.Duration > 0 {
+		time.Sleep(fault.Delay.Duration)
+	}
+
 	body := pub.body.String()
 	s.messages.Add(config.ReceivedAMQPMessage{ID: fmt.Sprintf("%d", time.Now().UnixNano()), Exchange: pub.exchange, RoutingKey: pub.routingKey, Body: body, Timestamp: time.Now().UTC().Format(time.RFC3339)})
 	mock, ok := s.matchMock(pub.exchange, pub.routingKey)
@@ -211,6 +218,9 @@ func (s *Server) processPublish(state *connState, channel uint16, pub *publishSt
 	}
 	s.log.Log(logger.Entry{Protocol: "amqp", Method: "PUBLISH", Path: pub.routingKey, Status: 0, Body: body, MatchedID: matchedID})
 	if !ok || mock.Response == nil {
+		return
+	}
+	if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
 		return
 	}
 	if mock.Delay.Duration > 0 {

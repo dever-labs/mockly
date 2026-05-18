@@ -16,7 +16,7 @@ func TestBerLen(t *testing.T) {
 }
 
 func TestStatusInfo(t *testing.T) {
-	srv := New(&config.LDAPConfig{Enabled: true, Port: 3893, Mocks: []config.LDAPMock{{ID: "1"}}}, nil, nil)
+	srv := New(&config.LDAPConfig{Enabled: true, Port: 3893, Mocks: []config.LDAPMock{{ID: "1"}}}, nil, nil, nil)
 	info := srv.StatusInfo()
 	if info["protocol"] != "ldap" || info["port"] != 3893 {
 		t.Fatalf("unexpected status info: %#v", info)

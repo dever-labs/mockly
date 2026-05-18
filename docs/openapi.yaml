@@ -2,7 +2,7 @@ openapi: "3.1.0"
 info:
   title: Mockly Management API
   description: |
-    REST API for managing Mockly mock server at runtime.
+    REST API for managing Mockly's HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, and SIP servers at runtime.
     All endpoints are served on the management port (default: **9091**).
   version: "1.0.0"
   license:
@@ -33,12 +33,32 @@ tags:
     description: Manage MQTT mock definitions and captured messages
   - name: SNMP Mocks
     description: Manage SNMP OID mock definitions and outbound TRAP configurations
+  - name: DNS Mocks
+    description: Manage DNS record mocks
+  - name: AMQP Mocks
+    description: Manage AMQP publish/consume mocks and captured messages
+  - name: Kafka Mocks
+    description: Manage Kafka topic mocks and captured messages
+  - name: LDAP Mocks
+    description: Manage LDAP bind/search mocks
+  - name: IMAP Mocks
+    description: Manage IMAP mailboxes and messages
+  - name: FTP Mocks
+    description: Manage FTP files
+  - name: Memcached Mocks
+    description: Manage Memcached command mocks
+  - name: STOMP Mocks
+    description: Manage STOMP destination mocks and captured messages
+  - name: CoAP Mocks
+    description: Manage CoAP request/response mocks
+  - name: SIP Mocks
+    description: Manage SIP method/URI mocks
   - name: State
     description: Shared key-value state used by state-conditional mocks
   - name: Scenarios
-    description: Named sets of mock patches for deterministic failure/latency testing
+    description: Named sets of mock patches and protocol faults for deterministic testing
   - name: Fault Injection
-    description: Global fault injection applied across all HTTP mock responses
+    description: Protocol-native direct fault injection
   - name: Logs
     description: Request/response log access and streaming
   - name: Call Verification
@@ -1048,6 +1068,794 @@ paths:
           $ref: "#/components/responses/InternalError"
 
   # ---------------------------------------------------------------------------
+  # DNS Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/dns:
+    get:
+      tags: [DNS Mocks]
+      operationId: listDNSMocks
+      summary: List all DNS mocks
+      responses:
+        "200":
+          description: Array of DNS mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DNSMock"
+    post:
+      tags: [DNS Mocks]
+      operationId: addDNSMock
+      summary: Create a DNS mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DNSMock"
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DNSMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/dns/{id}:
+    put:
+      tags: [DNS Mocks]
+      operationId: updateDNSMock
+      summary: Replace a DNS mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DNSMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DNSMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [DNS Mocks]
+      operationId: deleteDNSMock
+      summary: Delete a DNS mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+
+  # ---------------------------------------------------------------------------
+  # AMQP Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/amqp:
+    get:
+      tags: [AMQP Mocks]
+      operationId: listAMQPMocks
+      summary: List all AMQP mocks
+      responses:
+        "200":
+          description: Array of AMQP mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AMQPMock"
+    post:
+      tags: [AMQP Mocks]
+      operationId: addAMQPMock
+      summary: Create an AMQP mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AMQPMock"
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AMQPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/amqp/{id}:
+    put:
+      tags: [AMQP Mocks]
+      operationId: updateAMQPMock
+      summary: Replace an AMQP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AMQPMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AMQPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [AMQP Mocks]
+      operationId: deleteAMQPMock
+      summary: Delete an AMQP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+
+  /api/amqp/messages:
+    get:
+      tags: [AMQP Mocks]
+      operationId: listAMQPMessages
+      summary: List captured AMQP messages
+      responses:
+        "200":
+          description: Array of captured AMQP messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReceivedAMQPMessage"
+    delete:
+      tags: [AMQP Mocks]
+      operationId: clearAMQPMessages
+      summary: Clear captured AMQP messages
+      responses:
+        "200":
+          description: Message store cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+
+  # ---------------------------------------------------------------------------
+  # Kafka Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/kafka:
+    get:
+      tags: [Kafka Mocks]
+      operationId: listKafkaMocks
+      summary: List all Kafka mocks
+      responses:
+        "200":
+          description: Array of Kafka mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KafkaMock"
+    post:
+      tags: [Kafka Mocks]
+      operationId: addKafkaMock
+      summary: Create a Kafka mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KafkaMock"
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KafkaMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/kafka/{id}:
+    put:
+      tags: [Kafka Mocks]
+      operationId: updateKafkaMock
+      summary: Replace a Kafka mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KafkaMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KafkaMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Kafka Mocks]
+      operationId: deleteKafkaMock
+      summary: Delete a Kafka mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+
+  /api/kafka/messages:
+    get:
+      tags: [Kafka Mocks]
+      operationId: listKafkaMessages
+      summary: List captured Kafka messages
+      responses:
+        "200":
+          description: Array of captured Kafka messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProducedKafkaMessage"
+    delete:
+      tags: [Kafka Mocks]
+      operationId: clearKafkaMessages
+      summary: Clear captured Kafka messages
+      responses:
+        "200":
+          description: Message store cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+
+  # ---------------------------------------------------------------------------
+  # LDAP Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/ldap:
+    get:
+      tags: [LDAP Mocks]
+      operationId: listLDAPMocks
+      summary: List all LDAP mocks
+      responses:
+        "200":
+          description: Array of LDAP mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LDAPMock"
+    post:
+      tags: [LDAP Mocks]
+      operationId: addLDAPMock
+      summary: Create an LDAP mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LDAPMock"
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LDAPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/ldap/{id}:
+    put:
+      tags: [LDAP Mocks]
+      operationId: updateLDAPMock
+      summary: Replace an LDAP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LDAPMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LDAPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [LDAP Mocks]
+      operationId: deleteLDAPMock
+      summary: Delete an LDAP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+
+  # ---------------------------------------------------------------------------
+  # IMAP Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/imap:
+    get:
+      tags: [IMAP Mocks]
+      operationId: listIMAPMailboxes
+      summary: List all IMAP mailboxes
+      responses:
+        "200":
+          description: Array of IMAP mailboxes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/IMAPMailbox"
+    post:
+      tags: [IMAP Mocks]
+      operationId: addIMAPMailbox
+      summary: Create an IMAP mailbox
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IMAPMailbox"
+      responses:
+        "201":
+          description: Mailbox created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IMAPMailbox"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/imap/{id}:
+    put:
+      tags: [IMAP Mocks]
+      operationId: updateIMAPMailbox
+      summary: Replace an IMAP mailbox
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IMAPMailbox"
+      responses:
+        "200":
+          description: Mailbox updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IMAPMailbox"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [IMAP Mocks]
+      operationId: deleteIMAPMailbox
+      summary: Delete an IMAP mailbox
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+
+  # ---------------------------------------------------------------------------
+  # FTP Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/ftp:
+    get:
+      tags: [FTP Mocks]
+      operationId: listFTPFiles
+      summary: List all FTP files
+      responses:
+        "200":
+          description: Array of FTP files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FTPFile"
+    post:
+      tags: [FTP Mocks]
+      operationId: addFTPFile
+      summary: Create an FTP file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FTPFile"
+      responses:
+        "201":
+          description: File created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FTPFile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/ftp/{id}:
+    put:
+      tags: [FTP Mocks]
+      operationId: updateFTPFile
+      summary: Replace an FTP file
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FTPFile"
+      responses:
+        "200":
+          description: File updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FTPFile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [FTP Mocks]
+      operationId: deleteFTPFile
+      summary: Delete an FTP file
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+
+  # ---------------------------------------------------------------------------
+  # Memcached Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/memcached:
+    get:
+      tags: [Memcached Mocks]
+      operationId: listMemcachedMocks
+      summary: List all Memcached mocks
+      responses:
+        "200":
+          description: Array of Memcached mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MemcachedMock"
+    post:
+      tags: [Memcached Mocks]
+      operationId: addMemcachedMock
+      summary: Create a Memcached mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemcachedMock"
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemcachedMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/memcached/{id}:
+    put:
+      tags: [Memcached Mocks]
+      operationId: updateMemcachedMock
+      summary: Replace a Memcached mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemcachedMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemcachedMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Memcached Mocks]
+      operationId: deleteMemcachedMock
+      summary: Delete a Memcached mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+
+  # ---------------------------------------------------------------------------
+  # STOMP Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/stomp:
+    get:
+      tags: [STOMP Mocks]
+      operationId: listSTOMPMocks
+      summary: List all STOMP mocks
+      responses:
+        "200":
+          description: Array of STOMP mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/STOMPMock"
+    post:
+      tags: [STOMP Mocks]
+      operationId: addSTOMPMock
+      summary: Create a STOMP mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/STOMPMock"
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/STOMPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/stomp/{id}:
+    put:
+      tags: [STOMP Mocks]
+      operationId: updateSTOMPMock
+      summary: Replace a STOMP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/STOMPMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/STOMPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [STOMP Mocks]
+      operationId: deleteSTOMPMock
+      summary: Delete a STOMP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+
+  /api/stomp/messages:
+    get:
+      tags: [STOMP Mocks]
+      operationId: listSTOMPMessages
+      summary: List captured STOMP messages
+      responses:
+        "200":
+          description: Array of captured STOMP messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReceivedSTOMPMessage"
+    delete:
+      tags: [STOMP Mocks]
+      operationId: clearSTOMPMessages
+      summary: Clear captured STOMP messages
+      responses:
+        "200":
+          description: Message store cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+
+  # ---------------------------------------------------------------------------
+  # CoAP Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/coap:
+    get:
+      tags: [CoAP Mocks]
+      operationId: listCoAPMocks
+      summary: List all CoAP mocks
+      responses:
+        "200":
+          description: Array of CoAP mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CoAPMock"
+    post:
+      tags: [CoAP Mocks]
+      operationId: addCoAPMock
+      summary: Create a CoAP mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoAPMock"
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoAPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/coap/{id}:
+    put:
+      tags: [CoAP Mocks]
+      operationId: updateCoAPMock
+      summary: Replace a CoAP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoAPMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoAPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [CoAP Mocks]
+      operationId: deleteCoAPMock
+      summary: Delete a CoAP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+
+  # ---------------------------------------------------------------------------
+  # SIP Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/sip:
+    get:
+      tags: [SIP Mocks]
+      operationId: listSIPMocks
+      summary: List all SIP mocks
+      responses:
+        "200":
+          description: Array of SIP mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SIPMock"
+    post:
+      tags: [SIP Mocks]
+      operationId: addSIPMock
+      summary: Create a SIP mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SIPMock"
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SIPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/sip/{id}:
+    put:
+      tags: [SIP Mocks]
+      operationId: updateSIPMock
+      summary: Replace a SIP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SIPMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SIPMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [SIP Mocks]
+      operationId: deleteSIPMock
+      summary: Delete a SIP mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+
+  # ---------------------------------------------------------------------------
   # State
   # ---------------------------------------------------------------------------
   /api/state:
@@ -1302,56 +2110,104 @@ paths:
   /api/fault:
     get:
       tags: [Fault Injection]
-      operationId: getFault
-      summary: Get the current global fault configuration
+      operationId: getAllFaults
+      summary: Get all active direct protocol faults
       responses:
         "200":
-          description: Current fault config (enabled:false when not set)
+          description: Active direct faults keyed by protocol
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GlobalFault"
+                $ref: "#/components/schemas/ProtocolFaults"
+    delete:
+      tags: [Fault Injection]
+      operationId: clearAllFaults
+      summary: Clear all direct protocol faults
+      responses:
+        "204":
+          description: All faults cleared
+
+  /api/fault/{protocol}:
+    get:
+      tags: [Fault Injection]
+      operationId: getProtocolFault
+      summary: Get direct fault config for a protocol
+      parameters:
+        - $ref: "#/components/parameters/protocol"
+      responses:
+        "200":
+          description: Fault config for the selected protocol, or null when not set
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/HTTPFault"
+                  - $ref: "#/components/schemas/WebSocketFault"
+                  - $ref: "#/components/schemas/GRPCFault"
+                  - $ref: "#/components/schemas/TCPFault"
+                  - $ref: "#/components/schemas/RedisFault"
+                  - $ref: "#/components/schemas/MQTTFault"
+                  - $ref: "#/components/schemas/SMTPFault"
+                  - $ref: "#/components/schemas/SNMPFault"
+                  - $ref: "#/components/schemas/DNSFault"
+                  - $ref: "#/components/schemas/AMQPFault"
+                  - $ref: "#/components/schemas/KafkaFault"
+                  - $ref: "#/components/schemas/LDAPFault"
+                  - $ref: "#/components/schemas/IMAPFault"
+                  - $ref: "#/components/schemas/FTPFault"
+                  - $ref: "#/components/schemas/MemcachedFault"
+                  - $ref: "#/components/schemas/STOMPFault"
+                  - $ref: "#/components/schemas/CoAPFault"
+                  - $ref: "#/components/schemas/SIPFault"
+                  - type: "null"
     post:
       tags: [Fault Injection]
-      operationId: setFault
-      summary: Enable global fault injection
+      operationId: setProtocolFault
+      summary: Set direct fault config for a protocol
+      parameters:
+        - $ref: "#/components/parameters/protocol"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/GlobalFault"
-            examples:
-              latency:
-                summary: Add 500ms latency to all requests
-                value:
-                  delay: "500ms"
-              error:
-                summary: Return 503 for 50% of requests
-                value:
-                  status_override: 503
-                  error_rate: 0.5
-                  body: '{"error":"injected fault"}'
+              oneOf:
+                - $ref: "#/components/schemas/HTTPFault"
+                - $ref: "#/components/schemas/WebSocketFault"
+                - $ref: "#/components/schemas/GRPCFault"
+                - $ref: "#/components/schemas/TCPFault"
+                - $ref: "#/components/schemas/RedisFault"
+                - $ref: "#/components/schemas/MQTTFault"
+                - $ref: "#/components/schemas/SMTPFault"
+                - $ref: "#/components/schemas/SNMPFault"
+                - $ref: "#/components/schemas/DNSFault"
+                - $ref: "#/components/schemas/AMQPFault"
+                - $ref: "#/components/schemas/KafkaFault"
+                - $ref: "#/components/schemas/LDAPFault"
+                - $ref: "#/components/schemas/IMAPFault"
+                - $ref: "#/components/schemas/FTPFault"
+                - $ref: "#/components/schemas/MemcachedFault"
+                - $ref: "#/components/schemas/STOMPFault"
+                - $ref: "#/components/schemas/CoAPFault"
+                - $ref: "#/components/schemas/SIPFault"
       responses:
         "200":
-          description: Fault enabled
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GlobalFault"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-    delete:
-      tags: [Fault Injection]
-      operationId: clearFault
-      summary: Disable global fault injection
-      responses:
-        "200":
-          description: Fault cleared
+          description: Fault config stored
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusMessage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    delete:
+      tags: [Fault Injection]
+      operationId: clearProtocolFault
+      summary: Clear direct fault config for a protocol
+      parameters:
+        - $ref: "#/components/parameters/protocol"
+      responses:
+        "204":
+          description: Fault cleared for protocol
 
   # ---------------------------------------------------------------------------
   # Logs
@@ -1495,6 +2351,14 @@ components:
       schema:
         type: string
       description: Mock or resource ID
+    protocol:
+      name: protocol
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [http, graphql, websocket, grpc, tcp, redis, mqtt, smtp, snmp, dns, amqp, kafka, ldap, imap, ftp, memcached, stomp, coap, sip]
+      description: Protocol name
 
   responses:
     BadRequest:
@@ -1911,6 +2775,335 @@ components:
         state:
           $ref: "#/components/schemas/StateCondition"
 
+    # ── DNS / AMQP / Kafka / LDAP / IMAP / FTP / Memcached / STOMP / CoAP / SIP ─
+    DNSMock:
+      type: object
+      required: [name, type]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: DNS name to match (supports * wildcards)
+        type:
+          type: string
+          enum: [A, AAAA, CNAME, MX, TXT, PTR, SRV, NS]
+        records:
+          type: array
+          items:
+            type: string
+          description: Record values; MX uses "<priority> <host>", SRV uses "<priority> <weight> <port> <target>"
+        ttl:
+          type: integer
+          minimum: 0
+        delay:
+          $ref: "#/components/schemas/Duration"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    AMQPResponse:
+      type: object
+      required: [body]
+      properties:
+        exchange:
+          type: string
+        routing_key:
+          type: string
+        body:
+          type: string
+
+    AMQPMock:
+      type: object
+      properties:
+        id:
+          type: string
+        exchange:
+          type: string
+        routing_key:
+          type: string
+          description: Routing key filter (exact, wildcard, or re: regex)
+        response:
+          $ref: "#/components/schemas/AMQPResponse"
+        delay:
+          $ref: "#/components/schemas/Duration"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    ReceivedAMQPMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        exchange:
+          type: string
+        routing_key:
+          type: string
+        body:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    KafkaRecord:
+      type: object
+      required: [value]
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+
+    KafkaMock:
+      type: object
+      required: [topic]
+      properties:
+        id:
+          type: string
+        topic:
+          type: string
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/KafkaRecord"
+        delay:
+          $ref: "#/components/schemas/Duration"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    ProducedKafkaMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        topic:
+          type: string
+        partition:
+          type: integer
+        key:
+          type: string
+        value:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    LDAPMock:
+      type: object
+      required: [base_dn, attributes]
+      properties:
+        id:
+          type: string
+        base_dn:
+          type: string
+        filter:
+          type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        delay:
+          $ref: "#/components/schemas/Duration"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    IMAPMessage:
+      type: object
+      required: [seq_num, from, to, subject, body]
+      properties:
+        seq_num:
+          type: integer
+        uid:
+          type: integer
+          minimum: 0
+        from:
+          type: string
+        to:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+        flags:
+          type: array
+          items:
+            type: string
+        date:
+          type: string
+
+    IMAPMailbox:
+      type: object
+      required: [name, messages]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/IMAPMessage"
+
+    FTPFile:
+      type: object
+      required: [path, content]
+      properties:
+        id:
+          type: string
+        path:
+          type: string
+        content:
+          type: string
+        permissions:
+          type: string
+        size:
+          type: integer
+
+    MemcachedResponse:
+      type: object
+      properties:
+        value:
+          type: string
+        flags:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+
+    MemcachedMock:
+      type: object
+      required: [command, response]
+      properties:
+        id:
+          type: string
+        command:
+          type: string
+        key:
+          type: string
+          description: Key filter (exact, wildcard, or re: regex)
+        response:
+          $ref: "#/components/schemas/MemcachedResponse"
+        delay:
+          $ref: "#/components/schemas/Duration"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    STOMPResponse:
+      type: object
+      required: [body]
+      properties:
+        destination:
+          type: string
+        body:
+          type: string
+        content_type:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+
+    STOMPMock:
+      type: object
+      required: [destination]
+      properties:
+        id:
+          type: string
+        destination:
+          type: string
+          description: Destination filter (exact, wildcard, or re: regex)
+        response:
+          $ref: "#/components/schemas/STOMPResponse"
+        delay:
+          $ref: "#/components/schemas/Duration"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    ReceivedSTOMPMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        destination:
+          type: string
+        body:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    CoAPResponse:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+        payload:
+          type: string
+        content_format:
+          type: integer
+
+    CoAPMock:
+      type: object
+      required: [method, path, response]
+      properties:
+        id:
+          type: string
+        method:
+          type: string
+          enum: [GET, POST, PUT, DELETE]
+        path:
+          type: string
+          description: Path filter (exact, wildcard, or re: regex)
+        response:
+          $ref: "#/components/schemas/CoAPResponse"
+        delay:
+          $ref: "#/components/schemas/Duration"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    SIPResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: integer
+        reason:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
+
+    SIPMock:
+      type: object
+      required: [method, response]
+      properties:
+        id:
+          type: string
+        method:
+          type: string
+        uri:
+          type: string
+          description: URI filter (exact, wildcard, or re: regex)
+        response:
+          $ref: "#/components/schemas/SIPResponse"
+        delay:
+          $ref: "#/components/schemas/Duration"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
     # ── Scenarios ─────────────────────────────────────────────────────────────
     MockPatch:
       type: object
@@ -1934,7 +3127,7 @@ components:
 
     Scenario:
       type: object
-      required: [name, patches]
+      required: [name]
       properties:
         id:
           type: string
@@ -1946,29 +3139,307 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MockPatch"
+        faults:
+          $ref: "#/components/schemas/ProtocolFaults"
 
     # ── Fault Injection ───────────────────────────────────────────────────────
-    GlobalFault:
+    DNSFault:
       type: object
       properties:
-        enabled:
-          type: boolean
-        status_override:
-          type: integer
-          description: HTTP status code to return instead of the mock's configured status
         delay:
           $ref: "#/components/schemas/Duration"
-        body:
+        rcode:
           type: string
-          description: Response body to return when fault is triggered
+          enum: [NXDOMAIN, SERVFAIL, REFUSED, NOTIMP, FORMERR]
         error_rate:
           type: number
           format: float
           minimum: 0
           maximum: 1
-          description: Probability (0.0–1.0) that any given request triggers the fault (0 = always)
 
-# ── SNMP ──────────────────────────────────────────────────────────────────
+    GRPCFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        code:
+          type: string
+          enum: [UNAVAILABLE, NOT_FOUND, DEADLINE_EXCEEDED, PERMISSION_DENIED, RESOURCE_EXHAUSTED, INTERNAL]
+        message:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    HTTPFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        status:
+          type: integer
+        body:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    WebSocketFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        close_code:
+          type: integer
+        message:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    TCPFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        response:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    RedisFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        error:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    MQTTFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    SMTPFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        code:
+          type: integer
+        message:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    SNMPFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        message:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    AMQPFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    KafkaFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        error_code:
+          type: integer
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    LDAPFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        result_code:
+          type: integer
+        message:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    IMAPFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        response:
+          type: string
+          enum: [NO, BAD, BYE]
+        message:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    FTPFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        code:
+          type: integer
+        message:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    MemcachedFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        error_type:
+          type: string
+          enum: [SERVER_ERROR, CLIENT_ERROR]
+        message:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    STOMPFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        message:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    CoAPFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        code:
+          type: string
+          enum: ["4.01", "4.03", "4.04", "5.00", "5.03"]
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    SIPFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        status:
+          type: integer
+        reason:
+          type: string
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    ProtocolFaults:
+      type: object
+      description: Active direct or scenario fault configs by protocol
+      properties:
+        http:
+          $ref: "#/components/schemas/HTTPFault"
+        graphql:
+          $ref: "#/components/schemas/HTTPFault"
+        websocket:
+          $ref: "#/components/schemas/WebSocketFault"
+        grpc:
+          $ref: "#/components/schemas/GRPCFault"
+        tcp:
+          $ref: "#/components/schemas/TCPFault"
+        redis:
+          $ref: "#/components/schemas/RedisFault"
+        mqtt:
+          $ref: "#/components/schemas/MQTTFault"
+        smtp:
+          $ref: "#/components/schemas/SMTPFault"
+        snmp:
+          $ref: "#/components/schemas/SNMPFault"
+        dns:
+          $ref: "#/components/schemas/DNSFault"
+        amqp:
+          $ref: "#/components/schemas/AMQPFault"
+        kafka:
+          $ref: "#/components/schemas/KafkaFault"
+        ldap:
+          $ref: "#/components/schemas/LDAPFault"
+        imap:
+          $ref: "#/components/schemas/IMAPFault"
+        ftp:
+          $ref: "#/components/schemas/FTPFault"
+        memcached:
+          $ref: "#/components/schemas/MemcachedFault"
+        stomp:
+          $ref: "#/components/schemas/STOMPFault"
+        coap:
+          $ref: "#/components/schemas/CoAPFault"
+        sip:
+          $ref: "#/components/schemas/SIPFault"
+
+    # ── SNMP ──────────────────────────────────────────────────────────────────
     SNMPMock:
       type: object
       required: [id, oid, type, value]

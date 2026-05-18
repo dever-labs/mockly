@@ -77,7 +77,7 @@ func defaultMocks() []config.SNMPMock {
 func TestSNMPServer_GET_String(t *testing.T) {
 	port := freeUDPPort()
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 	stop := startSNMP(t, srv)
 	defer stop()
 
@@ -113,7 +113,7 @@ func TestSNMPServer_GET_String(t *testing.T) {
 func TestSNMPServer_GET_Integer(t *testing.T) {
 	port := freeUDPPort()
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 	stop := startSNMP(t, srv)
 	defer stop()
 
@@ -139,7 +139,7 @@ func TestSNMPServer_GET_Integer(t *testing.T) {
 func TestSNMPServer_GET_TimeTicks(t *testing.T) {
 	port := freeUDPPort()
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 	stop := startSNMP(t, srv)
 	defer stop()
 
@@ -164,7 +164,7 @@ func TestSNMPServer_GET_TimeTicks(t *testing.T) {
 func TestSNMPServer_GET_Counter32(t *testing.T) {
 	port := freeUDPPort()
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 	stop := startSNMP(t, srv)
 	defer stop()
 
@@ -189,7 +189,7 @@ func TestSNMPServer_GET_Counter32(t *testing.T) {
 func TestSNMPServer_GET_MultipleOIDs(t *testing.T) {
 	port := freeUDPPort()
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 	stop := startSNMP(t, srv)
 	defer stop()
 
@@ -212,7 +212,7 @@ func TestSNMPServer_GET_MultipleOIDs(t *testing.T) {
 func TestSNMPServer_GETNEXT(t *testing.T) {
 	port := freeUDPPort()
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 	stop := startSNMP(t, srv)
 	defer stop()
 
@@ -239,7 +239,7 @@ func TestSNMPServer_GETNEXT(t *testing.T) {
 func TestSNMPServer_GETBULK(t *testing.T) {
 	port := freeUDPPort()
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 	stop := startSNMP(t, srv)
 	defer stop()
 
@@ -265,7 +265,7 @@ func TestSNMPServer_SET_UpdatesValue(t *testing.T) {
 		{ID: "writable", OID: "1.3.6.1.4.1.9999.2.0", Type: "string", Value: "original"},
 	}
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: mocks}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 	stop := startSNMP(t, srv)
 	defer stop()
 
@@ -314,7 +314,7 @@ func TestSNMPServer_SetMocks_DynamicUpdate(t *testing.T) {
 		{ID: "a", OID: "1.3.6.1.4.1.9999.3.0", Type: "integer", Value: 1},
 	}
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: initial}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 	stop := startSNMP(t, srv)
 	defer stop()
 
@@ -355,7 +355,7 @@ func TestSNMPServer_GetMocks_Roundtrip(t *testing.T) {
 	port := freeUDPPort()
 	mocks := defaultMocks()
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: mocks}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 
 	got := srv.GetMocks()
 	if len(got) != len(mocks) {
@@ -366,7 +366,7 @@ func TestSNMPServer_GetMocks_Roundtrip(t *testing.T) {
 func TestSNMPServer_StatusInfo(t *testing.T) {
 	port := freeUDPPort()
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 
 	info := srv.StatusInfo()
 	if info["protocol"] != "snmp" {
@@ -386,7 +386,7 @@ func TestSNMPServer_GetTraps_Roundtrip(t *testing.T) {
 		{ID: "t1", Target: "127.0.0.1:1162", Version: "2c", Community: "public", OID: "1.3.6.1.6.3.1.1.5.1"},
 	}
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Traps: traps}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 
 	got := srv.GetTraps()
 	if len(got) != 1 {
@@ -400,7 +400,7 @@ func TestSNMPServer_GetTraps_Roundtrip(t *testing.T) {
 func TestSNMPServer_SendTrap_NotFound(t *testing.T) {
 	port := freeUDPPort()
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public"}
-	srv := New(cfg, state.New(), logger.New(10))
+	srv := New(cfg, state.New(), nil, logger.New(10))
 
 	err := srv.SendTrap("nonexistent")
 	if err == nil {

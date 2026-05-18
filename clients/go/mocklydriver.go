@@ -152,9 +152,19 @@ func (s *Server) DeactivateScenario(id string) error {
 	return nil
 }
 
-// SetFault configures global fault injection.
+// SetFault configures a direct HTTP fault.
 func (s *Server) SetFault(cfg FaultConfig) error {
-	resp, err := s.post("/api/fault", cfg)
+	payload := map[string]interface{}{}
+	if cfg.Delay != "" {
+		payload["delay"] = cfg.Delay
+	}
+	if cfg.StatusOverride != nil {
+		payload["status"] = *cfg.StatusOverride
+	}
+	if cfg.ErrorRate != 0 {
+		payload["error_rate"] = cfg.ErrorRate
+	}
+	resp, err := s.post("/api/fault/http", payload)
 	if err != nil {
 		return err
 	}
@@ -166,14 +176,14 @@ func (s *Server) SetFault(cfg FaultConfig) error {
 	return nil
 }
 
-// ClearFault removes the active fault configuration.
+// ClearFault removes all direct fault configuration.
 func (s *Server) ClearFault() error {
 	resp, err := s.delete("/api/fault")
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close() //nolint:errcheck
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("ClearFault: unexpected status %d: %s", resp.StatusCode, body)
 	}

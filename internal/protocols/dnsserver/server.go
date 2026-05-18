@@ -12,13 +12,15 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
 type Server struct {
-	cfg   *config.DNSConfig
-	store *state.Store
-	log   *logger.Logger
+	cfg       *config.DNSConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu    sync.RWMutex
 	mocks []config.DNSMock
@@ -27,8 +29,8 @@ type Server struct {
 	tcp *dns.Server
 }
 
-func New(cfg *config.DNSConfig, store *state.Store, log *logger.Logger) *Server {
-	return &Server{cfg: cfg, store: store, log: log, mocks: append([]config.DNSMock(nil), cfg.Mocks...)}
+func New(cfg *config.DNSConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
+	return &Server{cfg: cfg, store: store, scenarios: sc, log: log, mocks: append([]config.DNSMock(nil), cfg.Mocks...)}
 }
 
 func (s *Server) SetMocks(mocks []config.DNSMock) {
@@ -84,6 +86,11 @@ func (s *Server) handleQuery(w dns.ResponseWriter, r *dns.Msg) {
 	resp.SetReply(r)
 	resp.Authoritative = true
 
+	fault := s.scenarios.EffectiveDNSFault()
+	if fault != nil && fault.Delay.Duration > 0 {
+		time.Sleep(fault.Delay.Duration)
+	}
+
 	for _, q := range r.Question {
 		mock, ok := s.matchMock(q.Name, q.Qtype)
 		if !ok {
@@ -94,6 +101,23 @@ func (s *Server) handleQuery(w dns.ResponseWriter, r *dns.Msg) {
 		}
 		resp.Answer = append(resp.Answer, buildRRs(q.Name, q.Qtype, mock)...)
 		s.log.Log(logger.Entry{Protocol: "dns", Method: "QUERY", Path: normalizeDNSName(q.Name), Status: 0, Body: dns.TypeToString[q.Qtype], MatchedID: mock.ID})
+	}
+
+	if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+		rcode := dns.RcodeServerFailure
+		switch strings.ToUpper(fault.Rcode) {
+		case "NXDOMAIN":
+			rcode = dns.RcodeNameError
+		case "REFUSED":
+			rcode = dns.RcodeRefused
+		case "NOTIMP":
+			rcode = dns.RcodeNotImplemented
+		case "FORMERR":
+			rcode = dns.RcodeFormatError
+		}
+		resp.Rcode = rcode
+		_ = w.WriteMsg(resp)
+		return
 	}
 
 	_ = w.WriteMsg(resp)

@@ -13,26 +13,29 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
 // Server is the Redis mock server.
 type Server struct {
-	cfg   *config.RedisConfig
-	store *state.Store
-	log   *logger.Logger
+	cfg       *config.RedisConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu    sync.RWMutex
 	mocks []config.RedisMock
 }
 
 // New creates a Server.
-func New(cfg *config.RedisConfig, store *state.Store, log *logger.Logger) *Server {
+func New(cfg *config.RedisConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
 	return &Server{
-		cfg:   cfg,
-		store: store,
-		log:   log,
-		mocks: append([]config.RedisMock(nil), cfg.Mocks...),
+		cfg:       cfg,
+		store:     store,
+		scenarios: sc,
+		log:       log,
+		mocks:     append([]config.RedisMock(nil), cfg.Mocks...),
 	}
 }
 
@@ -73,9 +76,28 @@ func (s *Server) handleCommand(conn redcon.Conn, cmd redcon.Command) {
 	start := time.Now()
 	command := strings.ToUpper(string(cmd.Args[0]))
 
+	fault := s.scenarios.EffectiveRedisFault()
+	if fault != nil && fault.Delay.Duration > 0 {
+		time.Sleep(fault.Delay.Duration)
+	}
+	writeFault := func() {
+		errMsg := "ERR fault injected"
+		if fault != nil && fault.Error != "" {
+			errMsg = fault.Error
+			if !strings.HasPrefix(strings.ToUpper(errMsg), "ERR ") {
+				errMsg = "ERR " + errMsg
+			}
+		}
+		conn.WriteError(errMsg)
+	}
+
 	// Always-handled built-ins.
 	switch command {
 	case "PING":
+		if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+			writeFault()
+			return
+		}
 		if len(cmd.Args) > 1 {
 			conn.WriteBulk(cmd.Args[1])
 		} else {
@@ -83,13 +105,25 @@ func (s *Server) handleCommand(conn redcon.Conn, cmd redcon.Command) {
 		}
 		return
 	case "QUIT":
+		if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+			writeFault()
+			return
+		}
 		conn.WriteString("OK")
 		_ = conn.Close()
 		return
 	case "SELECT", "FLUSHDB", "FLUSHALL":
+		if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+			writeFault()
+			return
+		}
 		conn.WriteString("OK")
 		return
 	case "COMMAND":
+		if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+			writeFault()
+			return
+		}
 		conn.WriteString("OK")
 		return
 	}
@@ -100,6 +134,17 @@ func (s *Server) handleCommand(conn redcon.Conn, cmd redcon.Command) {
 	}
 
 	mock, matched := s.matchMock(command, key)
+	if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+		writeFault()
+		s.log.Log(logger.Entry{
+			Protocol: "redis",
+			Method:   command,
+			Path:     key,
+			Status:   0,
+			Duration: time.Since(start).Milliseconds(),
+		})
+		return
+	}
 	if !matched {
 		conn.WriteError(fmt.Sprintf("ERR no mock matched for %s %s", command, key))
 		s.log.Log(logger.Entry{

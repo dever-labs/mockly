@@ -16,6 +16,7 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
@@ -80,23 +81,25 @@ func (m *MessageStore) Clear() {
 
 // Server is the MQTT broker mock server.
 type Server struct {
-	cfg      *config.MQTTConfig
-	store    *state.Store
-	log      *logger.Logger
-	mocks    []config.MQTTMock
-	messages *MessageStore
-	broker   *mqtt.Server
-	mu       sync.RWMutex
+	cfg       *config.MQTTConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
+	mocks     []config.MQTTMock
+	messages  *MessageStore
+	broker    *mqtt.Server
+	mu        sync.RWMutex
 }
 
 // New creates a Server.
-func New(cfg *config.MQTTConfig, store *state.Store, log *logger.Logger) *Server {
+func New(cfg *config.MQTTConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
 	return &Server{
-		cfg:      cfg,
-		store:    store,
-		log:      log,
-		mocks:    append([]config.MQTTMock(nil), cfg.Mocks...),
-		messages: newMessageStore(1000),
+		cfg:       cfg,
+		store:     store,
+		scenarios: sc,
+		log:       log,
+		mocks:     append([]config.MQTTMock(nil), cfg.Mocks...),
+		messages:  newMessageStore(1000),
 	}
 }
 
@@ -229,6 +232,11 @@ func (h *mockHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet
 	topic := pk.TopicName
 	payload := string(pk.Payload)
 
+	fault := h.srv.scenarios.EffectiveMQTTFault()
+	if fault != nil && fault.Delay.Duration > 0 {
+		time.Sleep(fault.Delay.Duration)
+	}
+
 	// Capture the message.
 	h.srv.messages.Add(ReceivedMessage{
 		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -249,6 +257,9 @@ func (h *mockHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet
 
 	mock, matched := h.srv.matchMock(topic)
 	if !matched || mock.Response == nil {
+		return pk, nil
+	}
+	if fault != nil && h.srv.scenarios.RollFault(fault.ErrorRate) {
 		return pk, nil
 	}
 

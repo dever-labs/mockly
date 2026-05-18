@@ -16,7 +16,7 @@ func TestMatchAMQPRoutingKey(t *testing.T) {
 }
 
 func TestStatusInfo(t *testing.T) {
-	srv := New(&config.AMQPConfig{Enabled: true, Port: 5672, Mocks: []config.AMQPMock{{ID: "1"}}}, nil, nil)
+	srv := New(&config.AMQPConfig{Enabled: true, Port: 5672, Mocks: []config.AMQPMock{{ID: "1"}}}, nil, nil, nil)
 	info := srv.StatusInfo()
 	if info["protocol"] != "amqp" || info["port"] != 5672 {
 		t.Fatalf("unexpected status info: %#v", info)

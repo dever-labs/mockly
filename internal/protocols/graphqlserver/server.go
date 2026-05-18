@@ -121,9 +121,9 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Global fault delay.
-	fault := s.scenarios.GetFault()
-	if fault != nil && fault.Enabled && fault.Delay.Duration > 0 {
+	// Protocol fault delay.
+	fault := s.scenarios.EffectiveGraphQLFault()
+	if fault != nil && fault.Delay.Duration > 0 {
 		time.Sleep(fault.Delay.Duration)
 	}
 
@@ -173,15 +173,19 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Global fault status override.
-	if fault != nil && fault.Enabled && fault.StatusOverride != 0 && s.scenarios.RollFault(fault.ErrorRate) {
-		httpStatus = fault.StatusOverride
-		if fault.Body != "" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(httpStatus)
-			_, _ = fmt.Fprint(w, fault.Body)
-			return
+	if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+		st := fault.Status
+		if st == 0 {
+			st = http.StatusServiceUnavailable
 		}
+		body := fault.Body
+		if body == "" {
+			body = `{"error":"fault injected"}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(st)
+		_, _ = fmt.Fprint(w, body)
+		return
 	}
 
 	if delay > 0 {

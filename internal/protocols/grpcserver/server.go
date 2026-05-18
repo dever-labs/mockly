@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
@@ -51,25 +53,27 @@ func (rawCodec) Unmarshal(data []byte, v interface{}) error {
 
 // Server is the gRPC mock server.
 type Server struct {
-	cfg    *config.GRPCConfig
-	store  *state.Store
-	log    *logger.Logger
-	mu     sync.RWMutex
-	mocks  []config.GRPCMock
-	server *grpc.Server
+	cfg       *config.GRPCConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
+	mu        sync.RWMutex
+	mocks     []config.GRPCMock
+	server    *grpc.Server
 }
 
 // New creates a Server.
-func New(cfg *config.GRPCConfig, store *state.Store, log *logger.Logger) *Server {
+func New(cfg *config.GRPCConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
 	mocks := []config.GRPCMock{}
 	for _, svc := range cfg.Services {
 		mocks = append(mocks, svc.Mocks...)
 	}
 	return &Server{
-		cfg:   cfg,
-		store: store,
-		log:   log,
-		mocks: mocks,
+		cfg:       cfg,
+		store:     store,
+		scenarios: sc,
+		log:       log,
+		mocks:     mocks,
 	}
 }
 
@@ -116,6 +120,11 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) unknownServiceHandler(_ interface{}, stream grpc.ServerStream) error {
 	start := time.Now()
 
+	fault := s.scenarios.EffectiveGRPCFault()
+	if fault != nil && fault.Delay.Duration > 0 {
+		time.Sleep(fault.Delay.Duration)
+	}
+
 	method, _ := grpc.Method(stream.Context())
 	shortMethod := methodShortName(method)
 
@@ -123,6 +132,32 @@ func (s *Server) unknownServiceHandler(_ interface{}, stream grpc.ServerStream) 
 
 	var incoming []byte
 	_ = stream.RecvMsg(&incoming)
+
+	if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+		msg := fault.Message
+		matchedID := ""
+		if ok {
+			matchedID = mock.ID
+		}
+		if msg == "" {
+			msg = "fault injected"
+		}
+		code := codes.Unavailable
+		switch strings.ToUpper(fault.Code) {
+		case "NOT_FOUND":
+			code = codes.NotFound
+		case "DEADLINE_EXCEEDED":
+			code = codes.DeadlineExceeded
+		case "PERMISSION_DENIED":
+			code = codes.PermissionDenied
+		case "RESOURCE_EXHAUSTED":
+			code = codes.ResourceExhausted
+		case "INTERNAL":
+			code = codes.Internal
+		}
+		s.logEntry(method, shortMethod, int(code), start, matchedID)
+		return status.Error(code, msg)
+	}
 
 	if ok {
 		if mock.Delay.Duration > 0 {
@@ -204,4 +239,3 @@ func (s *Server) StatusInfo() map[string]interface{} {
 		"mocks":    n,
 	}
 }
-

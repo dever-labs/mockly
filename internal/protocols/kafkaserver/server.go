@@ -16,6 +16,7 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
@@ -54,9 +55,10 @@ func (m *MessageStore) Clear() {
 }
 
 type Server struct {
-	cfg   *config.KafkaConfig
-	store *state.Store
-	log   *logger.Logger
+	cfg       *config.KafkaConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu       sync.RWMutex
 	mocks    []config.KafkaMock
@@ -64,8 +66,8 @@ type Server struct {
 	listener net.Listener
 }
 
-func New(cfg *config.KafkaConfig, store *state.Store, log *logger.Logger) *Server {
-	return &Server{cfg: cfg, store: store, log: log, mocks: append([]config.KafkaMock(nil), cfg.Mocks...), messages: newMessageStore(1000)}
+func New(cfg *config.KafkaConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
+	return &Server{cfg: cfg, store: store, scenarios: sc, log: log, mocks: append([]config.KafkaMock(nil), cfg.Mocks...), messages: newMessageStore(1000)}
 }
 
 func (s *Server) SetMocks(mocks []config.KafkaMock) {
@@ -130,6 +132,11 @@ func (s *Server) handleConn(conn net.Conn) {
 }
 
 func (s *Server) handleRequest(buf []byte) ([]byte, error) {
+	fault := s.scenarios.EffectiveKafkaFault()
+	if fault != nil && fault.Delay.Duration > 0 {
+		time.Sleep(fault.Delay.Duration)
+	}
+
 	r := bytes.NewReader(buf)
 	var apiKey, apiVersion int16
 	var correlationID int32
@@ -146,9 +153,9 @@ func (s *Server) handleRequest(buf []byte) ([]byte, error) {
 	case 3:
 		body = s.buildMetadataResponse(r)
 	case 0:
-		body = s.handleProduce(r)
+		body = s.handleProduce(r, fault)
 	case 1:
-		body = s.handleFetch(r)
+		body = s.handleFetch(r, fault)
 	default:
 		body = []byte{}
 	}
@@ -196,7 +203,7 @@ func (s *Server) buildMetadataResponse(r *bytes.Reader) []byte {
 	return out.Bytes()
 }
 
-func (s *Server) handleProduce(r *bytes.Reader) []byte {
+func (s *Server) handleProduce(r *bytes.Reader, fault *config.KafkaFault) []byte {
 	var requiredAcks int16
 	var timeout int32
 	_ = binary.Read(r, binary.BigEndian, &requiredAcks)
@@ -236,13 +243,20 @@ func (s *Server) handleProduce(r *bytes.Reader) []byte {
 		writeKafkaString(out, resp.topic)
 		_ = binary.Write(out, binary.BigEndian, int32(1))
 		_ = binary.Write(out, binary.BigEndian, resp.partition)
-		_ = binary.Write(out, binary.BigEndian, int16(0))
+		errorCode := int16(0)
+		if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+			errorCode = fault.ErrorCode
+			if errorCode == 0 {
+				errorCode = 5
+			}
+		}
+		_ = binary.Write(out, binary.BigEndian, errorCode)
 		_ = binary.Write(out, binary.BigEndian, int64(0))
 	}
 	return out.Bytes()
 }
 
-func (s *Server) handleFetch(r *bytes.Reader) []byte {
+func (s *Server) handleFetch(r *bytes.Reader, fault *config.KafkaFault) []byte {
 	var replicaID, maxWait, minBytes int32
 	_ = binary.Read(r, binary.BigEndian, &replicaID)
 	_ = binary.Read(r, binary.BigEndian, &maxWait)
@@ -271,9 +285,17 @@ func (s *Server) handleFetch(r *bytes.Reader) []byte {
 		writeKafkaString(out, topic)
 		_ = binary.Write(out, binary.BigEndian, int32(1))
 		_ = binary.Write(out, binary.BigEndian, int32(0))
-		_ = binary.Write(out, binary.BigEndian, int16(0))
-		_ = binary.Write(out, binary.BigEndian, int64(0))
+		errorCode := int16(0)
 		messageSet := s.buildMessageSet(topic)
+		if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+			errorCode = fault.ErrorCode
+			if errorCode == 0 {
+				errorCode = 5
+			}
+			messageSet = nil
+		}
+		_ = binary.Write(out, binary.BigEndian, errorCode)
+		_ = binary.Write(out, binary.BigEndian, int64(0))
 		_ = binary.Write(out, binary.BigEndian, int32(len(messageSet)))
 		out.Write(messageSet)
 	}

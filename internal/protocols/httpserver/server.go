@@ -135,9 +135,9 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		query[k] = v[0]
 	}
 
-	// Global fault: inject latency before processing.
-	fault := s.scenarios.GetFault()
-	if fault != nil && fault.Enabled && fault.Delay.Duration > 0 {
+	// Protocol fault: inject latency before processing.
+	fault := s.scenarios.EffectiveHTTPFault()
+	if fault != nil && fault.Delay.Duration > 0 {
 		time.Sleep(fault.Delay.Duration)
 	}
 
@@ -264,7 +264,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			if mf.Delay.Duration > 0 {
 				delay += mf.Delay.Duration
 			}
-			if mf.StatusOverride != 0 && s.scenarios.RollFault(mf.ErrorRate) {
+			if mf.StatusOverride != 0 && s.scenarios.ShouldFault(mf.ErrorRate) {
 				status = mf.StatusOverride
 				if mf.Body != "" {
 					respBody = mf.Body
@@ -273,12 +273,17 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Global fault: probabilistically override status/body (chaos testing).
-	if fault != nil && fault.Enabled && fault.StatusOverride != 0 && s.scenarios.RollFault(fault.ErrorRate) {
-		status = fault.StatusOverride
-		if fault.Body != "" {
-			respBody = fault.Body
+	// Protocol fault: probabilistically override status/body.
+	if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+		status = fault.Status
+		if status == 0 {
+			status = http.StatusServiceUnavailable
 		}
+		body := fault.Body
+		if body == "" {
+			body = `{"error":"fault injected"}`
+		}
+		respBody = body
 	}
 
 	if delay > 0 {
@@ -323,4 +328,3 @@ func (s *Server) MarshalMocks() ([]byte, error) {
 	defer s.mu.RUnlock()
 	return json.Marshal(s.mocks)
 }
-

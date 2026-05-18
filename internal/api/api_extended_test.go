@@ -43,7 +43,7 @@ func TestAPI_Fault_Get(t *testing.T) {
 	}
 
 	// Set a fault and retrieve it.
-	sc.SetFault(&config.GlobalFault{Enabled: true, StatusOverride: 503})
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{Status: 503}})
 	resp2, err := http.Get(base + "/api/fault")
 	if err != nil {
 		t.Fatalf("GET /api/fault after set: %v", err)
@@ -353,8 +353,8 @@ func TestAPI_WebSocket_CRUD(t *testing.T) {
 	base, _, _, _, _ := startAPI(t)
 
 	mock := map[string]interface{}{
-		"id":      "ws-mock",
-		"trigger": map[string]interface{}{"type": "message", "value": "ping"},
+		"id":       "ws-mock",
+		"trigger":  map[string]interface{}{"type": "message", "value": "ping"},
 		"response": map[string]interface{}{"body": "pong"},
 	}
 	body, _ := json.Marshal(mock)
@@ -389,9 +389,9 @@ func TestAPI_GRPC_CRUD(t *testing.T) {
 	base, _, _, _, _ := startAPI(t)
 
 	mock := map[string]interface{}{
-		"id":      "grpc-mock",
-		"service": "UserService",
-		"method":  "GetUser",
+		"id":       "grpc-mock",
+		"service":  "UserService",
+		"method":   "GetUser",
 		"response": map[string]interface{}{"id": "1"},
 	}
 	body, _ := json.Marshal(mock)
@@ -462,9 +462,9 @@ func TestAPI_Redis_CRUD(t *testing.T) {
 	base, _, _, _, _ := startAPI(t)
 
 	mock := map[string]interface{}{
-		"id":      "redis-mock",
-		"command": "GET",
-		"key":     "mykey",
+		"id":       "redis-mock",
+		"command":  "GET",
+		"key":      "mykey",
 		"response": map[string]interface{}{"type": "string", "value": "myvalue"},
 	}
 	body, _ := json.Marshal(mock)
@@ -558,9 +558,9 @@ func TestAPI_MQTT_Mocks_CRUD(t *testing.T) {
 	base, _, _, _, _ := startAPI(t)
 
 	mock := map[string]interface{}{
-		"id":              "mqtt-mock",
-		"topic":           "sensors/#",
-		"response_topic":  "sensors/response",
+		"id":               "mqtt-mock",
+		"topic":            "sensors/#",
+		"response_topic":   "sensors/response",
 		"response_payload": "OK",
 	}
 	body, _ := json.Marshal(mock)
@@ -643,7 +643,7 @@ func TestAPI_Scenario_InvalidJSON(t *testing.T) {
 func TestAPI_Fault_InvalidJSON(t *testing.T) {
 	base, _, _, _, _ := startAPI(t)
 
-	resp, err := http.Post(base+"/api/fault", "application/json", bytes.NewBufferString("{bad}"))
+	resp, err := http.Post(base+"/api/fault/http", "application/json", bytes.NewBufferString("{bad}"))
 	if err != nil {
 		t.Fatalf("POST invalid fault JSON: %v", err)
 	}
@@ -652,4 +652,3 @@ func TestAPI_Fault_InvalidJSON(t *testing.T) {
 		t.Errorf("invalid JSON fault: want 400, got %d", resp.StatusCode)
 	}
 }
-

@@ -17,7 +17,7 @@ func TestFetchMessages(t *testing.T) {
 }
 
 func TestStatusInfo(t *testing.T) {
-	srv := New(&config.IMAPConfig{Enabled: true, Port: 1143, Mailboxes: []config.IMAPMailbox{{ID: "1"}}}, nil)
+	srv := New(&config.IMAPConfig{Enabled: true, Port: 1143, Mailboxes: []config.IMAPMailbox{{ID: "1"}}}, nil, nil)
 	info := srv.StatusInfo()
 	if info["protocol"] != "imap" || info["port"] != 1143 {
 		t.Fatalf("unexpected status info: %#v", info)

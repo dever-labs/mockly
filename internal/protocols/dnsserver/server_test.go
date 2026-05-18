@@ -22,7 +22,7 @@ func TestMatchDNSNameWildcard(t *testing.T) {
 }
 
 func TestStatusInfo(t *testing.T) {
-	srv := New(&config.DNSConfig{Enabled: true, Port: 5353, Mocks: []config.DNSMock{{ID: "1"}}}, nil, nil)
+	srv := New(&config.DNSConfig{Enabled: true, Port: 5353, Mocks: []config.DNSMock{{ID: "1"}}}, nil, nil, nil)
 	info := srv.StatusInfo()
 	if info["protocol"] != "dns" || info["port"] != 5353 {
 		t.Fatalf("unexpected status info: %#v", info)

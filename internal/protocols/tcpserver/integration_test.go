@@ -23,7 +23,7 @@ func newTCPServer(mocks []config.TCPMock) (*Server, int) {
 	_ = ln.Close()
 
 	cfg := &config.TCPConfig{Enabled: true, Port: port, Mocks: mocks}
-	return New(cfg, state.New(), logger.New(10)), port
+	return New(cfg, state.New(), nil, logger.New(10)), port
 }
 
 func startTCP(t *testing.T, srv *Server) func() {
@@ -147,29 +147,29 @@ func TestTCPServer_SetMocks_GetMocks(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestTCPServer_SetMocks_ConcurrentAccess(t *testing.T) {
-mocks := []config.TCPMock{{ID: "m1", Match: "PING", Response: "PONG", Close: true}}
-srv, port := newTCPServer(mocks)
-stop := startTCP(t, srv)
-defer stop()
+	mocks := []config.TCPMock{{ID: "m1", Match: "PING", Response: "PONG", Close: true}}
+	srv, port := newTCPServer(mocks)
+	stop := startTCP(t, srv)
+	defer stop()
 
-var wg sync.WaitGroup
-for i := 0; i < 5; i++ {
-wg.Add(2)
-go func() {
-defer wg.Done()
-for j := 0; j < 50; j++ {
-srv.SetMocks([]config.TCPMock{{ID: "m", Match: "PING", Response: "PONG", Close: true}})
-}
-}()
-go func() {
-defer wg.Done()
-for j := 0; j < 20; j++ {
-srv.matchMock([]byte("PING"))
-}
-}()
-}
-wg.Wait()
-_ = port
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				srv.SetMocks([]config.TCPMock{{ID: "m", Match: "PING", Response: "PONG", Close: true}})
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				srv.matchMock([]byte("PING"))
+			}
+		}()
+	}
+	wg.Wait()
+	_ = port
 }
 
 // ---------------------------------------------------------------------------
@@ -177,60 +177,60 @@ _ = port
 // ---------------------------------------------------------------------------
 
 func newTLSTCPServer(t *testing.T, mocks []config.TCPMock) (*Server, int) {
-t.Helper()
-dir := t.TempDir()
-certFile := dir + "/cert.pem"
-keyFile := dir + "/key.pem"
-if err := testutil.WriteSelfSignedCert(certFile, keyFile); err != nil {
-t.Fatalf("generate cert: %v", err)
-}
+	t.Helper()
+	dir := t.TempDir()
+	certFile := dir + "/cert.pem"
+	keyFile := dir + "/key.pem"
+	if err := testutil.WriteSelfSignedCert(certFile, keyFile); err != nil {
+		t.Fatalf("generate cert: %v", err)
+	}
 
-ln, _ := net.Listen("tcp", "127.0.0.1:0")
-port := ln.Addr().(*net.TCPAddr).Port
-_ = ln.Close()
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
 
-cfg := &config.TCPConfig{
-Enabled: true,
-Port:    port,
-TLS:     &config.TLSConfig{Enabled: true, CertFile: certFile, KeyFile: keyFile},
-Mocks:   mocks,
-}
-return New(cfg, state.New(), logger.New(10)), port
+	cfg := &config.TCPConfig{
+		Enabled: true,
+		Port:    port,
+		TLS:     &config.TLSConfig{Enabled: true, CertFile: certFile, KeyFile: keyFile},
+		Mocks:   mocks,
+	}
+	return New(cfg, state.New(), nil, logger.New(10)), port
 }
 
 func tlsRoundTrip(t *testing.T, port int, msg string) string {
-t.Helper()
-conn, err := tls.DialWithDialer(
-&net.Dialer{Timeout: time.Second},
-"tcp",
-fmt.Sprintf("127.0.0.1:%d", port),
-&tls.Config{InsecureSkipVerify: true}, //nolint:gosec
-)
-if err != nil {
-t.Fatalf("tls dial: %v", err)
-}
-defer conn.Close() //nolint:errcheck
+	t.Helper()
+	conn, err := tls.DialWithDialer(
+		&net.Dialer{Timeout: time.Second},
+		"tcp",
+		fmt.Sprintf("127.0.0.1:%d", port),
+		&tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+	)
+	if err != nil {
+		t.Fatalf("tls dial: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
 
-_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
-if _, err := conn.Write([]byte(msg)); err != nil {
-t.Fatalf("write: %v", err)
-}
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	if _, err := conn.Write([]byte(msg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 
-buf := make([]byte, 1024)
-n, _ := conn.Read(buf)
-return string(buf[:n])
+	buf := make([]byte, 1024)
+	n, _ := conn.Read(buf)
+	return string(buf[:n])
 }
 
 func TestTCPServer_TLS(t *testing.T) {
-mocks := []config.TCPMock{
-{ID: "m1", Match: "re:^HELLO", Response: "WORLD", Close: true},
-}
-srv, port := newTLSTCPServer(t, mocks)
-stop := startTCP(t, srv)
-defer stop()
+	mocks := []config.TCPMock{
+		{ID: "m1", Match: "re:^HELLO", Response: "WORLD", Close: true},
+	}
+	srv, port := newTLSTCPServer(t, mocks)
+	stop := startTCP(t, srv)
+	defer stop()
 
-got := tlsRoundTrip(t, port, "HELLO there")
-if !strings.Contains(got, "WORLD") {
-t.Errorf("want 'WORLD' over TLS, got %q", got)
-}
+	got := tlsRoundTrip(t, port, "HELLO there")
+	if !strings.Contains(got, "WORLD") {
+		t.Errorf("want 'WORLD' over TLS, got %q", got)
+	}
 }

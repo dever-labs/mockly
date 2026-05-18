@@ -361,8 +361,8 @@ func TestSetFault(t *testing.T) {
 	if gotMethod != http.MethodPost {
 		t.Errorf("expected POST, got %s", gotMethod)
 	}
-	if gotPath != "/api/fault" {
-		t.Errorf("expected /api/fault, got %s", gotPath)
+	if gotPath != "/api/fault/http" {
+		t.Errorf("expected /api/fault/http, got %s", gotPath)
 	}
 }
 

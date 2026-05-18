@@ -157,11 +157,10 @@ func TestHandleGraphQL_FaultStatusOverride(t *testing.T) {
 	srv := newTestServer(mocks)
 
 	// Enable a fault that overrides status to 503 with 100% error rate.
-	srv.scenarios.SetFault(&config.GlobalFault{
-		Enabled:        true,
-		StatusOverride: http.StatusServiceUnavailable,
-		ErrorRate:      1.0,
-	})
+	srv.scenarios.SetDirectFaults(config.ProtocolFaults{GraphQL: &config.HTTPFault{
+		Status:    http.StatusServiceUnavailable,
+		ErrorRate: 1.0,
+	}})
 
 	rr := doRequest(t, srv, map[string]interface{}{
 		"query":         "query GetUser { user { id } }",
@@ -178,7 +177,7 @@ func TestHandleGraphQL_MockWithErrors(t *testing.T) {
 		{
 			ID:            "m1",
 			OperationName: "BrokenQuery",
-			Response: nil,
+			Response:      nil,
 			Errors: []config.GraphQLError{
 				{Message: "something went wrong"},
 			},
@@ -198,5 +197,15 @@ func TestHandleGraphQL_MockWithErrors(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 	if resp["errors"] == nil {
 		t.Error("expected errors field in response")
+	}
+}
+
+func TestHandleGraphQL_FaultCustomStatus(t *testing.T) {
+	mocks := []config.GraphQLMock{{ID: "m1", OperationName: "GetUser", Response: map[string]interface{}{"user": "alice"}}}
+	srv := newTestServer(mocks)
+	srv.scenarios.SetDirectFaults(config.ProtocolFaults{GraphQL: &config.HTTPFault{Status: http.StatusTooManyRequests, ErrorRate: 0}})
+	rr := doRequest(t, srv, map[string]interface{}{"query": "query GetUser { user { id } }", "operationName": "GetUser"})
+	if rr.Code != http.StatusTooManyRequests {
+		t.Errorf("want 429 from fault, got %d", rr.Code)
 	}
 }

@@ -150,50 +150,66 @@ func TestStore_PatchFor_UnknownMock(t *testing.T) {
 	}
 }
 
-func TestStore_Fault_SetGetClear(t *testing.T) {
+func TestStore_DirectFaults_SetClear(t *testing.T) {
 	s := scenarios.New(nil)
 
-	if s.GetFault() != nil {
-		t.Fatal("expected nil fault initially")
+	if got := s.DirectFaults(); got.HTTP != nil {
+		t.Fatal("expected nil faults initially")
 	}
 
-	f := &config.GlobalFault{Enabled: true, StatusOverride: 503}
-	s.SetFault(f)
+	s.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{Status: 503}})
 
-	got := s.GetFault()
-	if got == nil || got.StatusOverride != 503 {
-		t.Fatalf("unexpected fault: %v", got)
+	got := s.DirectFaults()
+	if got.HTTP == nil || got.HTTP.Status != 503 {
+		t.Fatalf("unexpected faults: %+v", got)
 	}
 
-	// Returned value should be a copy, not a pointer to internal state.
-	got.StatusOverride = 999
-	if s.GetFault().StatusOverride != 503 {
-		t.Fatal("GetFault should return a copy")
+	got.HTTP = nil
+	if s.DirectFaults().HTTP == nil {
+		t.Fatal("fault copy should be preserved")
 	}
 
-	s.ClearFault()
-	if s.GetFault() != nil {
-		t.Fatal("expected nil after ClearFault")
+	s.ClearDirectFaults()
+	if got := s.DirectFaults(); got.HTTP != nil {
+		t.Fatal("expected nil after ClearDirectFaults")
 	}
 }
 
-func TestStore_RollFault(t *testing.T) {
+func TestStore_EffectiveHTTPFault_PrioritizesScenario(t *testing.T) {
+	s := scenarios.New([]config.Scenario{{
+		ID:     "b",
+		Faults: &config.ProtocolFaults{HTTP: &config.HTTPFault{Status: 502}},
+	}, {
+		ID:     "a",
+		Faults: &config.ProtocolFaults{HTTP: &config.HTTPFault{Status: 501}},
+	}})
+	s.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{Status: 503}})
+	s.Activate("a")
+	s.Activate("b")
+
+	got := s.EffectiveHTTPFault()
+	if got == nil || got.Status != 502 {
+		t.Fatalf("unexpected effective fault: %+v", got)
+	}
+}
+
+func TestStore_FaultRoll(t *testing.T) {
 	s := scenarios.New(nil)
 
-	if !s.RollFault(0) {
-		t.Error("rate=0 should always apply fault")
+	if !s.ShouldFault(0) {
+		t.Error("rate=0 should always apply")
 	}
-	if !s.RollFault(1.0) {
-		t.Error("rate=1.0 should always apply fault")
+	if !s.ShouldFault(1.0) {
+		t.Error("rate=1.0 should always apply")
 	}
-	if !s.RollFault(-1) {
-		t.Error("rate<0 should always apply fault")
+	if !s.ShouldFault(-1) {
+		t.Error("rate<0 should always apply")
 	}
 
 	// 0.5 rate: probabilistic — run many trials and verify it's not always the same.
 	hits := 0
 	for i := 0; i < 200; i++ {
-		if s.RollFault(0.5) {
+		if s.ShouldFault(0.5) {
 			hits++
 		}
 	}

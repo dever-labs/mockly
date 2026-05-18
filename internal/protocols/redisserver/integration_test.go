@@ -22,7 +22,7 @@ func newRedisServer(mocks []config.RedisMock) (*Server, int) {
 	_ = ln.Close()
 
 	cfg := &config.RedisConfig{Enabled: true, Port: port, Mocks: mocks}
-	return New(cfg, state.New(), logger.New(10)), port
+	return New(cfg, state.New(), nil, logger.New(10)), port
 }
 
 func startRedis(t *testing.T, srv *Server) func() {
@@ -201,25 +201,25 @@ func TestRedisServer_SetMocks_GetMocks(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRedisServer_SetMocks_ConcurrentAccess(t *testing.T) {
-srv, port := newRedisServer(nil)
-stop := startRedis(t, srv)
-defer stop()
+	srv, port := newRedisServer(nil)
+	stop := startRedis(t, srv)
+	defer stop()
 
-var wg sync.WaitGroup
-for i := 0; i < 5; i++ {
-wg.Add(2)
-go func() {
-defer wg.Done()
-for j := 0; j < 50; j++ {
-srv.SetMocks([]config.RedisMock{{ID: "m", Command: "GET", Key: "k"}})
-}
-}()
-go func() {
-defer wg.Done()
-for j := 0; j < 50; j++ {
-respRoundTrip(t, port, respCmd("PING"))
-}
-}()
-}
-wg.Wait()
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				srv.SetMocks([]config.RedisMock{{ID: "m", Command: "GET", Key: "k"}})
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				respRoundTrip(t, port, respCmd("PING"))
+			}
+		}()
+	}
+	wg.Wait()
 }

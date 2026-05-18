@@ -4,6 +4,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -379,10 +380,12 @@ func (s *Server) buildRouter() http.Handler {
 		r.Delete("/api/scenarios/{id}/activate", s.deactivateScenario)
 		r.Post("/api/scenarios/{id}/deactivate", s.deactivateScenario)
 
-		// Global fault injection
-		r.Get("/api/fault", s.getFault)
-		r.Post("/api/fault", s.setFault)
-		r.Delete("/api/fault", s.clearFault)
+		// Direct fault injection
+		r.Get("/api/fault", s.getAllFaults)
+		r.Delete("/api/fault", s.clearAllFaults)
+		r.Get("/api/fault/{protocol}", s.getProtocolFault)
+		r.Post("/api/fault/{protocol}", s.setProtocolFault)
+		r.Delete("/api/fault/{protocol}", s.clearProtocolFault)
 
 		r.Get("/api/logs", s.getLogs)
 		r.Delete("/api/logs", s.clearLogs)
@@ -800,32 +803,46 @@ func (s *Server) deactivateScenario(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Global fault injection
+// Direct fault injection
 // ---------------------------------------------------------------------------
 
-func (s *Server) getFault(w http.ResponseWriter, r *http.Request) {
-	fault := s.scenarios.GetFault()
+func (s *Server) getAllFaults(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.scenarios.DirectFaults())
+}
+
+func (s *Server) clearAllFaults(w http.ResponseWriter, r *http.Request) {
+	s.scenarios.ClearDirectFaults()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) getProtocolFault(w http.ResponseWriter, r *http.Request) {
+	protocol := chi.URLParam(r, "protocol")
+	fault := s.scenarios.GetDirectProtocolFault(protocol)
 	if fault == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"enabled": false})
+		writeJSON(w, http.StatusOK, nil)
 		return
 	}
 	writeJSON(w, http.StatusOK, fault)
 }
 
-func (s *Server) setFault(w http.ResponseWriter, r *http.Request) {
-	var f config.GlobalFault
-	if err := decodeBody(r, &f); err != nil {
+func (s *Server) setProtocolFault(w http.ResponseWriter, r *http.Request) {
+	protocol := chi.URLParam(r, "protocol")
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read body")
+		return
+	}
+	if err := s.scenarios.SetDirectProtocolFaultJSON(protocol, body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	f.Enabled = true
-	s.scenarios.SetFault(&f)
-	writeJSON(w, http.StatusOK, f)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Server) clearFault(w http.ResponseWriter, r *http.Request) {
-	s.scenarios.ClearFault()
-	writeJSON(w, http.StatusOK, map[string]string{"status": "fault cleared"})
+func (s *Server) clearProtocolFault(w http.ResponseWriter, r *http.Request) {
+	protocol := chi.URLParam(r, "protocol")
+	s.scenarios.ClearDirectProtocolFault(protocol)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---------------------------------------------------------------------------
@@ -1306,7 +1323,7 @@ func (s *Server) streamLogs(w http.ResponseWriter, r *http.Request) {
 func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 	s.store.Reset()
 	s.log.Clear()
-	s.scenarios.ClearFault()
+	s.scenarios.ClearDirectFaults()
 	engine.ResetSequences()
 	for _, id := range s.scenarios.ActiveIDs() {
 		s.scenarios.Deactivate(id)

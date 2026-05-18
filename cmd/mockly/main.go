@@ -142,14 +142,14 @@ func runServers(cfg *config.Config) error {
 	}
 
 	if cfg.Protocols.WebSocket != nil && cfg.Protocols.WebSocket.Enabled {
-		srv := wsserver.New(cfg.Protocols.WebSocket, store, log)
+		srv := wsserver.New(cfg.Protocols.WebSocket, store, sc, log)
 		wsSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ WebSocket server  on :%d\n", cfg.Protocols.WebSocket.Port)
 	}
 
 	if cfg.Protocols.GRPC != nil && cfg.Protocols.GRPC.Enabled {
-		srv := grpcserver.New(cfg.Protocols.GRPC, store, log)
+		srv := grpcserver.New(cfg.Protocols.GRPC, store, sc, log)
 		grpcSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ gRPC server       on :%d\n", cfg.Protocols.GRPC.Port)
@@ -163,105 +163,105 @@ func runServers(cfg *config.Config) error {
 	}
 
 	if cfg.Protocols.TCP != nil && cfg.Protocols.TCP.Enabled {
-		srv := tcpserver.New(cfg.Protocols.TCP, store, log)
+		srv := tcpserver.New(cfg.Protocols.TCP, store, sc, log)
 		tcpSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ TCP server        on :%d\n", cfg.Protocols.TCP.Port)
 	}
 
 	if cfg.Protocols.Redis != nil && cfg.Protocols.Redis.Enabled {
-		srv := redisserver.New(cfg.Protocols.Redis, store, log)
+		srv := redisserver.New(cfg.Protocols.Redis, store, sc, log)
 		redisSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ Redis server      on :%d\n", cfg.Protocols.Redis.Port)
 	}
 
 	if cfg.Protocols.SMTP != nil && cfg.Protocols.SMTP.Enabled {
-		srv := smtpserver.New(cfg.Protocols.SMTP, log)
+		srv := smtpserver.New(cfg.Protocols.SMTP, sc, log)
 		smtpSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ SMTP server       on :%d (%s)\n", cfg.Protocols.SMTP.Port, cfg.Protocols.SMTP.Domain)
 	}
 
 	if cfg.Protocols.MQTT != nil && cfg.Protocols.MQTT.Enabled {
-		srv := mqttserver.New(cfg.Protocols.MQTT, store, log)
+		srv := mqttserver.New(cfg.Protocols.MQTT, store, sc, log)
 		mqttSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ MQTT broker       on :%d\n", cfg.Protocols.MQTT.Port)
 	}
 
 	if cfg.Protocols.SNMP != nil && cfg.Protocols.SNMP.Enabled {
-		srv := snmpserver.New(cfg.Protocols.SNMP, store, log)
+		srv := snmpserver.New(cfg.Protocols.SNMP, store, sc, log)
 		snmpSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ SNMP agent        on :%d\n", cfg.Protocols.SNMP.Port)
 	}
 
 	if cfg.Protocols.DNS != nil && cfg.Protocols.DNS.Enabled {
-		srv := dnsserver.New(cfg.Protocols.DNS, store, log)
+		srv := dnsserver.New(cfg.Protocols.DNS, store, sc, log)
 		dnsSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ DNS server        on :%d\n", cfg.Protocols.DNS.Port)
 	}
 
 	if cfg.Protocols.AMQP != nil && cfg.Protocols.AMQP.Enabled {
-		srv := amqpserver.New(cfg.Protocols.AMQP, store, log)
+		srv := amqpserver.New(cfg.Protocols.AMQP, store, sc, log)
 		amqpSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ AMQP server       on :%d\n", cfg.Protocols.AMQP.Port)
 	}
 
 	if cfg.Protocols.Kafka != nil && cfg.Protocols.Kafka.Enabled {
-		srv := kafkaserver.New(cfg.Protocols.Kafka, store, log)
+		srv := kafkaserver.New(cfg.Protocols.Kafka, store, sc, log)
 		kafkaSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ Kafka server      on :%d\n", cfg.Protocols.Kafka.Port)
 	}
 
 	if cfg.Protocols.LDAP != nil && cfg.Protocols.LDAP.Enabled {
-		srv := ldapserver.New(cfg.Protocols.LDAP, store, log)
+		srv := ldapserver.New(cfg.Protocols.LDAP, store, sc, log)
 		ldapSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ LDAP server       on :%d\n", cfg.Protocols.LDAP.Port)
 	}
 
 	if cfg.Protocols.IMAP != nil && cfg.Protocols.IMAP.Enabled {
-		srv := imapserver.New(cfg.Protocols.IMAP, log)
+		srv := imapserver.New(cfg.Protocols.IMAP, sc, log)
 		imapSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ IMAP server       on :%d\n", cfg.Protocols.IMAP.Port)
 	}
 
 	if cfg.Protocols.FTP != nil && cfg.Protocols.FTP.Enabled {
-		srv := ftpserver.New(cfg.Protocols.FTP, log)
+		srv := ftpserver.New(cfg.Protocols.FTP, sc, log)
 		ftpSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ FTP server        on :%d\n", cfg.Protocols.FTP.Port)
 	}
 
 	if cfg.Protocols.Memcached != nil && cfg.Protocols.Memcached.Enabled {
-		srv := memcachedserver.New(cfg.Protocols.Memcached, store, log)
+		srv := memcachedserver.New(cfg.Protocols.Memcached, store, sc, log)
 		memcachedSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ Memcached server  on :%d\n", cfg.Protocols.Memcached.Port)
 	}
 
 	if cfg.Protocols.STOMP != nil && cfg.Protocols.STOMP.Enabled {
-		srv := stompserver.New(cfg.Protocols.STOMP, store, log)
+		srv := stompserver.New(cfg.Protocols.STOMP, store, sc, log)
 		stompSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ STOMP server      on :%d\n", cfg.Protocols.STOMP.Port)
 	}
 
 	if cfg.Protocols.CoAP != nil && cfg.Protocols.CoAP.Enabled {
-		srv := coapserver.New(cfg.Protocols.CoAP, store, log)
+		srv := coapserver.New(cfg.Protocols.CoAP, store, sc, log)
 		coapSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ CoAP server       on :%d\n", cfg.Protocols.CoAP.Port)
 	}
 
 	if cfg.Protocols.SIP != nil && cfg.Protocols.SIP.Enabled {
-		srv := sipserver.New(cfg.Protocols.SIP, store, log)
+		srv := sipserver.New(cfg.Protocols.SIP, store, sc, log)
 		sipSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ SIP server        on :%d\n", cfg.Protocols.SIP.Port)
@@ -654,7 +654,7 @@ func scenarioDeactivateCmd() *cobra.Command {
 func faultCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "fault",
-		Short: "Control global fault injection on a running Mockly instance",
+		Short: "Control direct HTTP fault injection on a running Mockly instance",
 	}
 	cmd.AddCommand(faultSetCmd(), faultClearCmd(), faultStatusCmd())
 	return cmd
@@ -668,8 +668,8 @@ func faultSetCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "set",
-		Short: "Enable global fault injection",
-		Long: `Enable global fault injection. Examples:
+		Short: "Enable direct HTTP fault injection",
+		Long: `Enable direct HTTP fault injection. Examples:
 
   # Add 500ms latency to every request
   mockly fault set --delay 500ms
@@ -685,21 +685,20 @@ func faultSetCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load(cfgFile)
 
-			fault := config.GlobalFault{
-				Enabled:        true,
-				StatusOverride: status,
-				Body:           body,
-				ErrorRate:      errorRate,
+			fault := config.HTTPFault{
+				Status:    status,
+				Body:      body,
+				ErrorRate: errorRate,
 			}
 			if delayStr != "" {
 				if err := fault.Delay.UnmarshalText([]byte(delayStr)); err != nil {
 					return err
 				}
 			}
-			if err := postJSON(fmt.Sprintf("http://localhost:%d/api/fault", cfg.Mockly.API.Port), fault); err != nil {
+			if err := postJSON(fmt.Sprintf("http://localhost:%d/api/fault/http", cfg.Mockly.API.Port), fault); err != nil {
 				return err
 			}
-			fmt.Println("Global fault injection enabled.")
+			fmt.Println("HTTP fault injection enabled.")
 			return nil
 		},
 	}
@@ -713,7 +712,7 @@ func faultSetCmd() *cobra.Command {
 func faultClearCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "clear",
-		Short: "Disable global fault injection",
+		Short: "Disable direct HTTP fault injection",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load(cfgFile)
 			req, _ := http.NewRequest(http.MethodDelete,
@@ -723,7 +722,7 @@ func faultClearCmd() *cobra.Command {
 				return fmt.Errorf("could not reach Mockly API (is it running?): %w", err)
 			}
 			defer resp.Body.Close() //nolint:errcheck
-			fmt.Println("Global fault injection cleared.")
+			fmt.Println("HTTP fault injection cleared.")
 			return nil
 		},
 	}

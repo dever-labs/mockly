@@ -12,21 +12,23 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
 type Server struct {
-	cfg   *config.LDAPConfig
-	store *state.Store
-	log   *logger.Logger
+	cfg       *config.LDAPConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu       sync.RWMutex
 	mocks    []config.LDAPMock
 	listener net.Listener
 }
 
-func New(cfg *config.LDAPConfig, store *state.Store, log *logger.Logger) *Server {
-	return &Server{cfg: cfg, store: store, log: log, mocks: append([]config.LDAPMock(nil), cfg.Mocks...)}
+func New(cfg *config.LDAPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
+	return &Server{cfg: cfg, store: store, scenarios: sc, log: log, mocks: append([]config.LDAPMock(nil), cfg.Mocks...)}
 }
 
 func (s *Server) SetMocks(mocks []config.LDAPMock) {
@@ -80,6 +82,22 @@ func (s *Server) handleConn(conn net.Conn) {
 			return
 		case 0x63:
 			baseDN, filterRaw := parseSearchRequest(opContent)
+			fault := s.scenarios.EffectiveLDAPFault()
+			if fault != nil && fault.Delay.Duration > 0 {
+				time.Sleep(fault.Delay.Duration)
+			}
+			if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+				rc := fault.ResultCode
+				if rc == 0 {
+					rc = 52
+				}
+				message := fault.Message
+				if message == "" {
+					message = "fault injected"
+				}
+				_, _ = conn.Write(buildLDAPMessage(msgID, 0x65, searchDoneContent(byte(rc), message)))
+				continue
+			}
 			for _, mock := range s.matchMocks(baseDN, filterRaw) {
 				if mock.Delay.Duration > 0 {
 					time.Sleep(mock.Delay.Duration)
@@ -87,7 +105,7 @@ func (s *Server) handleConn(conn net.Conn) {
 				_, _ = conn.Write(buildLDAPMessage(msgID, 0x64, searchEntryContent(baseDN, mock.Attributes)))
 				s.log.Log(logger.Entry{Protocol: "ldap", Method: "SEARCH", Path: baseDN, Status: 0, Body: filterRaw, MatchedID: mock.ID})
 			}
-			_, _ = conn.Write(buildLDAPMessage(msgID, 0x65, searchDoneContent()))
+			_, _ = conn.Write(buildLDAPMessage(msgID, 0x65, searchDoneContent(0x00, "")))
 		case 0x70:
 			continue
 		}
@@ -179,11 +197,15 @@ func buildLDAPMessage(msgID int, tag byte, content []byte) []byte {
 }
 
 func bindSuccessContent() []byte {
-	return append(append(berTLV(0x0a, []byte{0x00}), berTLV(0x04, nil)...), berTLV(0x04, nil)...)
+	return ldapResultContent(0x00, "")
 }
 
-func searchDoneContent() []byte {
-	return bindSuccessContent()
+func searchDoneContent(code byte, message string) []byte {
+	return ldapResultContent(code, message)
+}
+
+func ldapResultContent(code byte, message string) []byte {
+	return append(append(berTLV(0x0a, []byte{code}), berTLV(0x04, nil)...), berTLV(0x04, []byte(message))...)
 }
 
 func searchEntryContent(baseDN string, attrs map[string][]string) []byte {

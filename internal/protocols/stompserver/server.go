@@ -15,6 +15,7 @@ import (
 
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
@@ -65,9 +66,10 @@ type subscription struct {
 }
 
 type Server struct {
-	cfg   *config.STOMPConfig
-	store *state.Store
-	log   *logger.Logger
+	cfg       *config.STOMPConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu       sync.RWMutex
 	mocks    []config.STOMPMock
@@ -77,8 +79,8 @@ type Server struct {
 	subscriptions map[string]map[string]*subscription
 }
 
-func New(cfg *config.STOMPConfig, store *state.Store, log *logger.Logger) *Server {
-	return &Server{cfg: cfg, store: store, log: log, mocks: append([]config.STOMPMock(nil), cfg.Mocks...), messages: newMessageStore(1000), subscriptions: make(map[string]map[string]*subscription)}
+func New(cfg *config.STOMPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
+	return &Server{cfg: cfg, store: store, scenarios: sc, log: log, mocks: append([]config.STOMPMock(nil), cfg.Mocks...), messages: newMessageStore(1000), subscriptions: make(map[string]map[string]*subscription)}
 }
 
 func (s *Server) SetMocks(mocks []config.STOMPMock) {
@@ -145,8 +147,20 @@ func (s *Server) handleConn(client *clientConn) {
 			s.removeSubscription(client, headers["id"])
 		case "SEND":
 			dest := headers["destination"]
+			fault := s.scenarios.EffectiveSTOMPFault()
+			if fault != nil && fault.Delay.Duration > 0 {
+				time.Sleep(fault.Delay.Duration)
+			}
 			s.messages.Add(config.ReceivedSTOMPMessage{ID: fmt.Sprintf("%d", time.Now().UnixNano()), Destination: dest, Body: body, Headers: headers, Timestamp: time.Now().UTC().Format(time.RFC3339)})
 			mock, ok := s.matchMock(dest)
+			if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+				msg := fault.Message
+				if msg == "" {
+					msg = "fault injected"
+				}
+				s.writeFrame(client, "ERROR", map[string]string{"message": msg}, "")
+				return
+			}
 			if ok && mock.Response != nil {
 				if mock.Delay.Duration > 0 {
 					time.Sleep(mock.Delay.Duration)

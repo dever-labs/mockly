@@ -13,15 +13,17 @@ import (
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 	"github.com/dever-labs/mockly/internal/tlsutil"
 )
 
 // Server is the TCP mock server.
 type Server struct {
-	cfg      *config.TCPConfig
-	store    *state.Store
-	log      *logger.Logger
+	cfg       *config.TCPConfig
+	store     *state.Store
+	scenarios *scenarios.Store
+	log       *logger.Logger
 
 	mu       sync.RWMutex
 	mocks    []config.TCPMock
@@ -29,12 +31,13 @@ type Server struct {
 }
 
 // New creates a Server.
-func New(cfg *config.TCPConfig, store *state.Store, log *logger.Logger) *Server {
+func New(cfg *config.TCPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
 	return &Server{
-		cfg:   cfg,
-		store: store,
-		log:   log,
-		mocks: append([]config.TCPMock(nil), cfg.Mocks...),
+		cfg:       cfg,
+		store:     store,
+		scenarios: sc,
+		log:       log,
+		mocks:     append([]config.TCPMock(nil), cfg.Mocks...),
 	}
 }
 
@@ -93,6 +96,11 @@ func (s *Server) handleConn(conn net.Conn) {
 		}
 		data := buf[:n]
 
+		fault := s.scenarios.EffectiveTCPFault()
+		if fault != nil && fault.Delay.Duration > 0 {
+			time.Sleep(fault.Delay.Duration)
+		}
+
 		mock, matched := s.matchMock(data)
 		if !matched {
 			s.log.Log(logger.Entry{
@@ -107,6 +115,14 @@ func (s *Server) handleConn(conn net.Conn) {
 
 		if mock.Delay.Duration > 0 {
 			time.Sleep(mock.Delay.Duration)
+		}
+
+		if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+			if fault.Response != "" {
+				_, _ = conn.Write(decodePayload(fault.Response))
+			}
+			_ = conn.Close()
+			return
 		}
 
 		resp := decodePayload(mock.Response)

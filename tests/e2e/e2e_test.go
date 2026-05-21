@@ -332,11 +332,10 @@ protocols:
           status: 200
 `)
 
-	// Set global fault.
-	resp := postJSON(t, apiBase+"/api/fault", map[string]interface{}{
-		"enabled":         true,
-		"status_override": 503,
-		"error_rate":      0,
+	// Set HTTP fault via the per-protocol endpoint.
+	resp := postJSON(t, apiBase+"/api/fault/http", map[string]interface{}{
+		"status":     503,
+		"error_rate": 0,
 	})
 	resp.Body.Close()
 	if resp.StatusCode != 200 {

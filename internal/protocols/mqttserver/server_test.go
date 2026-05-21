@@ -135,7 +135,7 @@ func TestNewMessageStore_DefaultCapacity(t *testing.T) {
 func newTestMQTTServer(t *testing.T, mocks []config.MQTTMock) *Server {
 	t.Helper()
 	cfg := &config.MQTTConfig{Enabled: true, Port: 0, Mocks: mocks}
-	return New(cfg, state.New(), logger.New(100))
+	return New(cfg, state.New(), nil, logger.New(100))
 }
 
 func TestMQTT_New_InitialMocks(t *testing.T) {
@@ -232,7 +232,7 @@ func TestMQTT_matchMock_StateCondition_NotMet(t *testing.T) {
 			State: &config.StateCondition{Key: "mode", Value: "on"},
 		}},
 	}
-	srv := New(cfg, st, logger.New(10))
+	srv := New(cfg, st, nil, logger.New(10))
 	_, ok := srv.matchMock("t")
 	if ok {
 		t.Fatal("expected no match when state condition is not met")
@@ -251,7 +251,7 @@ func TestMQTT_matchMock_StateCondition_Met(t *testing.T) {
 			State: &config.StateCondition{Key: "mode", Value: "on"},
 		}},
 	}
-	srv := New(cfg, st, logger.New(10))
+	srv := New(cfg, st, nil, logger.New(10))
 	m, ok := srv.matchMock("t")
 	if !ok || m.ID != "m1" {
 		t.Fatalf("expected match when state condition met, got ok=%v", ok)

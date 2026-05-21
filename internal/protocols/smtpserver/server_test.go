@@ -199,7 +199,7 @@ Rules: []config.SMTPRule{
 {ID: "r1", Action: "accept"},
 },
 }
-srv := New(cfg, logger.New(100))
+srv := New(cfg, nil, logger.New(100))
 rules := srv.GetRules()
 if len(rules) != 1 || rules[0].ID != "r1" {
 t.Fatalf("unexpected rules from New: %+v", rules)
@@ -208,7 +208,7 @@ t.Fatalf("unexpected rules from New: %+v", rules)
 
 func TestSMTP_GetInbox_NotNil(t *testing.T) {
 cfg := &config.SMTPConfig{Domain: "test.local"}
-srv := New(cfg, logger.New(10))
+srv := New(cfg, nil, logger.New(10))
 if srv.GetInbox() == nil {
 t.Fatal("GetInbox should not return nil")
 }
@@ -216,7 +216,7 @@ t.Fatal("GetInbox should not return nil")
 
 func TestSMTP_SetRules_IsolatesSlice(t *testing.T) {
 cfg := &config.SMTPConfig{Domain: "test.local"}
-srv := New(cfg, logger.New(10))
+srv := New(cfg, nil, logger.New(10))
 original := []config.SMTPRule{{ID: "r1", Action: "accept"}}
 srv.SetRules(original)
 original[0].Action = "reject"
@@ -227,7 +227,7 @@ t.Error("SetRules should copy the slice")
 
 func TestSMTP_StatusInfo(t *testing.T) {
 cfg := &config.SMTPConfig{Enabled: true, Port: 2525, Domain: "mockly.local"}
-srv := New(cfg, logger.New(100))
+srv := New(cfg, nil, logger.New(100))
 srv.SetRules([]config.SMTPRule{{ID: "r1"}, {ID: "r2"}})
 srv.GetInbox().Add(config.ReceivedEmail{ID: "e1"})
 
@@ -260,7 +260,7 @@ Enabled: true,
 Port:    port,
 Domain:  "test.local",
 }
-srv := New(cfg, logger.New(100))
+srv := New(cfg, nil, logger.New(100))
 
 ctx, cancel := context.WithCancel(context.Background())
 t.Cleanup(cancel)
@@ -295,7 +295,7 @@ Rules: []config.SMTPRule{
 {ID: "block-spam", From: "spam@*", Action: "reject", Message: "spam not allowed"},
 },
 }
-srv := New(cfg, logger.New(100))
+srv := New(cfg, nil, logger.New(100))
 
 ctx, cancel := context.WithCancel(context.Background())
 t.Cleanup(cancel)

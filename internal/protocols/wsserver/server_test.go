@@ -284,7 +284,7 @@ _, port := newWSServerRaw(t, mocks)
 _ = port // server is already running
 
 cfg := &config.WebSocketConfig{Enabled: true, Port: port, Mocks: mocks}
-srv := wsserver.New(cfg, state.New(), logger.New(10))
+srv := wsserver.New(cfg, state.New(), nil, logger.New(10))
 info := srv.StatusInfo()
 
 if info["protocol"] != "websocket" {
@@ -317,7 +317,7 @@ Enabled: true,
 Port:    port,
 Mocks:   mocks,
 }
-srv := wsserver.New(cfg, state.New(), logger.New(10))
+srv := wsserver.New(cfg, state.New(), nil, logger.New(10))
 
 ctx, cancel := context.WithCancel(context.Background())
 t.Cleanup(cancel)

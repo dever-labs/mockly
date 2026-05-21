@@ -14,7 +14,7 @@ require (
 	github.com/slayercat/GoSNMPServer v0.5.2
 	github.com/spf13/cobra v1.10.2
 	github.com/tidwall/redcon v1.6.2
-	google.golang.org/grpc v1.81.0
+	google.golang.org/grpc v1.81.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 

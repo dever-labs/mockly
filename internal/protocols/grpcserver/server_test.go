@@ -15,6 +15,7 @@ import (
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/protocols/grpcserver"
+	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 )
 
@@ -31,7 +32,7 @@ func TestNew_InitialMocks(t *testing.T) {
 			{Mocks: []config.GRPCMock{{ID: "m2", Method: "ListUsers"}}},
 		},
 	}
-	srv := grpcserver.New(cfg, state.New(), logger.New(100))
+	srv := grpcserver.New(cfg, state.New(), scenarios.New(nil), logger.New(100))
 	mocks := srv.GetMocks()
 	if len(mocks) != 2 {
 		t.Fatalf("expected 2 mocks from New, got %d", len(mocks))
@@ -80,7 +81,7 @@ func TestGetMocks_IsolatesSlice(t *testing.T) {
 
 func TestStatusInfo(t *testing.T) {
 	cfg := &config.GRPCConfig{Enabled: true, Port: 50051}
-	srv := grpcserver.New(cfg, state.New(), logger.New(100))
+	srv := grpcserver.New(cfg, state.New(), scenarios.New(nil), logger.New(100))
 	srv.SetMocks([]config.GRPCMock{{ID: "x"}, {ID: "y"}})
 
 	info := srv.StatusInfo()
@@ -314,7 +315,7 @@ func TestGRPCServer_SetMocks_LiveUpdate(t *testing.T) {
 func newTestServer(t *testing.T, mocks []config.GRPCMock) *grpcserver.Server {
 	t.Helper()
 	cfg := &config.GRPCConfig{Enabled: true, Port: 0}
-	srv := grpcserver.New(cfg, state.New(), logger.New(100))
+	srv := grpcserver.New(cfg, state.New(), scenarios.New(nil), logger.New(100))
 	if mocks != nil {
 		srv.SetMocks(mocks)
 	}
@@ -338,7 +339,7 @@ func startGRPCServerRaw(t *testing.T, mocks []config.GRPCMock) (*grpcserver.Serv
 	_ = ln.Close()
 
 	cfg := &config.GRPCConfig{Enabled: true, Port: port}
-	srv := grpcserver.New(cfg, state.New(), logger.New(100))
+	srv := grpcserver.New(cfg, state.New(), scenarios.New(nil), logger.New(100))
 	if mocks != nil {
 		srv.SetMocks(mocks)
 	}

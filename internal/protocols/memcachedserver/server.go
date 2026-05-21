@@ -111,6 +111,7 @@ func (s *Server) handleGet(conn net.Conn, keys []string) {
 	if s.maybeInjectFault(conn) {
 		return
 	}
+	var buf strings.Builder
 	for _, key := range keys {
 		mock, ok := s.matchMock("get", key)
 		if !ok || mock.Response.Value == "" {
@@ -120,9 +121,10 @@ func (s *Server) handleGet(conn net.Conn, keys []string) {
 			time.Sleep(mock.Delay.Duration)
 		}
 		value := mock.Response.Value
-		_, _ = fmt.Fprintf(conn, "VALUE %s %d %d\r\n%s\r\n", key, mock.Response.Flags, len(value), value)
+		fmt.Fprintf(&buf, "VALUE %s %d %d\r\n%s\r\n", key, mock.Response.Flags, len(value), value)
 	}
-	_, _ = conn.Write([]byte("END\r\n"))
+	buf.WriteString("END\r\n")
+	_, _ = conn.Write([]byte(buf.String()))
 }
 
 func (s *Server) handleStore(conn net.Conn, reader *bufio.Reader, command string, parts []string) {

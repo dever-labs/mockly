@@ -10,8 +10,20 @@
 //   MOCKLY_VERSION           — override binary version (default: matches npm package version)
 //   HTTPS_PROXY / HTTP_PROXY — route download through an HTTP proxy
 
-import { install } from '../dist/install.js'
+import { existsSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const distPath = join(__dirname, '../dist/install.js')
+
+if (!existsSync(distPath)) {
+  // Running from source without a build — skip binary download.
+  // This happens during `npm install` in the development/CI build directory.
+  process.exit(0)
+}
+
+const { install } = await import(distPath)
 const isPostinstall = process.env.npm_lifecycle_event === 'postinstall'
 
 install().then((p) => {

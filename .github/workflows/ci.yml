@@ -222,7 +222,8 @@ jobs:
         run: |
           dotnet nuget push dist/nuget/*.nupkg \
             --api-key ${{ secrets.NUGET_API_KEY }} \
-            --source https://api.nuget.org/v3/index.json
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
 
   # ─── Publish npm packages ────────────────────────────────────────────────────
   npm-publish:

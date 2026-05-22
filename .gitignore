@@ -31,8 +31,7 @@ mockly.yaml
 # Node client
 clients/node/node_modules/
 clients/node/dist/
-clients/node/bin/mockly
-clients/node/bin/mockly.exe
+clients/node/bin/
 
 # Python client
 clients/python/.pytest_cache/

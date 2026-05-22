@@ -45,11 +45,17 @@
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "test": "vitest run",
-    "prepublishOnly": "npm run build",
-    "postinstall": "node bin/install.mjs"
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"
+  },
+  "optionalDependencies": {
+    "@dever-labs/mockly-driver-linux-x64": "0.1.0",
+    "@dever-labs/mockly-driver-linux-arm64": "0.1.0",
+    "@dever-labs/mockly-driver-darwin-x64": "0.1.0",
+    "@dever-labs/mockly-driver-darwin-arm64": "0.1.0",
+    "@dever-labs/mockly-driver-win32-x64": "0.1.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

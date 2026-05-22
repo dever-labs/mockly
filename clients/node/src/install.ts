@@ -2,14 +2,11 @@ import http from 'http'
 import https from 'https'
 import tls from 'tls'
 import { createWriteStream, existsSync, mkdirSync, chmodSync } from 'fs'
-import { join, resolve } from 'path'
+import { join, resolve, dirname } from 'path'
 import { createRequire } from 'module'
 
-const _require = createRequire(import.meta.url)
-const _pkg = _require('../package.json') as { version: string }
-
-/** Matches the binary version to the npm package version. */
-export const DEFAULT_MOCKLY_VERSION = `v${_pkg.version}`
+/** Version of the Mockly binary this package was tested against. */
+export const DEFAULT_MOCKLY_VERSION = 'v0.1.0'
 
 /** Default GitHub releases base URL. */
 const GITHUB_BASE = 'https://github.com/dever-labs/mockly/releases/download'
@@ -51,9 +48,9 @@ export interface InstallOptions {
  * Returns the path to the installed binary, or `null` if not found.
  *
  * Resolution order:
- * 1. `MOCKLY_BINARY_PATH` env var (absolute path to a pre-staged binary)
- * 2. `<binDir>/mockly[.exe]` (downloaded by `install()` / postinstall)
- * 3. `<cwd>/node_modules/.bin/mockly[.exe]`
+ * 1. `MOCKLY_BINARY_PATH` env var (absolute path to pre-staged binary)
+ * 2. `<binDir>/mockly[.exe]` (downloaded by `install()`)
+ * 3. `<cwd>/node_modules/.bin/mockly[.exe]` (future: native npm wrapper)
  */
 export function getBinaryPath(binDir?: string): string | null {
   const ext = process.platform === 'win32' ? '.exe' : ''
@@ -62,6 +59,10 @@ export function getBinaryPath(binDir?: string): string | null {
     const p = resolve(process.env.MOCKLY_BINARY_PATH)
     if (existsSync(p)) return p
   }
+
+  // Bundled binary from platform sub-package (installed via optionalDependencies).
+  const bundled = getBundledBinaryPath(ext)
+  if (bundled) return bundled
 
   const dir = binDir ?? join(process.cwd(), 'bin')
   const fromBinDir = join(dir, `mockly${ext}`)
@@ -80,8 +81,7 @@ export function getBinaryPath(binDir?: string): string | null {
  * - `MOCKLY_BINARY_PATH`       — use this exact binary; skips all download logic
  * - `MOCKLY_NO_INSTALL`        — throw instead of downloading (for air-gapped envs
  *                                 where the binary is staged externally)
- * - `MOCKLY_DOWNLOAD_BASE_URL` — base URL override for Artifactory / internal mirrors.
- *                                 The full URL becomes `${baseUrl}/${version}/${assetName}`.
+ * - `MOCKLY_DOWNLOAD_BASE_URL` — base URL override for Artifactory / internal mirrors
  * - `MOCKLY_VERSION`           — binary version override
  * - `HTTPS_PROXY` / `HTTP_PROXY` — route the download through an HTTP proxy
  *
@@ -104,12 +104,16 @@ export async function install(opts: InstallOptions = {}): Promise<string> {
     return staged
   }
 
-  // 2. Already installed — skip unless force
+  // 2. Bundled binary via optionalDependencies — no download needed.
+  const bundled = getBundledBinaryPath(ext)
+  if (bundled && !opts.force) return bundled
+
+  // 3. Already installed — skip unless force
   if (!opts.force && existsSync(binPath)) {
     return binPath
   }
 
-  // 3. MOCKLY_NO_INSTALL — fail fast with actionable instructions
+  // 4. MOCKLY_NO_INSTALL — fail fast with actionable instructions
   if (process.env.MOCKLY_NO_INSTALL) {
     throw new Error(
       `MOCKLY_NO_INSTALL is set but no Mockly binary was found.\n\n` +
@@ -119,11 +123,11 @@ export async function install(opts: InstallOptions = {}): Promise<string> {
       `       Download from: https://github.com/dever-labs/mockly/releases\n\n` +
       `  b) Set MOCKLY_BINARY_PATH to the absolute path of an existing binary.\n\n` +
       `  c) Use MOCKLY_DOWNLOAD_BASE_URL to point to an internal mirror:\n` +
-      `       MOCKLY_DOWNLOAD_BASE_URL=https://artifactory.company.com/.../dever-labs/mockly/releases/download`
+      `       MOCKLY_DOWNLOAD_BASE_URL=https://artifactory.company.com/artifactory/github-releases/dever-labs/mockly/releases/download`
     )
   }
 
-  // 4. Download from GitHub releases (or overridden base URL)
+  // 5. Download
   const version = opts.version ?? process.env.MOCKLY_VERSION ?? DEFAULT_MOCKLY_VERSION
   const baseUrl = opts.baseUrl ?? process.env.MOCKLY_DOWNLOAD_BASE_URL ?? GITHUB_BASE
   const asset = getAssetName()
@@ -131,16 +135,47 @@ export async function install(opts: InstallOptions = {}): Promise<string> {
 
   mkdirSync(binDir, { recursive: true })
 
-  console.log(`mockly: downloading ${asset} from ${url}`)
+  console.log(`mockly-node: downloading ${asset} from ${url}`)
   await downloadFile(url, binPath)
 
   if (process.platform !== 'win32') {
     chmodSync(binPath, 0o755)
   }
 
-  console.log(`mockly: binary installed at ${binPath}`)
+  console.log(`mockly-node: installed at ${binPath}`)
   return binPath
 }
+
+/** Maps `${process.platform}-${process.arch}` to the platform sub-package name. */
+const PLATFORM_PACKAGES: Record<string, string> = {
+  'linux-x64':    '@dever-labs/mockly-driver-linux-x64',
+  'linux-arm64':  '@dever-labs/mockly-driver-linux-arm64',
+  'darwin-x64':   '@dever-labs/mockly-driver-darwin-x64',
+  'darwin-arm64': '@dever-labs/mockly-driver-darwin-arm64',
+  'win32-x64':    '@dever-labs/mockly-driver-win32-x64',
+}
+
+/**
+ * Tries to find the mockly binary bundled in the matching platform sub-package.
+ * Returns the path if found, null otherwise.
+ */
+function getBundledBinaryPath(ext: string): string | null {
+  const platformKey = `${process.platform}-${process.arch}`
+  const pkgName = PLATFORM_PACKAGES[platformKey]
+  if (!pkgName) return null
+
+  try {
+    const req = createRequire(import.meta.url)
+    const pkgJsonPath = req.resolve(`${pkgName}/package.json`)
+    const candidate = join(dirname(pkgJsonPath), 'bin', `mockly${ext}`)
+    if (existsSync(candidate)) return candidate
+  } catch {
+    // optional dep not installed — fall through to download
+  }
+  return null
+}
+
+
 
 const ARCH_MAP: Record<string, string> = {
   x64: 'amd64',
@@ -200,6 +235,7 @@ function downloadDirect(url: string, dest: string): Promise<void> {
         }
         const ws = createWriteStream(dest)
         res.on('error', (err) => {
+          // Ensure the write stream is cleaned up if the response stream errors.
           ws.destroy()
           reject(err)
         })
@@ -241,6 +277,7 @@ function downloadViaProxy(targetUrl: string, dest: string, proxyUrl: string): Pr
     const connectReq = http.request(connectOpts)
 
     connectReq.on('connect', (_res, socket) => {
+      // Wrap the plain socket in TLS to complete the HTTPS tunnel
       const tlsSocket = tls.connect({ socket, servername: target.hostname })
 
       const req = https.request(

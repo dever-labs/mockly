@@ -224,10 +224,10 @@ jobs:
             --api-key ${{ secrets.NUGET_API_KEY }} \
             --source https://api.nuget.org/v3/index.json
 
-  # ─── Publish npm package ─────────────────────────────────────────────────────
+  # ─── Publish npm packages ────────────────────────────────────────────────────
   npm-publish:
     name: Publish npm
-    needs: [e2e]
+    needs: [build, e2e]
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
@@ -241,26 +241,63 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Set version
+      - name: Download all binaries
+        uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317 # actions/download-artifact@v6
+        with:
+          pattern: mockly-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Stage binaries into platform sub-packages
+        run: |
+          PKG=clients/node/packages
+          cp dist/mockly-linux-amd64       $PKG/mockly-driver-linux-x64/bin/mockly
+          cp dist/mockly-linux-arm64       $PKG/mockly-driver-linux-arm64/bin/mockly
+          cp dist/mockly-darwin-amd64      $PKG/mockly-driver-darwin-x64/bin/mockly
+          cp dist/mockly-darwin-arm64      $PKG/mockly-driver-darwin-arm64/bin/mockly
+          cp dist/mockly-windows-amd64.exe $PKG/mockly-driver-win32-x64/bin/mockly.exe
+          chmod +x $PKG/mockly-driver-linux-*/bin/mockly $PKG/mockly-driver-darwin-*/bin/mockly
+
+      - name: Set version in all packages
         run: |
           VERSION=${{ github.ref_name }}
+          for pkg in clients/node/packages/*/; do
+            node -e "
+              const fs = require('fs');
+              const p = '$pkg/package.json';
+              const j = JSON.parse(fs.readFileSync(p));
+              j.version = process.argv[1];
+              fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+            " "$VERSION"
+          done
           node -e "
             const fs = require('fs');
             const p = 'clients/node/package.json';
             const j = JSON.parse(fs.readFileSync(p));
             j.version = process.argv[1];
+            for (const k of Object.keys(j.optionalDependencies ?? {})) {
+              j.optionalDependencies[k] = process.argv[1];
+            }
             fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
           " "$VERSION"
 
-      - name: Build and publish
+      - name: Publish platform sub-packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          MOCKLY_NO_INSTALL: "1"
+        run: |
+          for pkg in clients/node/packages/*/; do
+            npm publish "$pkg" --access public --provenance
+          done
+
+      - name: Build and publish main package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         working-directory: clients/node
         run: |
           npm install
           npm run build
           npm publish --access public --provenance
+
 
   docker:
     name: Docker Image

@@ -1,11 +1,11 @@
-# mockly-driver
+# @dever-labs/mockly-driver
 
 Node.js client for [Mockly](https://github.com/dever-labs/mockly) — start, stop, and control Mockly HTTP mock servers from Node.js test suites.
 
 ```ts
-import { MocklyServer } from 'mockly-driver'
+import { MocklyServer } from '@dever-labs/mockly-driver'
 
-const server = await MocklyServer.ensure() // install binary if needed, then start
+const server = await MocklyServer.ensure() // download binary if needed, then start
 
 await server.addMock({
   id: 'get-users',
@@ -22,16 +22,14 @@ await server.stop()
 ## Installation
 
 ```sh
-npm install --save-dev mockly-driver
+npm install --save-dev @dever-labs/mockly-driver
 ```
 
-The Mockly binary is **not** bundled in the npm package. Download it once before running tests:
+The Mockly binary is downloaded automatically for your platform when you run `npm install`. You can also trigger it manually:
 
 ```sh
-npx mockly-driver-install
+npx mockly-install
 ```
-
-Or let `MocklyServer.ensure()` handle it automatically on first run.
 
 ---
 
@@ -57,7 +55,7 @@ const server = await MocklyServer.create()
 
 ```ts
 // vitest / jest
-import { MocklyServer } from 'mockly-driver'
+import { MocklyServer } from '@dever-labs/mockly-driver'
 
 let server: MocklyServer
 
@@ -167,16 +165,18 @@ await server.clearFault()
 
 ## Binary installation
 
-### Default (download from GitHub)
+The binary is downloaded automatically on `npm install` via a postinstall script. The version downloaded always matches the npm package version.
+
+### Manual install
 
 ```sh
-npx mockly-driver-install
+npx mockly-install
 ```
 
 Or programmatically:
 
 ```ts
-import { install } from 'mockly-driver'
+import { install } from '@dever-labs/mockly-driver'
 await install()
 ```
 
@@ -186,7 +186,7 @@ Set `MOCKLY_DOWNLOAD_BASE_URL` to your mirror's base URL (the path up to and inc
 
 ```sh
 MOCKLY_DOWNLOAD_BASE_URL=https://artifactory.company.com/artifactory/github-releases/dever-labs/mockly/releases/download \
-  npx mockly-driver-install
+  npx mockly-install
 ```
 
 Artifactory setup: create a **Generic Remote Repository** pointing to `https://github.com` and enable "Store Artifacts Locally". The download URL then becomes `https://<artifactory>/artifactory/<repo>/dever-labs/mockly/releases/download`.
@@ -196,12 +196,12 @@ Artifactory setup: create a **Generic Remote Repository** pointing to `https://g
 Set `HTTPS_PROXY` or `HTTP_PROXY` before running the install:
 
 ```sh
-HTTPS_PROXY=https://proxy.company.com:3128 npx mockly-driver-install
+HTTPS_PROXY=https://proxy.company.com:3128 npx mockly-install
 ```
 
 Proxy authentication is supported via the proxy URL: `https://user:pass@proxy:3128`.
 
-> **Note:** If your proxy username or password contains special characters (e.g. `@`, `:`, `/`), URL-encode them first — e.g. `p@ss` → `p%40ss`. Use `encodeURIComponent()` in Node.js or an online encoder.
+> **Note:** If your proxy username or password contains special characters (e.g. `@`, `:`, `/`), URL-encode them first — e.g. `p@ss` → `p%40ss`.
 
 > **Tip:** For Artifactory, `MOCKLY_DOWNLOAD_BASE_URL` is simpler and more reliable than `HTTPS_PROXY`.
 
@@ -211,13 +211,13 @@ Pre-stage the binary and point to it:
 
 ```sh
 # On a machine with internet access:
-npx mockly-driver-install
+npx mockly-install
 
 # Copy bin/mockly[.exe] to the air-gapped machine, then:
 MOCKLY_BINARY_PATH=/opt/tools/mockly npx vitest run
 ```
 
-Or set `MOCKLY_NO_INSTALL=true` to make the binary absence a hard error with actionable instructions:
+Or set `MOCKLY_NO_INSTALL=true` to make a missing binary a hard error:
 
 ```sh
 MOCKLY_NO_INSTALL=true npx vitest run  # fails fast if binary not staged
@@ -229,7 +229,7 @@ MOCKLY_NO_INSTALL=true npx vitest run  # fails fast if binary not staged
 |---|---|
 | `MOCKLY_BINARY_PATH` | Absolute path to a pre-existing binary. Skips all download logic. |
 | `MOCKLY_DOWNLOAD_BASE_URL` | Base URL override for binary downloads (Artifactory / mirrors). |
-| `MOCKLY_VERSION` | Binary version to install. Default: `v0.1.0`. |
+| `MOCKLY_VERSION` | Binary version to install. Defaults to the installed package version. |
 | `MOCKLY_NO_INSTALL` | If set, fail with instructions instead of downloading. |
 | `HTTPS_PROXY` / `HTTP_PROXY` | Route downloads through an HTTP proxy (supports CONNECT). |
 

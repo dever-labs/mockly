@@ -10,7 +10,11 @@ npm install --save-dev @dever-labs/mockly-driver
 yarn add --dev @dever-labs/mockly-driver
 ```
 
-The package automatically selects the correct platform binary (`@dever-labs/mockly-driver-{platform}`) as an optional dependency.
+The Mockly binary is downloaded automatically for your platform when you run `npm install`. You can also trigger it manually:
+
+```sh
+npx mockly-install
+```
 
 ## Quickstart
 

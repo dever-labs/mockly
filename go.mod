@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/emersion/go-smtp v0.24.0
-	github.com/go-chi/chi/v5 v5.2.5
+	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-chi/cors v1.2.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/gosnmp/gosnmp v1.43.2

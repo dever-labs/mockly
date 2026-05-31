@@ -6,6 +6,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+echo -e "${CYAN}==> Installing Copilot CLI and Claude Code...${NC}"
+npm install -g @github/copilot @anthropic-ai/claude-code
+sudo ln -sf "$(npm prefix -g)/bin/copilot" /usr/local/bin/copilot
+sudo ln -sf "$(npm prefix -g)/bin/claude" /usr/local/bin/claude
+
 echo -e "${CYAN}==> Installing Go tools...${NC}"
 GOTOOLCHAIN=auto go install github.com/air-verse/air@v1.61.7
 GOTOOLCHAIN=auto go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
@@ -32,6 +37,6 @@ echo -e ""
 if ls ~/.copilot/*.json &>/dev/null 2>&1; then
   echo -e "${GREEN}✔ GitHub Copilot CLI authenticated.${NC}"
 else
-  echo -e "Run ${YELLOW}copilot login${NC} to authenticate GitHub Copilot CLI."
+  echo -e "Run ${YELLOW}copilot auth login${NC} to authenticate GitHub Copilot CLI."
   echo -e "Credentials persist in a Docker volume — no re-login needed after rebuild."
 fi

@@ -66,6 +66,10 @@ public class MocklyServer implements AutoCloseable {
     /**
      * Starts the server using an already-installed binary.
      * Retries up to 3 times if port allocation races occur.
+     * @param config server configuration
+     * @return a running {@link MocklyServer} instance
+     * @throws IOException if the binary cannot be found or the server fails to start
+     * @throws InterruptedException if the thread is interrupted while waiting for the server to be ready
      */
     public static MocklyServer create(MocklyConfig config) throws IOException, InterruptedException {
         String binaryPath = resolveBinaryPath(config);
@@ -74,6 +78,10 @@ public class MocklyServer implements AutoCloseable {
 
     /**
      * Installs the binary if not present, then starts the server.
+     * @param config server configuration
+     * @return a running {@link MocklyServer} instance
+     * @throws IOException if installation or server startup fails
+     * @throws InterruptedException if the thread is interrupted while waiting for the server to be ready
      */
     public static MocklyServer ensure(MocklyConfig config) throws IOException, InterruptedException {
         String binaryPath = config.getBinaryPath();
@@ -91,7 +99,10 @@ public class MocklyServer implements AutoCloseable {
     // Lifecycle
     // -------------------------------------------------------------------------
 
-    /** Stops the server and cleans up the temporary config file. */
+    /**
+     * Stops the server and cleans up the temporary config file.
+     * @throws InterruptedException if the thread is interrupted while waiting for the process to exit
+     */
     public void stop() throws InterruptedException {
         if (process.isAlive()) {
             process.destroy();
@@ -111,7 +122,12 @@ public class MocklyServer implements AutoCloseable {
     // Management API
     // -------------------------------------------------------------------------
 
-    /** Registers a new HTTP mock. */
+    /**
+     * Registers a new HTTP mock.
+     * @param mock the mock definition to register
+     * @throws IOException if the server returns an unexpected response
+     * @throws InterruptedException if the thread is interrupted during the HTTP request
+     */
     public void addMock(Mock mock) throws IOException, InterruptedException {
         String json = toJson(mock);
         HttpResponse<String> resp = post("/api/mocks/http", json);
@@ -120,7 +136,12 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /** Removes a registered HTTP mock by ID. */
+    /**
+     * Removes a registered HTTP mock by ID.
+     * @param id the ID of the mock to delete
+     * @throws IOException if the server returns an unexpected response
+     * @throws InterruptedException if the thread is interrupted during the HTTP request
+     */
     public void deleteMock(String id) throws IOException, InterruptedException {
         HttpResponse<String> resp = delete("/api/mocks/http/" + id);
         if (resp.statusCode() != 204) {
@@ -128,7 +149,11 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /** Resets all mocks and state on the server. */
+    /**
+     * Resets all mocks and state on the server.
+     * @throws IOException if the server returns an unexpected response
+     * @throws InterruptedException if the thread is interrupted during the HTTP request
+     */
     public void reset() throws IOException, InterruptedException {
         HttpResponse<String> resp = post("/api/reset", "");
         if (resp.statusCode() != 200) {
@@ -136,7 +161,12 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /** Activates a pre-configured scenario by ID. */
+    /**
+     * Activates a pre-configured scenario by ID.
+     * @param id the scenario ID to activate
+     * @throws IOException if the server returns an unexpected response
+     * @throws InterruptedException if the thread is interrupted during the HTTP request
+     */
     public void activateScenario(String id) throws IOException, InterruptedException {
         HttpResponse<String> resp = post("/api/scenarios/" + id + "/activate", "");
         if (resp.statusCode() != 200) {
@@ -144,7 +174,12 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /** Deactivates a scenario by ID. */
+    /**
+     * Deactivates a scenario by ID.
+     * @param id the scenario ID to deactivate
+     * @throws IOException if the server returns an unexpected response
+     * @throws InterruptedException if the thread is interrupted during the HTTP request
+     */
     public void deactivateScenario(String id) throws IOException, InterruptedException {
         HttpResponse<String> resp = delete("/api/scenarios/" + id + "/activate");
         if (resp.statusCode() != 200) {
@@ -152,7 +187,12 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /** Injects a network fault. */
+    /**
+     * Injects a network fault.
+     * @param config the fault configuration to apply
+     * @throws IOException if the server returns an unexpected response
+     * @throws InterruptedException if the thread is interrupted during the HTTP request
+     */
     public void setFault(FaultConfig config) throws IOException, InterruptedException {
         String json = toJson(config);
         HttpResponse<String> resp = post("/api/fault", json);
@@ -161,7 +201,11 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /** Clears any active fault. */
+    /**
+     * Clears any active fault.
+     * @throws IOException if the server returns an unexpected response
+     * @throws InterruptedException if the thread is interrupted during the HTTP request
+     */
     public void clearFault() throws IOException, InterruptedException {
         HttpResponse<String> resp = delete("/api/fault");
         if (resp.statusCode() != 200) {

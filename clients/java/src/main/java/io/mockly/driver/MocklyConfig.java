@@ -30,21 +30,52 @@ public class MocklyConfig {
         this.scenarios = Collections.unmodifiableList(new ArrayList<>(builder.scenarios));
     }
 
-    /** Explicit path to the mockly binary. If null, auto-resolved. */
+    /**
+     * Explicit path to the mockly binary. If null, auto-resolved.
+     * @return explicit binary path, or {@code null}
+     */
     public String getBinaryPath() { return binaryPath; }
-    /** HTTP mock port. 0 = pick a free port. */
+
+    /**
+     * HTTP mock port. 0 = pick a free port.
+     * @return HTTP mock port
+     */
     public int getHttpPort() { return httpPort; }
-    /** Management API port. 0 = pick a free port. */
+
+    /**
+     * Management API port. 0 = pick a free port.
+     * @return management API port
+     */
     public int getApiPort() { return apiPort; }
-    /** Mockly version to download if not present. */
+
+    /**
+     * Mockly version to download if not present.
+     * @return version string
+     */
     public String getVersion() { return version; }
-    /** Directory to search for / install the binary. Defaults to ./bin. */
+
+    /**
+     * Directory to search for / install the binary. Defaults to {@code ./bin}.
+     * @return binary directory path
+     */
     public String getBinDir() { return binDir; }
-    /** How long to wait for the server to be ready, in milliseconds. Default 10000. */
+
+    /**
+     * How long to wait for the server to be ready, in milliseconds. Default 10000.
+     * @return startup timeout in milliseconds
+     */
     public int getStartupTimeoutMs() { return startupTimeoutMs; }
-    /** Additional CLI arguments passed to `mockly start`. */
+
+    /**
+     * Additional CLI arguments passed to {@code mockly start}.
+     * @return extra arguments list
+     */
     public List<String> getExtraArgs() { return extraArgs; }
-    /** Scenarios to include in the startup config. */
+
+    /**
+     * Scenarios to include in the startup config.
+     * @return list of scenarios
+     */
     public List<Scenario> getScenarios() { return scenarios; }
 
     public static Builder builder() {
@@ -66,13 +97,21 @@ public class MocklyConfig {
             return this;
         }
 
-        /** Fixed HTTP mock port. Omit (or set 0) to pick a free port automatically. */
+        /**
+         * Fixed HTTP mock port. Omit (or set 0) to pick a free port automatically.
+         * @param httpPort port number, or 0 for automatic
+         * @return this builder
+         */
         public Builder httpPort(int httpPort) {
             this.httpPort = httpPort;
             return this;
         }
 
-        /** Fixed management API port. Omit (or set 0) to pick a free port automatically. */
+        /**
+         * Fixed management API port. Omit (or set 0) to pick a free port automatically.
+         * @param apiPort port number, or 0 for automatic
+         * @return this builder
+         */
         public Builder apiPort(int apiPort) {
             this.apiPort = apiPort;
             return this;

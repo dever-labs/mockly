@@ -15,11 +15,17 @@ public class FaultConfig {
     }
 
     public boolean isEnabled() { return enabled; }
-    /** Artificial delay added to every request, e.g. "200ms". May be null. */
+    /** Artificial delay added to every request, e.g. "200ms". May be null.
+     * @return delay string, or {@code null}
+     */
     public String getDelay() { return delay; }
-    /** HTTP status code to return instead of the matched mock's status. May be null. */
+    /** HTTP status code to return instead of the matched mock's status. May be null.
+     * @return status override, or {@code null}
+     */
     public Integer getStatusOverride() { return statusOverride; }
-    /** Probability (0.0–1.0) that the fault fires; 0 means always. May be null. */
+    /** Probability (0.0–1.0) that the fault fires; 0 means always. May be null.
+     * @return error rate, or {@code null}
+     */
     public Double getErrorRate() { return errorRate; }
 
     public static Builder builder(boolean enabled) {

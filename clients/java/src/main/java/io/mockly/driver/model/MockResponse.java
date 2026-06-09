@@ -20,7 +20,9 @@ public class MockResponse {
     public int getStatus() { return status; }
     public String getBody() { return body; }
     public Map<String, String> getHeaders() { return headers; }
-    /** Delay string, e.g. "50ms". May be null. */
+    /** Delay string, e.g. "50ms". May be null.
+     * @return delay string, or {@code null}
+     */
     public String getDelay() { return delay; }
 
     public static Builder builder(int status) {

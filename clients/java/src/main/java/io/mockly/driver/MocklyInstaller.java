@@ -47,6 +47,8 @@ public class MocklyInstaller {
      *   <li>{@code <binDir>/mockly[.exe]}</li>
      *   <li>{@code ./bin/mockly[.exe]}</li>
      * </ol>
+     * @param binDir directory to search for the binary; may be {@code null}
+     * @return absolute path to the binary, or {@code null} if not found
      */
     public static String getBinaryPath(String binDir) {
         return getBinaryPath(binDir, System.getenv());
@@ -79,6 +81,9 @@ public class MocklyInstaller {
     /**
      * Ensures the binary is available. Returns its path.
      * Throws if {@code MOCKLY_NO_INSTALL} is set and the binary is not already staged.
+     * @param opts installation options (binary directory, version)
+     * @return absolute path to the installed binary
+     * @throws IOException if the binary is not found, {@code MOCKLY_NO_INSTALL} is set, or download fails
      */
     public static String install(InstallOptions opts) throws IOException {
         return install(opts, System.getenv());

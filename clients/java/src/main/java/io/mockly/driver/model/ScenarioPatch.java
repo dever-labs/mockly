@@ -15,11 +15,17 @@ public class ScenarioPatch {
     }
 
     public String getMockId() { return mockId; }
-    /** HTTP status override. May be null (unchanged). */
+    /** HTTP status override. May be null (unchanged).
+     * @return status override, or {@code null}
+     */
     public Integer getStatus() { return status; }
-    /** Response body override. May be null (unchanged). */
+    /** Response body override. May be null (unchanged).
+     * @return body override, or {@code null}
+     */
     public String getBody() { return body; }
-    /** Delay override, e.g. "200ms". May be null (unchanged). */
+    /** Delay override, e.g. "200ms". May be null (unchanged).
+     * @return delay override, or {@code null}
+     */
     public String getDelay() { return delay; }
 
     public static Builder builder(String mockId) {

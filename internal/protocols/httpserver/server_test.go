@@ -741,3 +741,416 @@ func TestHTTPServer_HTTPFault_CustomStatus(t *testing.T) {
 		t.Fatalf("HTTP fault should override to 418, got %d", resp.StatusCode)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Latency-only fault — should NOT alter the response status/body
+// ---------------------------------------------------------------------------
+
+func TestHTTPServer_GlobalFault_DelayOnly_NoStatusOverride(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "ok",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
+		Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	// Set a delay-only fault (no status, no body).
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		Delay: config.Duration{Duration: 50 * time.Millisecond},
+	}})
+	t0 := time.Now()
+	resp, _ := http.Get(base + "/ok")
+	elapsed := time.Since(t0)
+	defer resp.Body.Close() //nolint:errcheck
+
+	// Delay should be applied.
+	if elapsed < 40*time.Millisecond {
+		t.Errorf("expected latency ≥40ms, got %v", elapsed)
+	}
+	// Status must stay 200 — NOT 503.
+	if resp.StatusCode != 200 {
+		t.Errorf("delay-only fault must not override status: want 200, got %d", resp.StatusCode)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HTTPFault with custom response headers
+// ---------------------------------------------------------------------------
+
+func TestHTTPServer_GlobalFault_Headers(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "ok",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		Status:  http.StatusTooManyRequests,
+		Headers: map[string]string{"Retry-After": "60"},
+	}})
+	resp, _ := http.Get(base + "/ok")
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("want 429, got %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Retry-After"); got != "60" {
+		t.Errorf("want Retry-After: 60, got %q", got)
+	}
+}
+
+func TestHTTPServer_GlobalFault_ServiceUnavailable_WithRetryAfter(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "ok",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		Status:  http.StatusServiceUnavailable,
+		Body:    `{"error":"maintenance"}`,
+		Headers: map[string]string{"Retry-After": "120", "X-Reason": "maintenance"},
+	}})
+	resp, _ := http.Get(base + "/ok")
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != 503 {
+		t.Errorf("want 503, got %d", resp.StatusCode)
+	}
+	if !strings.Contains(string(b), "maintenance") {
+		t.Errorf("want maintenance body, got %q", string(b))
+	}
+	if resp.Header.Get("Retry-After") != "120" {
+		t.Errorf("want Retry-After: 120, got %q", resp.Header.Get("Retry-After"))
+	}
+	if resp.Header.Get("X-Reason") != "maintenance" {
+		t.Errorf("want X-Reason: maintenance, got %q", resp.Header.Get("X-Reason"))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Per-mock fault with custom headers
+// ---------------------------------------------------------------------------
+
+func TestHTTPServer_PerMockFault_Headers(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "rate-limited",
+		Request: config.HTTPRequest{Method: "GET", Path: "/api/resource"},
+		Response: config.HTTPResponse{Status: 200, Body: `{"data":"value"}`},
+		Fault: &config.MockFault{
+			StatusOverride: http.StatusTooManyRequests,
+			Body:           `{"error":"rate limited"}`,
+			Headers:        map[string]string{"Retry-After": "30", "X-RateLimit-Limit": "100"},
+			ErrorRate:      0, // always inject
+		},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	resp, _ := http.Get(base + "/api/resource")
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("want 429, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Retry-After") != "30" {
+		t.Errorf("want Retry-After: 30, got %q", resp.Header.Get("Retry-After"))
+	}
+	if resp.Header.Get("X-RateLimit-Limit") != "100" {
+		t.Errorf("want X-RateLimit-Limit: 100, got %q", resp.Header.Get("X-RateLimit-Limit"))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Delay + error combined — both latency and status override fire together
+// ---------------------------------------------------------------------------
+
+func TestHTTPServer_GlobalFault_DelayAndStatus(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "ok",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		Delay:  config.Duration{Duration: 50 * time.Millisecond},
+		Status: http.StatusBadGateway,
+	}})
+	t0 := time.Now()
+	resp, _ := http.Get(base + "/ok")
+	elapsed := time.Since(t0)
+	defer resp.Body.Close() //nolint:errcheck
+
+	if elapsed < 40*time.Millisecond {
+		t.Errorf("expected latency ≥40ms, got %v", elapsed)
+	}
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("want 502, got %d", resp.StatusCode)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Non-error status codes (1xx/2xx/3xx) — no default body injection
+// ---------------------------------------------------------------------------
+
+func TestHTTPServer_GlobalFault_Redirect(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "old",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/old"},
+		Response: config.HTTPResponse{Status: 200, Body: "original"},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		Status:  http.StatusMovedPermanently,
+		Headers: map[string]string{"Location": "/new"},
+	}})
+
+	// Use a non-redirecting client to inspect the raw 301.
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, _ := client.Get(base + "/old")
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusMovedPermanently {
+		t.Errorf("want 301, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Location") != "/new" {
+		t.Errorf("want Location: /new, got %q", resp.Header.Get("Location"))
+	}
+	// No default error body should be injected for a 3xx status.
+	if strings.Contains(string(b), "fault injected") {
+		t.Errorf("3xx fault must not inject error body, got: %q", string(b))
+	}
+}
+
+func TestHTTPServer_GlobalFault_TemporaryRedirect(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "resource",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/resource"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		Status:  http.StatusTemporaryRedirect,
+		Headers: map[string]string{"Location": "/resource/v2"},
+	}})
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, _ := client.Get(base + "/resource")
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusTemporaryRedirect {
+		t.Errorf("want 307, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Location") != "/resource/v2" {
+		t.Errorf("want Location: /resource/v2, got %q", resp.Header.Get("Location"))
+	}
+}
+
+func TestHTTPServer_GlobalFault_ArbitraryStatusCode(t *testing.T) {	// Any integer status code can be injected — test a few representative values.
+	cases := []struct {
+		status int
+		name   string
+	}{
+		{http.StatusUnauthorized, "401"},
+		{http.StatusForbidden, "403"},
+		{http.StatusNotFound, "404"},
+		{http.StatusMethodNotAllowed, "405"},
+		{http.StatusConflict, "409"},
+		{http.StatusUnprocessableEntity, "422"},
+		{http.StatusTooManyRequests, "429"},
+		{http.StatusInternalServerError, "500"},
+		{http.StatusBadGateway, "502"},
+		{http.StatusGatewayTimeout, "504"},
+	}
+
+	mocks := []config.HTTPMock{{
+		ID:       "ok",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sc := scenarios.New(nil)
+			base := startTestServer(t, mocks, sc)
+			sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{Status: tc.status}})
+			resp, _ := http.Get(base + "/ok")
+			_ = resp.Body.Close()
+			if resp.StatusCode != tc.status {
+				t.Errorf("want %d, got %d", tc.status, resp.StatusCode)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Connection abort (TCP reset) — client gets no response
+// ---------------------------------------------------------------------------
+
+func TestHTTPServer_GlobalFault_Abort(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "ok",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
+		Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{Abort: true}})
+
+	resp, err := http.Get(base + "/ok")
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("expected connection error (abort), got a valid response")
+	}
+	// The client should receive an EOF / connection-reset error, not a response.
+}
+
+func TestHTTPServer_GlobalFault_Abort_WithDelay(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "ok",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		Delay: config.Duration{Duration: 50 * time.Millisecond},
+		Abort: true,
+	}})
+
+	t0 := time.Now()
+	resp, err := http.Get(base + "/ok")
+	elapsed := time.Since(t0)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("expected connection error after delay, got valid response")
+	}
+	if elapsed < 40*time.Millisecond {
+		t.Errorf("expected delay ≥40ms before abort, got %v", elapsed)
+	}
+}
+
+func TestHTTPServer_GlobalFault_Abort_Cleared(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "ok",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{Abort: true}})
+	if _, err := http.Get(base + "/ok"); err == nil {
+		t.Fatal("expected abort error while fault is active")
+	}
+
+	sc.ClearDirectFaults()
+	resp, err := http.Get(base + "/ok")
+	if err != nil {
+		t.Fatalf("after clearing abort fault: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("after clear: want 200, got %d", resp.StatusCode)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Truncated response — client gets partial body then unexpected EOF
+// ---------------------------------------------------------------------------
+
+func TestHTTPServer_GlobalFault_TruncateBody(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "data",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/data"},
+		Response: config.HTTPResponse{Status: 200, Body: `{"result":"complete-payload-here"}`},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{TruncateBody: 5}})
+
+	// Use a raw connection to bypass Go's http client which buffers errors.
+	conn, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	_, _ = fmt.Fprintf(conn, "GET /data HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+
+	var buf strings.Builder
+	tmp := make([]byte, 1024)
+	for {
+		n, readErr := conn.Read(tmp)
+		buf.Write(tmp[:n])
+		if readErr != nil {
+			break // EOF or reset — expected
+		}
+	}
+	got := buf.String()
+	// Should have received some bytes but not the full body.
+	if !strings.Contains(got, "HTTP/1.1 200") {
+		t.Errorf("expected HTTP 200 in truncated response, got: %q", got)
+	}
+	if strings.Contains(got, "complete-payload-here") {
+		t.Error("full body must not be present in truncated response")
+	}
+}
+
+func TestHTTPServer_GlobalFault_TruncateBody_WithStatus(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "data",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/data"},
+		Response: config.HTTPResponse{Status: 200, Body: `{"result":"value"}`},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	// Truncate a 500 error response after 3 bytes.
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		Status:       http.StatusInternalServerError,
+		Body:         `{"error":"server-exploded"}`,
+		TruncateBody: 3,
+	}})
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	_, _ = fmt.Fprintf(conn, "GET /data HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+
+	var buf strings.Builder
+	tmp := make([]byte, 2048)
+	for {
+		n, readErr := conn.Read(tmp)
+		buf.Write(tmp[:n])
+		if readErr != nil {
+			break
+		}
+	}
+	got := buf.String()
+	if !strings.Contains(got, "HTTP/1.1 500") {
+		t.Errorf("expected HTTP 500 header in truncated response, got: %q", got)
+	}
+	if strings.Contains(got, "server-exploded") {
+		t.Error("full body must not appear in truncated response")
+	}
+}

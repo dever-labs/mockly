@@ -110,51 +110,98 @@ func (s *Store) EffectiveSIPFault() *config.SIPFault {
 	return effectiveFault(s, func(f *config.ProtocolFaults) *config.SIPFault { return f.SIP })
 }
 
-// GetDirectProtocolFault returns the direct fault for the named protocol, or nil.
-func (s *Store) GetDirectProtocolFault(protocol string) interface{} {
+// GetDirectProtocolFault returns the direct fault for the named protocol.
+// The second return value is false when the protocol name is not recognised.
+func (s *Store) GetDirectProtocolFault(protocol string) (interface{}, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	switch strings.ToLower(protocol) {
 	case "http":
-		return s.direct.HTTP
+		return s.direct.HTTP, true
 	case "graphql":
-		return s.direct.GraphQL
+		return s.direct.GraphQL, true
 	case "websocket":
-		return s.direct.WebSocket
+		return s.direct.WebSocket, true
 	case "grpc":
-		return s.direct.GRPC
+		return s.direct.GRPC, true
 	case "tcp":
-		return s.direct.TCP
+		return s.direct.TCP, true
 	case "redis":
-		return s.direct.Redis
+		return s.direct.Redis, true
 	case "mqtt":
-		return s.direct.MQTT
+		return s.direct.MQTT, true
 	case "smtp":
-		return s.direct.SMTP
+		return s.direct.SMTP, true
 	case "snmp":
-		return s.direct.SNMP
+		return s.direct.SNMP, true
 	case "dns":
-		return s.direct.DNS
+		return s.direct.DNS, true
 	case "amqp":
-		return s.direct.AMQP
+		return s.direct.AMQP, true
 	case "kafka":
-		return s.direct.Kafka
+		return s.direct.Kafka, true
 	case "ldap":
-		return s.direct.LDAP
+		return s.direct.LDAP, true
 	case "imap":
-		return s.direct.IMAP
+		return s.direct.IMAP, true
 	case "ftp":
-		return s.direct.FTP
+		return s.direct.FTP, true
 	case "memcached":
-		return s.direct.Memcached
+		return s.direct.Memcached, true
 	case "stomp":
-		return s.direct.STOMP
+		return s.direct.STOMP, true
 	case "coap":
-		return s.direct.CoAP
+		return s.direct.CoAP, true
 	case "sip":
-		return s.direct.SIP
+		return s.direct.SIP, true
 	}
-	return nil
+	return nil, false
+}
+
+// GetEffectiveProtocolFault returns the effective (scenario or direct) fault for
+// the named protocol. The second return value is false when the protocol is unknown.
+func (s *Store) GetEffectiveProtocolFault(protocol string) (interface{}, bool) {
+	switch strings.ToLower(protocol) {
+	case "http":
+		return s.EffectiveHTTPFault(), true
+	case "graphql":
+		return s.EffectiveGraphQLFault(), true
+	case "websocket":
+		return s.EffectiveWebSocketFault(), true
+	case "grpc":
+		return s.EffectiveGRPCFault(), true
+	case "tcp":
+		return s.EffectiveTCPFault(), true
+	case "redis":
+		return s.EffectiveRedisFault(), true
+	case "mqtt":
+		return s.EffectiveMQTTFault(), true
+	case "smtp":
+		return s.EffectiveSMTPFault(), true
+	case "snmp":
+		return s.EffectiveSNMPFault(), true
+	case "dns":
+		return s.EffectiveDNSFault(), true
+	case "amqp":
+		return s.EffectiveAMQPFault(), true
+	case "kafka":
+		return s.EffectiveKafkaFault(), true
+	case "ldap":
+		return s.EffectiveLDAPFault(), true
+	case "imap":
+		return s.EffectiveIMAPFault(), true
+	case "ftp":
+		return s.EffectiveFTPFault(), true
+	case "memcached":
+		return s.EffectiveMemcachedFault(), true
+	case "stomp":
+		return s.EffectiveSTOMPFault(), true
+	case "coap":
+		return s.EffectiveCoAPFault(), true
+	case "sip":
+		return s.EffectiveSIPFault(), true
+	}
+	return nil, false
 }
 
 // SetDirectProtocolFaultJSON unmarshals JSON into the right fault type and sets it.
@@ -321,7 +368,8 @@ func (s *Store) SetDirectProtocolFaultJSON(protocol string, data []byte) error {
 }
 
 // ClearDirectProtocolFault removes the direct fault for the named protocol.
-func (s *Store) ClearDirectProtocolFault(protocol string) {
+// Returns false when the protocol name is not recognised.
+func (s *Store) ClearDirectProtocolFault(protocol string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch strings.ToLower(protocol) {
@@ -363,5 +411,8 @@ func (s *Store) ClearDirectProtocolFault(protocol string) {
 		s.direct.CoAP = nil
 	case "sip":
 		s.direct.SIP = nil
+	default:
+		return false
 	}
+	return true
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/scenarios"
 )
-
 func TestStore_SetAndGet(t *testing.T) {
 	s := scenarios.New(nil)
 
@@ -216,5 +215,93 @@ func TestStore_FaultRoll(t *testing.T) {
 	// With rate 0.5 over 200 trials, expect between 60 and 140 hits (very wide margin).
 	if hits < 60 || hits > 140 {
 		t.Errorf("rate=0.5 over 200 trials: expected ~100 hits, got %d", hits)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// New — auto-ID generation when scenario has no ID
+// ---------------------------------------------------------------------------
+
+func TestStore_New_AutoIDForEmptyID(t *testing.T) {
+	s := scenarios.New([]config.Scenario{
+		{Name: "unnamed"},          // empty ID → should get auto-generated
+		{ID: "explicit", Name: "explicit"},
+	})
+	all := s.All()
+	if len(all) != 2 {
+		t.Fatalf("want 2 scenarios, got %d", len(all))
+	}
+	for _, sc := range all {
+		if sc.ID == "" {
+			t.Error("all scenarios must have a non-empty ID")
+		}
+	}
+	// The explicit ID must be preserved.
+	found := false
+	for _, sc := range all {
+		if sc.ID == "explicit" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("explicit scenario ID must be preserved")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PatchFor — active scenario that was deleted from the store
+// ---------------------------------------------------------------------------
+
+func TestStore_PatchFor_DeletedWhileActive(t *testing.T) {
+	s := scenarios.New([]config.Scenario{{
+		ID:      "ghost",
+		Patches: []config.MockPatch{{MockID: "m1", Status: 500}},
+	}})
+	s.Activate("ghost")
+
+	// Delete the scenario while it's still in the active set.
+	s.Delete("ghost")
+
+	// PatchFor should safely skip the stale active ID and return nil.
+	patch := s.PatchFor("m1")
+	if patch != nil {
+		t.Errorf("expected nil patch for deleted scenario, got %+v", patch)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// effectiveFault — nil store receiver
+// ---------------------------------------------------------------------------
+
+func TestEffectiveFault_NilStore(t *testing.T) {
+	var s *scenarios.Store
+	if got := s.EffectiveHTTPFault(); got != nil {
+		t.Errorf("nil store: want nil fault, got %+v", got)
+	}
+	if got := s.EffectiveDNSFault(); got != nil {
+		t.Errorf("nil store: want nil DNS fault, got %+v", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// effectiveFault — scenario with Faults but not the queried protocol
+// ---------------------------------------------------------------------------
+
+func TestEffectiveFault_ScenarioHasFaultsButNotThisProtocol(t *testing.T) {
+	// Activate a scenario that has DNS fault but not HTTP fault.
+	// EffectiveHTTPFault should fall back to direct fault.
+	s := scenarios.New([]config.Scenario{{
+		ID:     "dns-only",
+		Faults: &config.ProtocolFaults{DNS: &config.DNSFault{Rcode: "NXDOMAIN"}},
+	}})
+	s.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{Status: 503}})
+	s.Activate("dns-only")
+
+	got := s.EffectiveHTTPFault()
+	if got == nil || got.Status != 503 {
+		t.Errorf("want direct HTTP fault (503), got %+v", got)
+	}
+	if s.EffectiveDNSFault() == nil {
+		t.Error("expected DNS fault from active scenario")
 	}
 }

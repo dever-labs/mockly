@@ -264,7 +264,11 @@ func (s *Server) listing(target string, namesOnly bool) string {
 	}
 	var b strings.Builder
 	for _, file := range s.files {
-		if path.Dir(file.Path)+"/" != dir {
+		fileDir := path.Dir(file.Path)
+		if !strings.HasSuffix(fileDir, "/") {
+			fileDir += "/"
+		}
+		if fileDir != dir {
 			continue
 		}
 		name := path.Base(file.Path)

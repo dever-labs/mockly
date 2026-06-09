@@ -222,7 +222,7 @@ func (s *Server) buildRouter() http.Handler {
 	}
 	if corsEnabled {
 		origins := []string{"*"}
-		methods := []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
+		methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 		headers := []string{"*"}
 		if c := s.cfg.Mockly.API.CORS; c != nil {
 			if len(c.AllowedOrigins) > 0 {
@@ -386,6 +386,7 @@ func (s *Server) buildRouter() http.Handler {
 		r.Get("/api/fault/{protocol}", s.getProtocolFault)
 		r.Post("/api/fault/{protocol}", s.setProtocolFault)
 		r.Delete("/api/fault/{protocol}", s.clearProtocolFault)
+		r.Get("/api/fault/{protocol}/effective", s.getEffectiveProtocolFault)
 
 		r.Get("/api/logs", s.getLogs)
 		r.Delete("/api/logs", s.clearLogs)
@@ -448,6 +449,10 @@ func (s *Server) listHTTPMocks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addHTTPMock(w http.ResponseWriter, r *http.Request) {
+	if s.http == nil {
+		writeError(w, http.StatusServiceUnavailable, "http protocol not enabled")
+		return
+	}
 	var m config.HTTPMock
 	if err := decodeBody(r, &m); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -463,6 +468,10 @@ func (s *Server) addHTTPMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateHTTPMock(w http.ResponseWriter, r *http.Request) {
+	if s.http == nil {
+		writeError(w, http.StatusServiceUnavailable, "http protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	var updated config.HTTPMock
 	if err := decodeBody(r, &updated); err != nil {
@@ -483,13 +492,24 @@ func (s *Server) updateHTTPMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteHTTPMock(w http.ResponseWriter, r *http.Request) {
+	if s.http == nil {
+		writeError(w, http.StatusServiceUnavailable, "http protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	mocks := s.http.GetMocks()
 	filtered := make([]config.HTTPMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.http.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -504,6 +524,10 @@ type httpResponsePatch struct {
 }
 
 func (s *Server) patchHTTPMock(w http.ResponseWriter, r *http.Request) {
+	if s.http == nil {
+		writeError(w, http.StatusServiceUnavailable, "http protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	var patch httpResponsePatch
 	if err := decodeBody(r, &patch); err != nil {
@@ -551,6 +575,10 @@ func (s *Server) listWSMocks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addWSMock(w http.ResponseWriter, r *http.Request) {
+	if s.ws == nil {
+		writeError(w, http.StatusServiceUnavailable, "websocket protocol not enabled")
+		return
+	}
 	var m config.WebSocketMock
 	if err := decodeBody(r, &m); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -566,6 +594,10 @@ func (s *Server) addWSMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateWSMock(w http.ResponseWriter, r *http.Request) {
+	if s.ws == nil {
+		writeError(w, http.StatusServiceUnavailable, "websocket protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	var updated config.WebSocketMock
 	if err := decodeBody(r, &updated); err != nil {
@@ -586,13 +618,24 @@ func (s *Server) updateWSMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteWSMock(w http.ResponseWriter, r *http.Request) {
+	if s.ws == nil {
+		writeError(w, http.StatusServiceUnavailable, "websocket protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	mocks := s.ws.GetMocks()
 	filtered := make([]config.WebSocketMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.ws.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -605,6 +648,10 @@ type wsOnConnectPatch struct {
 }
 
 func (s *Server) patchWSMock(w http.ResponseWriter, r *http.Request) {
+	if s.ws == nil {
+		writeError(w, http.StatusServiceUnavailable, "websocket protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	var patch wsOnConnectPatch
 	if err := decodeBody(r, &patch); err != nil {
@@ -644,6 +691,10 @@ func (s *Server) listGRPCMocks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addGRPCMock(w http.ResponseWriter, r *http.Request) {
+	if s.grpc == nil {
+		writeError(w, http.StatusServiceUnavailable, "grpc protocol not enabled")
+		return
+	}
 	var m config.GRPCMock
 	if err := decodeBody(r, &m); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -659,6 +710,10 @@ func (s *Server) addGRPCMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateGRPCMock(w http.ResponseWriter, r *http.Request) {
+	if s.grpc == nil {
+		writeError(w, http.StatusServiceUnavailable, "grpc protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	var updated config.GRPCMock
 	if err := decodeBody(r, &updated); err != nil {
@@ -679,13 +734,24 @@ func (s *Server) updateGRPCMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteGRPCMock(w http.ResponseWriter, r *http.Request) {
+	if s.grpc == nil {
+		writeError(w, http.StatusServiceUnavailable, "grpc protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	mocks := s.grpc.GetMocks()
 	filtered := make([]config.GRPCMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.grpc.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -699,6 +765,10 @@ type grpcResponsePatch struct {
 }
 
 func (s *Server) patchGRPCMock(w http.ResponseWriter, r *http.Request) {
+	if s.grpc == nil {
+		writeError(w, http.StatusServiceUnavailable, "grpc protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	var patch grpcResponsePatch
 	if err := decodeBody(r, &patch); err != nil {
@@ -755,6 +825,10 @@ func (s *Server) getScenario(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateScenario(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if _, ok := s.scenarios.Get(id); !ok {
+		writeError(w, http.StatusNotFound, "scenario not found")
+		return
+	}
 	var sc config.Scenario
 	if err := decodeBody(r, &sc); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -795,6 +869,10 @@ func (s *Server) activateScenario(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deactivateScenario(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if _, ok := s.scenarios.Get(id); !ok {
+		writeError(w, http.StatusNotFound, "scenario not found")
+		return
+	}
 	s.scenarios.Deactivate(id)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"deactivated": id,
@@ -817,9 +895,9 @@ func (s *Server) clearAllFaults(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getProtocolFault(w http.ResponseWriter, r *http.Request) {
 	protocol := chi.URLParam(r, "protocol")
-	fault := s.scenarios.GetDirectProtocolFault(protocol)
-	if fault == nil {
-		writeJSON(w, http.StatusOK, nil)
+	fault, ok := s.scenarios.GetDirectProtocolFault(protocol)
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown protocol %q", protocol))
 		return
 	}
 	writeJSON(w, http.StatusOK, fault)
@@ -836,13 +914,27 @@ func (s *Server) setProtocolFault(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	stored, _ := s.scenarios.GetDirectProtocolFault(protocol)
+	writeJSON(w, http.StatusOK, stored)
 }
 
 func (s *Server) clearProtocolFault(w http.ResponseWriter, r *http.Request) {
 	protocol := chi.URLParam(r, "protocol")
-	s.scenarios.ClearDirectProtocolFault(protocol)
+	if !s.scenarios.ClearDirectProtocolFault(protocol) {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown protocol %q", protocol))
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) getEffectiveProtocolFault(w http.ResponseWriter, r *http.Request) {
+	protocol := chi.URLParam(r, "protocol")
+	fault, ok := s.scenarios.GetEffectiveProtocolFault(protocol)
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown protocol %q", protocol))
+		return
+	}
+	writeJSON(w, http.StatusOK, fault)
 }
 
 // ---------------------------------------------------------------------------
@@ -858,6 +950,10 @@ func (s *Server) listGraphQLMocks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addGraphQLMock(w http.ResponseWriter, r *http.Request) {
+	if s.graphql == nil {
+		writeError(w, http.StatusServiceUnavailable, "graphql protocol not enabled")
+		return
+	}
 	var m config.GraphQLMock
 	if err := decodeBody(r, &m); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -872,6 +968,10 @@ func (s *Server) addGraphQLMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateGraphQLMock(w http.ResponseWriter, r *http.Request) {
+	if s.graphql == nil {
+		writeError(w, http.StatusServiceUnavailable, "graphql protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	var updated config.GraphQLMock
 	if err := decodeBody(r, &updated); err != nil {
@@ -892,13 +992,24 @@ func (s *Server) updateGraphQLMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteGraphQLMock(w http.ResponseWriter, r *http.Request) {
+	if s.graphql == nil {
+		writeError(w, http.StatusServiceUnavailable, "graphql protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	mocks := s.graphql.GetMocks()
 	filtered := make([]config.GraphQLMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.graphql.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -917,6 +1028,10 @@ func (s *Server) listTCPMocks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addTCPMock(w http.ResponseWriter, r *http.Request) {
+	if s.tcp == nil {
+		writeError(w, http.StatusServiceUnavailable, "tcp protocol not enabled")
+		return
+	}
 	var m config.TCPMock
 	if err := decodeBody(r, &m); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -930,6 +1045,10 @@ func (s *Server) addTCPMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateTCPMock(w http.ResponseWriter, r *http.Request) {
+	if s.tcp == nil {
+		writeError(w, http.StatusServiceUnavailable, "tcp protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	var updated config.TCPMock
 	if err := decodeBody(r, &updated); err != nil {
@@ -950,13 +1069,24 @@ func (s *Server) updateTCPMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteTCPMock(w http.ResponseWriter, r *http.Request) {
+	if s.tcp == nil {
+		writeError(w, http.StatusServiceUnavailable, "tcp protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	mocks := s.tcp.GetMocks()
 	filtered := make([]config.TCPMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.tcp.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -975,6 +1105,10 @@ func (s *Server) listRedisMocks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addRedisMock(w http.ResponseWriter, r *http.Request) {
+	if s.redis == nil {
+		writeError(w, http.StatusServiceUnavailable, "redis protocol not enabled")
+		return
+	}
 	var m config.RedisMock
 	if err := decodeBody(r, &m); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -988,6 +1122,10 @@ func (s *Server) addRedisMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateRedisMock(w http.ResponseWriter, r *http.Request) {
+	if s.redis == nil {
+		writeError(w, http.StatusServiceUnavailable, "redis protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	var updated config.RedisMock
 	if err := decodeBody(r, &updated); err != nil {
@@ -1008,13 +1146,24 @@ func (s *Server) updateRedisMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteRedisMock(w http.ResponseWriter, r *http.Request) {
+	if s.redis == nil {
+		writeError(w, http.StatusServiceUnavailable, "redis protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	mocks := s.redis.GetMocks()
 	filtered := make([]config.RedisMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.redis.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -1033,6 +1182,10 @@ func (s *Server) listSMTPRules(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addSMTPRule(w http.ResponseWriter, r *http.Request) {
+	if s.smtp == nil {
+		writeError(w, http.StatusServiceUnavailable, "smtp protocol not enabled")
+		return
+	}
 	var rule config.SMTPRule
 	if err := decodeBody(r, &rule); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -1049,6 +1202,10 @@ func (s *Server) addSMTPRule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateSMTPRule(w http.ResponseWriter, r *http.Request) {
+	if s.smtp == nil {
+		writeError(w, http.StatusServiceUnavailable, "smtp protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	var updated config.SMTPRule
 	if err := decodeBody(r, &updated); err != nil {
@@ -1069,13 +1226,24 @@ func (s *Server) updateSMTPRule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteSMTPRule(w http.ResponseWriter, r *http.Request) {
+	if s.smtp == nil {
+		writeError(w, http.StatusServiceUnavailable, "smtp protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	rules := s.smtp.GetRules()
 	filtered := make([]config.SMTPRule, 0, len(rules))
+	found := false
 	for _, rule := range rules {
-		if rule.ID != id {
+		if rule.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, rule)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "rule not found")
+		return
 	}
 	s.smtp.SetRules(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -1109,6 +1277,10 @@ func (s *Server) listMQTTMocks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addMQTTMock(w http.ResponseWriter, r *http.Request) {
+	if s.mqtt == nil {
+		writeError(w, http.StatusServiceUnavailable, "mqtt protocol not enabled")
+		return
+	}
 	var m config.MQTTMock
 	if err := decodeBody(r, &m); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -1122,6 +1294,10 @@ func (s *Server) addMQTTMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateMQTTMock(w http.ResponseWriter, r *http.Request) {
+	if s.mqtt == nil {
+		writeError(w, http.StatusServiceUnavailable, "mqtt protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	var updated config.MQTTMock
 	if err := decodeBody(r, &updated); err != nil {
@@ -1142,13 +1318,24 @@ func (s *Server) updateMQTTMock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteMQTTMock(w http.ResponseWriter, r *http.Request) {
+	if s.mqtt == nil {
+		writeError(w, http.StatusServiceUnavailable, "mqtt protocol not enabled")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	mocks := s.mqtt.GetMocks()
 	filtered := make([]config.MQTTMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.mqtt.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -1230,10 +1417,17 @@ func (s *Server) deleteSNMPMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.snmp.GetMocks()
 	filtered := make([]config.SNMPMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.snmp.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -1396,6 +1590,11 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 			mocks = s.cfg.Protocols.SNMP.Mocks
 		}
 		s.snmp.SetMocks(mocks)
+		var traps []config.SNMPTrap
+		if s.cfg.Protocols.SNMP != nil {
+			traps = s.cfg.Protocols.SNMP.Traps
+		}
+		s.snmp.SetTraps(traps)
 	}
 	if s.dns != nil {
 		var mocks []config.DNSMock

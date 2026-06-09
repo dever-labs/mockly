@@ -43,19 +43,23 @@ func (s *stubHTTP) CallCount(mockID string) int64 {
 }
 func (s *stubHTTP) ResetCallCounts() { s.callCounts = nil }
 
-type stubWS struct{}
+type stubWS struct {
+	mocks []config.WebSocketMock
+}
 
 func (s *stubWS) StatusInfo() map[string]interface{} { return map[string]interface{}{"protocol": "ws"} }
-func (s *stubWS) GetMocks() []config.WebSocketMock   { return nil }
-func (s *stubWS) SetMocks(m []config.WebSocketMock)  {}
+func (s *stubWS) GetMocks() []config.WebSocketMock   { return s.mocks }
+func (s *stubWS) SetMocks(m []config.WebSocketMock)  { s.mocks = m }
 
-type stubGRPC struct{}
+type stubGRPC struct {
+	mocks []config.GRPCMock
+}
 
 func (s *stubGRPC) StatusInfo() map[string]interface{} {
 	return map[string]interface{}{"protocol": "grpc"}
 }
-func (s *stubGRPC) GetMocks() []config.GRPCMock  { return nil }
-func (s *stubGRPC) SetMocks(m []config.GRPCMock) {}
+func (s *stubGRPC) GetMocks() []config.GRPCMock  { return s.mocks }
+func (s *stubGRPC) SetMocks(m []config.GRPCMock) { s.mocks = m }
 
 type stubGraphQL struct {
 	mocks []config.GraphQLMock
@@ -67,21 +71,25 @@ func (s *stubGraphQL) StatusInfo() map[string]interface{} {
 func (s *stubGraphQL) GetMocks() []config.GraphQLMock  { return s.mocks }
 func (s *stubGraphQL) SetMocks(m []config.GraphQLMock) { s.mocks = m }
 
-type stubTCP struct{}
+type stubTCP struct {
+	mocks []config.TCPMock
+}
 
 func (s *stubTCP) StatusInfo() map[string]interface{} {
 	return map[string]interface{}{"protocol": "tcp"}
 }
-func (s *stubTCP) GetMocks() []config.TCPMock  { return nil }
-func (s *stubTCP) SetMocks(m []config.TCPMock) {}
+func (s *stubTCP) GetMocks() []config.TCPMock  { return s.mocks }
+func (s *stubTCP) SetMocks(m []config.TCPMock) { s.mocks = m }
 
-type stubRedis struct{}
+type stubRedis struct {
+	mocks []config.RedisMock
+}
 
 func (s *stubRedis) StatusInfo() map[string]interface{} {
 	return map[string]interface{}{"protocol": "redis"}
 }
-func (s *stubRedis) GetMocks() []config.RedisMock  { return nil }
-func (s *stubRedis) SetMocks(m []config.RedisMock) {}
+func (s *stubRedis) GetMocks() []config.RedisMock  { return s.mocks }
+func (s *stubRedis) SetMocks(m []config.RedisMock) { s.mocks = m }
 
 type stubSMTP struct {
 	inbox *smtpserver.Inbox
@@ -96,14 +104,15 @@ func (s *stubSMTP) SetRules(r []config.SMTPRule) { s.rules = r }
 func (s *stubSMTP) GetInbox() *smtpserver.Inbox  { return s.inbox }
 
 type stubMQTT struct {
-	ms *mqttserver.MessageStore
+	ms    *mqttserver.MessageStore
+	mocks []config.MQTTMock
 }
 
 func (s *stubMQTT) StatusInfo() map[string]interface{} {
 	return map[string]interface{}{"protocol": "mqtt"}
 }
-func (s *stubMQTT) GetMocks() []config.MQTTMock               { return nil }
-func (s *stubMQTT) SetMocks(m []config.MQTTMock)              {}
+func (s *stubMQTT) GetMocks() []config.MQTTMock               { return s.mocks }
+func (s *stubMQTT) SetMocks(m []config.MQTTMock)              { s.mocks = m }
 func (s *stubMQTT) GetMessageStore() *mqttserver.MessageStore { return s.ms }
 
 type stubSNMP struct {

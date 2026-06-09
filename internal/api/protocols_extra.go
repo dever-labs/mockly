@@ -133,10 +133,17 @@ func (s *Server) deleteDNSMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.dns.GetMocks()
 	filtered := make([]config.DNSMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.dns.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -199,10 +206,17 @@ func (s *Server) deleteAMQPMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.amqp.GetMocks()
 	filtered := make([]config.AMQPMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.amqp.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -280,10 +294,17 @@ func (s *Server) deleteKafkaMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.kafka.GetMocks()
 	filtered := make([]config.KafkaMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.kafka.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -361,10 +382,17 @@ func (s *Server) deleteLDAPMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.ldap.GetMocks()
 	filtered := make([]config.LDAPMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.ldap.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -427,10 +455,17 @@ func (s *Server) deleteIMAPMailbox(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	items := s.imap.GetMailboxes()
 	filtered := make([]config.IMAPMailbox, 0, len(items))
+	found := false
 	for _, m := range items {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.imap.SetMailboxes(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -493,10 +528,17 @@ func (s *Server) deleteFTPFile(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	items := s.ftp.GetFiles()
 	filtered := make([]config.FTPFile, 0, len(items))
+	found := false
 	for _, m := range items {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.ftp.SetFiles(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -559,10 +601,17 @@ func (s *Server) deleteMemcachedMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.memcached.GetMocks()
 	filtered := make([]config.MemcachedMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.memcached.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -625,10 +674,17 @@ func (s *Server) deleteSTOMPMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.stomp.GetMocks()
 	filtered := make([]config.STOMPMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.stomp.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -706,10 +762,17 @@ func (s *Server) deleteCoAPMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.coap.GetMocks()
 	filtered := make([]config.CoAPMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.coap.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
@@ -772,10 +835,17 @@ func (s *Server) deleteSIPMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	mocks := s.sip.GetMocks()
 	filtered := make([]config.SIPMock, 0, len(mocks))
+	found := false
 	for _, m := range mocks {
-		if m.ID != id {
+		if m.ID == id {
+			found = true
+		} else {
 			filtered = append(filtered, m)
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
 	}
 	s.sip.SetMocks(filtered)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})

@@ -33,6 +33,9 @@ func newMessageStore(maxSize int) *MessageStore {
 	return &MessageStore{maxSize: maxSize}
 }
 
+// NewMessageStore creates a new MessageStore with the given capacity. Exported for testing.
+func NewMessageStore(maxSize int) *MessageStore { return newMessageStore(maxSize) }
+
 func (m *MessageStore) Add(msg config.ReceivedAMQPMessage) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

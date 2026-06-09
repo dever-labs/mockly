@@ -269,25 +269,52 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				if mf.Body != "" {
 					respBody = mf.Body
 				}
+				for k, v := range mf.Headers {
+					respHdrs[k] = v
+				}
 			}
 		}
 	}
 
-	// Protocol fault: probabilistically override status/body.
-	if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
-		status = fault.Status
-		if status == 0 {
-			status = http.StatusServiceUnavailable
+	// Protocol fault: probabilistically override status/body/headers.
+	// Only fires if status or body is explicitly set — a delay-only fault
+	// injects latency without altering the response.
+	// The default error body is only added for error status codes (≥ 400);
+	// 1xx/2xx/3xx faults (e.g. redirects) leave the response body unchanged
+	// unless an explicit body is provided.
+	faultFires := fault != nil && s.scenarios.RollFault(fault.ErrorRate) &&
+		(fault.Abort || fault.TruncateBody > 0 || fault.Status != 0 || fault.Body != "")
+
+	if faultFires && !fault.Abort {
+		// Apply status/body/header overrides regardless of truncate; truncate uses them.
+		if fault.Status != 0 || fault.Body != "" {
+			status = fault.Status
+			if status == 0 {
+				status = http.StatusServiceUnavailable
+			}
+			if fault.Body != "" {
+				respBody = fault.Body
+			} else if status >= 400 {
+				respBody = `{"error":"fault injected"}`
+			}
 		}
-		body := fault.Body
-		if body == "" {
-			body = `{"error":"fault injected"}`
+		for k, v := range fault.Headers {
+			respHdrs[k] = v
 		}
-		respBody = body
 	}
 
 	if delay > 0 {
 		time.Sleep(delay)
+	}
+
+	// Connection-level faults: evaluated after delay, before writing response.
+	if faultFires && fault.Abort {
+		abortConn(w)
+		return
+	}
+	if faultFires && fault.TruncateBody > 0 {
+		truncateResponse(w, status, respHdrs, respBody, fault.TruncateBody)
+		return
 	}
 
 	for k, v := range respHdrs {
@@ -327,4 +354,59 @@ func (s *Server) MarshalMocks() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return json.Marshal(s.mocks)
+}
+
+// abortConn hijacks the connection and performs a TCP reset (RST) — the client
+// receives a connection-reset error with no HTTP response.
+func abortConn(w http.ResponseWriter) {
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		return
+	}
+	conn, _, err := hj.Hijack()
+	if err != nil {
+		return
+	}
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetLinger(0) // triggers RST on close instead of FIN
+	}
+	_ = conn.Close()
+}
+
+// truncateResponse writes the response status and headers then sends only the
+// first n bytes of body before abruptly closing the connection, simulating a
+// mid-transfer server crash (client gets unexpected EOF).
+func truncateResponse(w http.ResponseWriter, status int, headers map[string]string, body string, n int) {
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		// Fallback: just write normally when hijacking is unavailable.
+		for k, v := range headers {
+			w.Header().Set(k, v)
+		}
+		w.WriteHeader(status)
+		_, _ = fmt.Fprint(w, body)
+		return
+	}
+	conn, buf, err := hj.Hijack()
+	if err != nil {
+		return
+	}
+	truncated := body
+	if n < len(truncated) {
+		truncated = truncated[:n]
+	}
+	// Write raw HTTP/1.1 response with an inflated Content-Length so the client
+	// expects more data than it will receive.
+	claimedLen := len(body) + 128
+	_, _ = fmt.Fprintf(buf, "HTTP/1.1 %d %s\r\n", status, http.StatusText(status))
+	for k, v := range headers {
+		_, _ = fmt.Fprintf(buf, "%s: %s\r\n", k, v)
+	}
+	_, _ = fmt.Fprintf(buf, "Content-Length: %d\r\nContent-Type: application/json\r\n\r\n", claimedLen)
+	_, _ = buf.WriteString(truncated)
+	_ = buf.Flush()
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetLinger(0)
+	}
+	_ = conn.Close()
 }

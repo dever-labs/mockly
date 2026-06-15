@@ -226,6 +226,10 @@ function downloadDirect(url: string, dest: string): Promise<void> {
             reject(new Error(`HTTP ${res.statusCode} from ${u} — redirect with no Location header`))
             return
           }
+          if (!res.headers.location.startsWith('https://')) {
+            reject(new Error(`Refusing redirect to non-HTTPS URL: ${res.headers.location}`))
+            return
+          }
           get(res.headers.location)
           return
         }
@@ -293,6 +297,11 @@ function downloadViaProxy(targetUrl: string, dest: string, proxyUrl: string): Pr
             if (!res.headers.location) {
               tlsSocket.destroy()
               reject(new Error(`HTTP ${res.statusCode} from ${targetUrl} — redirect with no Location header`))
+              return
+            }
+            if (!res.headers.location.startsWith('https://')) {
+              tlsSocket.destroy()
+              reject(new Error(`Refusing redirect to non-HTTPS URL: ${res.headers.location}`))
               return
             }
             tlsSocket.destroy()

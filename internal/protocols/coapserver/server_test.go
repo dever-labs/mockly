@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/engine"
 )
 
 func TestMatchCoAPPath(t *testing.T) {
-	if !matchCoAPPath("/sensor/*", "/sensor/temp") {
+	if ok, _ := engine.MatchPath("/sensor/*", "/sensor/temp"); !ok {
 		t.Fatal("expected wildcard path match")
 	}
-	if !matchCoAPPath(`re:^/sensor/[a-z]+$`, "/sensor/temp") {
+	if ok, _ := engine.MatchPath(`re:^/sensor/[a-z]+$`, "/sensor/temp"); !ok {
 		t.Fatal("expected regex path match")
 	}
 }

@@ -2217,6 +2217,14 @@ paths:
       tags: [Logs]
       operationId: getLogs
       summary: Get captured request/response logs
+      description: Get recent log entries across all protocols. Optionally filter results by matched mock ID.
+      parameters:
+        - name: matched_id
+          in: query
+          required: false
+          description: Return only log entries captured for the given mock ID.
+          schema:
+            type: string
       responses:
         "200":
           description: Array of log entries
@@ -2238,6 +2246,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusMessage"
+
+  /api/logs/count:
+    get:
+      tags: [Logs]
+      operationId: countLogs
+      summary: Count captured request/response logs
+      description: Count recent log entries across all protocols. Optionally filter by matched mock ID.
+      parameters:
+        - name: matched_id
+          in: query
+          required: false
+          description: Count only log entries captured for the given mock ID.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Log entry count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    format: int64
+                required: [count]
 
   /api/logs/stream:
     get:
@@ -2498,7 +2532,7 @@ components:
         sequence_exhausted:
           type: string
           enum: [loop, hold_last, not_found]
-          description: Behaviour when sequence is exhausted (default: hold_last)
+          description: "Behaviour when sequence is exhausted (default: hold_last)"
         fault:
           $ref: "#/components/schemas/MockFault"
 
@@ -2821,7 +2855,7 @@ components:
           type: string
         routing_key:
           type: string
-          description: Routing key filter (exact, wildcard, or re: regex)
+          description: "Routing key filter (exact, wildcard, or re: regex)"
         response:
           $ref: "#/components/schemas/AMQPResponse"
         delay:
@@ -2985,7 +3019,7 @@ components:
           type: string
         key:
           type: string
-          description: Key filter (exact, wildcard, or re: regex)
+          description: "Key filter (exact, wildcard, or re: regex)"
         response:
           $ref: "#/components/schemas/MemcachedResponse"
         delay:
@@ -3016,7 +3050,7 @@ components:
           type: string
         destination:
           type: string
-          description: Destination filter (exact, wildcard, or re: regex)
+          description: "Destination filter (exact, wildcard, or re: regex)"
         response:
           $ref: "#/components/schemas/STOMPResponse"
         delay:
@@ -3063,7 +3097,7 @@ components:
           enum: [GET, POST, PUT, DELETE]
         path:
           type: string
-          description: Path filter (exact, wildcard, or re: regex)
+          description: "Path filter (exact, wildcard, or re: regex)"
         response:
           $ref: "#/components/schemas/CoAPResponse"
         delay:
@@ -3096,7 +3130,7 @@ components:
           type: string
         uri:
           type: string
-          description: URI filter (exact, wildcard, or re: regex)
+          description: "URI filter (exact, wildcard, or re: regex)"
         response:
           $ref: "#/components/schemas/SIPResponse"
         delay:

@@ -57,13 +57,14 @@ func cachedTemplate(tmpl string) (*template.Template, error) {
 
 // MatchResult is the result of matching a request against a set of mocks.
 type MatchResult struct {
-	Matched bool
-	MockID  string
-	Body    string
-	Headers map[string]string
-	Status  int
-	Delay   time.Duration
-	Fault   *config.MockFault
+	Matched    bool
+	MockID     string
+	Body       string
+	Headers    map[string]string
+	Status     int
+	Delay      time.Duration
+	Fault      *config.MockFault
+	PathParams map[string]string // named path parameter captures (e.g. {region} → "fr-par")
 }
 
 // HTTPMatch attempts to find the first HTTPMock matching the given request fields.
@@ -80,7 +81,20 @@ func HTTPMatch(
 		if !matchMethod(m.Request.Method, method) {
 			continue
 		}
-		if !matchPath(m.Request.Path, path) {
+		var (
+			pathMatched bool
+			pathParams  map[string]string
+		)
+		if m.Request.PathRegex != "" {
+			re, err := compiledRegex(m.Request.PathRegex)
+			if err != nil || !re.MatchString(path) {
+				continue
+			}
+			pathMatched = true
+		} else {
+			pathMatched, pathParams = matchPath(m.Request.Path, path)
+		}
+		if !pathMatched {
 			continue
 		}
 		if !matchHeaders(m.Request.Headers, headers) {
@@ -99,14 +113,23 @@ func HTTPMatch(
 			continue
 		}
 
-		rendered, err := renderTemplate(m.Response.Body, query, headers, body)
+		req := RequestContext{
+			Method:     method,
+			Path:       path,
+			Query:      query,
+			Headers:    headers,
+			Body:       body,
+			PathParams: pathParams,
+		}
+
+		rendered, err := renderTemplate(m.Response.Body, req)
 		if err != nil {
 			rendered = m.Response.Body
 		}
 
 		renderedHeaders := make(map[string]string, len(m.Response.Headers))
 		for k, v := range m.Response.Headers {
-			rv, herr := renderTemplate(v, query, headers, body)
+			rv, herr := renderTemplate(v, req)
 			if herr != nil {
 				rv = v
 			}
@@ -119,13 +142,14 @@ func HTTPMatch(
 		}
 
 		return MatchResult{
-			Matched: true,
-			MockID:  m.ID,
-			Body:    rendered,
-			Headers: renderedHeaders,
-			Status:  status,
-			Delay:   m.Response.Delay.Duration,
-			Fault:   m.Fault,
+			Matched:    true,
+			MockID:     m.ID,
+			Body:       rendered,
+			Headers:    renderedHeaders,
+			Status:     status,
+			Delay:      m.Response.Delay.Duration,
+			Fault:      m.Fault,
+			PathParams: pathParams,
 		}, true
 	}
 	return MatchResult{}, false
@@ -141,6 +165,12 @@ func WSMatch(rules []config.WebSocketRule, message string) (config.WebSocketRule
 	return config.WebSocketRule{}, false
 }
 
+// MatchPath is the exported form of matchPath for use by protocol servers
+// that perform their own path/URI matching outside of HTTPMatch.
+func MatchPath(pattern, path string) (bool, map[string]string) {
+	return matchPath(pattern, path)
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -152,23 +182,67 @@ func matchMethod(want, got string) bool {
 	return strings.EqualFold(want, got)
 }
 
-// matchPath supports exact matches, prefix wildcards (/*), and regex (/re:…).
-func matchPath(pattern, path string) bool {
+// matchPath supports exact matches, prefix wildcards (/*), mid-segment wildcards,
+// named parameters, and regex (/re:…).
+//
+// Wildcard rules:
+//   - "/*" suffix  – matches the prefix and any path beneath it (multi-segment).
+//   - "*" segment  – each * matches exactly one path segment (no slashes);
+//     the total segment count must match.
+//   - "{name}"     – like * but also captures the segment value in the params map
+//     (e.g. "{region}" on "fr-par" → {"region":"fr-par"}).
+func matchPath(pattern, path string) (bool, map[string]string) {
 	if pattern == "" || pattern == "*" {
-		return true
+		return true, nil
 	}
 	if strings.HasPrefix(pattern, "re:") {
 		re, err := compiledRegex(strings.TrimPrefix(pattern, "re:"))
 		if err != nil {
-			return false
+			return false, nil
 		}
-		return re.MatchString(path)
+		return re.MatchString(path), nil
 	}
 	if strings.HasSuffix(pattern, "/*") {
 		prefix := strings.TrimSuffix(pattern, "/*")
-		return path == prefix || strings.HasPrefix(path, prefix+"/")
+		matched := path == prefix || strings.HasPrefix(path, prefix+"/")
+		return matched, nil
 	}
-	return pattern == path
+	if strings.Contains(pattern, "*") || (strings.Contains(pattern, "{") && strings.Contains(pattern, "}")) {
+		return matchPathSegments(pattern, path)
+	}
+	return pattern == path, nil
+}
+
+// matchPathSegments splits pattern and path on "/" and matches segment by
+// segment. A "*" pattern segment matches exactly one path segment (anonymous
+// wildcard). A "{name}" segment also matches one segment and captures its value
+// under the given name (e.g. "{id}" on "42" → params["id"]="42").
+func matchPathSegments(pattern, path string) (bool, map[string]string) {
+	pp := strings.Split(pattern, "/")
+	sp := strings.Split(path, "/")
+	if len(pp) != len(sp) {
+		return false, nil
+	}
+	var params map[string]string
+	for i, seg := range pp {
+		if seg == "*" {
+			continue
+		}
+		// {name} named parameter
+		if strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}") {
+			if name := seg[1 : len(seg)-1]; name != "" {
+				if params == nil {
+					params = make(map[string]string)
+				}
+				params[name] = sp[i]
+			}
+			continue
+		}
+		if seg != sp[i] {
+			return false, nil
+		}
+	}
+	return true, params
 }
 
 func matchPattern(pattern, text string) bool {
@@ -284,8 +358,21 @@ func matchState(cond *config.StateCondition, store *state.Store) bool {
 	return v == cond.Value
 }
 
-// renderTemplate executes a Go text/template against a simple context object.
-func renderTemplate(tmpl string, query, headers map[string]string, body string) (string, error) {
+// RequestContext carries the inbound request fields that are available inside
+// response body / header templates.
+type RequestContext struct {
+	Method     string
+	Path       string
+	Query      map[string]string
+	Headers    map[string]string
+	Body       string
+	PathParams map[string]string
+}
+
+// renderTemplate executes a Go text/template against a context that includes
+// both the legacy top-level keys (query, headers, body) and a nested
+// "request" key with method, path, params, and the body parsed as JSON.
+func renderTemplate(tmpl string, req RequestContext) (string, error) {
 	if !strings.Contains(tmpl, "{{") {
 		return tmpl, nil
 	}
@@ -293,10 +380,28 @@ func renderTemplate(tmpl string, query, headers map[string]string, body string) 
 	if err != nil {
 		return "", fmt.Errorf("parsing template: %w", err)
 	}
+
+	// Parse body as JSON for {{.request.body.field}} access.
+	// Falls back to an empty map so templates don't panic on non-JSON bodies.
+	var bodyJSON interface{}
+	if err := json.Unmarshal([]byte(req.Body), &bodyJSON); err != nil {
+		bodyJSON = map[string]interface{}{}
+	}
+
 	ctx := map[string]interface{}{
-		"query":   query,
-		"headers": headers,
-		"body":    body,
+		// Backward-compatible top-level keys.
+		"query":   req.Query,
+		"headers": req.Headers,
+		"body":    req.Body,
+		// Namespaced request context.
+		"request": map[string]interface{}{
+			"method":  req.Method,
+			"path":    req.Path,
+			"query":   req.Query,
+			"headers": req.Headers,
+			"body":    bodyJSON,
+			"params":  req.PathParams,
+		},
 	}
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, ctx); err != nil {
@@ -309,8 +414,8 @@ func renderTemplate(tmpl string, query, headers map[string]string, body string) 
 // servers that need to template-render a string outside of HTTPMatch
 // (e.g. sequence entry bodies/headers and scenario patch bodies/headers).
 // On template error it returns the original string unchanged.
-func Render(tmpl string, query, headers map[string]string, body string) string {
-	out, err := renderTemplate(tmpl, query, headers, body)
+func Render(tmpl string, req RequestContext) string {
+	out, err := renderTemplate(tmpl, req)
 	if err != nil {
 		return tmpl
 	}

@@ -142,7 +142,7 @@ func (s *stubSNMP) SendTrap(id string) error {
 // Helper: start an API server on a free port
 // ---------------------------------------------------------------------------
 
-func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store, *stubSNMP) {
+func startAPIWithLogger(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store, *stubSNMP, *logger.Logger) {
 	t.Helper()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -194,6 +194,12 @@ func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store, 
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
 	waitForHTTP(t, base+"/api/protocols", 2*time.Second)
+	return base, httpStub, graphqlStub, sc, snmpStub, log
+}
+
+func startAPI(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenarios.Store, *stubSNMP) {
+	t.Helper()
+	base, httpStub, graphqlStub, sc, snmpStub, _ := startAPIWithLogger(t)
 	return base, httpStub, graphqlStub, sc, snmpStub
 }
 

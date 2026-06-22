@@ -13,16 +13,17 @@ import (
 
 // Entry is a single logged request/event.
 type Entry struct {
-	ID        string            `json:"id"`
-	Timestamp time.Time         `json:"timestamp"`
-	Protocol  string            `json:"protocol"`
-	Method    string            `json:"method,omitempty"`
-	Path      string            `json:"path"`
-	Status    int               `json:"status,omitempty"`
-	Duration  int64             `json:"duration_ms"`
-	Headers   map[string]string `json:"headers,omitempty"`
-	Body      string            `json:"body,omitempty"`
-	MatchedID string            `json:"matched_id,omitempty"`
+	ID         string            `json:"id"`
+	Timestamp  time.Time         `json:"timestamp"`
+	Protocol   string            `json:"protocol"`
+	Method     string            `json:"method,omitempty"`
+	Path       string            `json:"path"`
+	Status     int               `json:"status,omitempty"`
+	Duration   int64             `json:"duration_ms"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Body       string            `json:"body,omitempty"`
+	MatchedID  string            `json:"matched_id,omitempty"`
+	PathParams map[string]string `json:"path_params,omitempty"`
 }
 
 // Logger stores recent entries and broadcasts to SSE subscribers.

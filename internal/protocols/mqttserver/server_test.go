@@ -10,58 +10,75 @@ import (
 )
 
 func TestMatchMQTTTopic_Exact(t *testing.T) {
-	if !matchMQTTTopic("sensors/temp", "sensors/temp") {
+	if ok, _ := matchMQTTTopic("sensors/temp", "sensors/temp"); !ok {
 		t.Error("exact topic should match")
 	}
-	if matchMQTTTopic("sensors/temp", "sensors/humidity") {
+	if ok, _ := matchMQTTTopic("sensors/temp", "sensors/humidity"); ok {
 		t.Error("exact topic should not match different topic")
 	}
 }
 
 func TestMatchMQTTTopic_Hash_MatchAll(t *testing.T) {
-	if !matchMQTTTopic("#", "anything/at/all") {
+	if ok, _ := matchMQTTTopic("#", "anything/at/all"); !ok {
 		t.Error("# should match any topic")
 	}
-	if !matchMQTTTopic("#", "single") {
+	if ok, _ := matchMQTTTopic("#", "single"); !ok {
 		t.Error("# should match single level")
 	}
 }
 
 func TestMatchMQTTTopic_SingleLevelWildcard(t *testing.T) {
-	if !matchMQTTTopic("sensors/+", "sensors/temp") {
+	if ok, _ := matchMQTTTopic("sensors/+", "sensors/temp"); !ok {
 		t.Error("+ should match single level")
 	}
-	if !matchMQTTTopic("sensors/+", "sensors/humidity") {
+	if ok, _ := matchMQTTTopic("sensors/+", "sensors/humidity"); !ok {
 		t.Error("+ should match any single level segment")
 	}
-	if matchMQTTTopic("sensors/+", "sensors/room/temp") {
+	if ok, _ := matchMQTTTopic("sensors/+", "sensors/room/temp"); ok {
 		t.Error("+ should not match multiple levels")
 	}
 }
 
 func TestMatchMQTTTopic_MultiLevelWildcard(t *testing.T) {
-	if !matchMQTTTopic("sensors/#", "sensors/room/temp") {
+	if ok, _ := matchMQTTTopic("sensors/#", "sensors/room/temp"); !ok {
 		t.Error("# in filter should match multi-level topic")
 	}
-	if !matchMQTTTopic("sensors/#", "sensors/temp") {
+	if ok, _ := matchMQTTTopic("sensors/#", "sensors/temp"); !ok {
 		t.Error("# should match single remaining level")
 	}
 }
 
 func TestMatchMQTTTopic_Mixed(t *testing.T) {
-	if !matchMQTTTopic("home/+/temperature", "home/living/temperature") {
+	if ok, _ := matchMQTTTopic("home/+/temperature", "home/living/temperature"); !ok {
 		t.Error("mixed filter should match")
 	}
-	if matchMQTTTopic("home/+/temperature", "home/living/humidity") {
+	if ok, _ := matchMQTTTopic("home/+/temperature", "home/living/humidity"); ok {
 		t.Error("mixed filter should not match wrong leaf")
 	}
 }
 
+func TestMatchMQTTTopic_NamedCapture(t *testing.T) {
+	ok, params := matchMQTTTopic("devices/{device_id}/cmd", "devices/abc123/cmd")
+	if !ok {
+		t.Fatal("expected named capture topic to match")
+	}
+	if params["device_id"] != "abc123" {
+		t.Errorf("want device_id=abc123, got %q", params["device_id"])
+	}
+}
+
+func TestMatchMQTTTopic_NamedCapture_NoMatch(t *testing.T) {
+	ok, _ := matchMQTTTopic("devices/{device_id}/cmd", "devices/abc123/cmd/extra")
+	if ok {
+		t.Fatal("expected no match for wrong topic depth")
+	}
+}
+
 func TestMatchMQTTTopic_LevelCountMismatch(t *testing.T) {
-	if matchMQTTTopic("a/b/c", "a/b") {
+	if ok, _ := matchMQTTTopic("a/b/c", "a/b"); ok {
 		t.Error("different depth without wildcard should not match")
 	}
-	if matchMQTTTopic("a/b", "a/b/c") {
+	if ok, _ := matchMQTTTopic("a/b", "a/b/c"); ok {
 		t.Error("filter shallower than topic should not match without wildcard")
 	}
 }
@@ -195,7 +212,7 @@ func TestMQTT_matchMock_ExactTopic(t *testing.T) {
 	srv := newTestMQTTServer(t, []config.MQTTMock{
 		{ID: "m1", Topic: "sensors/temp"},
 	})
-	m, ok := srv.matchMock("sensors/temp")
+	m, ok, _ := srv.matchMock("sensors/temp")
 	if !ok || m.ID != "m1" {
 		t.Fatalf("expected match, got ok=%v id=%q", ok, m.ID)
 	}
@@ -205,7 +222,7 @@ func TestMQTT_matchMock_NoMatch(t *testing.T) {
 	srv := newTestMQTTServer(t, []config.MQTTMock{
 		{ID: "m1", Topic: "sensors/temp"},
 	})
-	_, ok := srv.matchMock("sensors/humidity")
+	_, ok, _ := srv.matchMock("sensors/humidity")
 	if ok {
 		t.Fatal("expected no match for different topic")
 	}
@@ -215,7 +232,7 @@ func TestMQTT_matchMock_WildcardTopic(t *testing.T) {
 	srv := newTestMQTTServer(t, []config.MQTTMock{
 		{ID: "all", Topic: "#"},
 	})
-	_, ok := srv.matchMock("anything/at/all")
+	_, ok, _ := srv.matchMock("anything/at/all")
 	if !ok {
 		t.Fatal("expected wildcard match")
 	}
@@ -233,7 +250,7 @@ func TestMQTT_matchMock_StateCondition_NotMet(t *testing.T) {
 		}},
 	}
 	srv := New(cfg, st, nil, logger.New(10))
-	_, ok := srv.matchMock("t")
+	_, ok, _ := srv.matchMock("t")
 	if ok {
 		t.Fatal("expected no match when state condition is not met")
 	}
@@ -252,7 +269,7 @@ func TestMQTT_matchMock_StateCondition_Met(t *testing.T) {
 		}},
 	}
 	srv := New(cfg, st, nil, logger.New(10))
-	m, ok := srv.matchMock("t")
+	m, ok, _ := srv.matchMock("t")
 	if !ok || m.ID != "m1" {
 		t.Fatalf("expected match when state condition met, got ok=%v", ok)
 	}
@@ -276,4 +293,3 @@ func TestMQTT_StatusInfo(t *testing.T) {
 		t.Errorf("want messages=1, got %v", info["messages"])
 	}
 }
-

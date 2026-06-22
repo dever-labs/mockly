@@ -5,13 +5,13 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
@@ -96,7 +96,7 @@ func (s *Server) handlePacket(conn net.PacketConn, addr net.Addr, data []byte) {
 		_, _ = conn.WriteTo(message, addr)
 		return
 	}
-	mock, ok := s.matchMock(method, uri)
+	mock, ok, uriParams := s.matchMock(method, uri)
 	resp := config.SIPResponse{Status: 200, Reason: defaultSIPReason(200)}
 	matchedID := ""
 	if ok {
@@ -107,6 +107,16 @@ func (s *Server) handlePacket(conn net.PacketConn, addr net.Addr, data []byte) {
 		if resp.Reason == "" {
 			resp.Reason = defaultSIPReason(resp.Status)
 		}
+		if resp.Body != "" {
+			reqCtx := engine.RequestContext{
+				Method:     method,
+				Path:       uri,
+				Body:       body,
+				Headers:    headers,
+				PathParams: uriParams,
+			}
+			resp.Body = engine.Render(resp.Body, reqCtx)
+		}
 		if mock.Delay.Duration > 0 {
 			time.Sleep(mock.Delay.Duration)
 		}
@@ -114,7 +124,7 @@ func (s *Server) handlePacket(conn net.PacketConn, addr net.Addr, data []byte) {
 	}
 	message := buildSIPResponse(resp, headers)
 	_, _ = conn.WriteTo(message, addr)
-	s.log.Log(logger.Entry{Protocol: "sip", Method: method, Path: uri, Status: resp.Status, Body: body, MatchedID: matchedID})
+	s.log.Log(logger.Entry{Protocol: "sip", Method: method, Path: uri, Status: resp.Status, Body: body, MatchedID: matchedID, PathParams: uriParams})
 }
 
 func parseSIPMessage(data []byte) (string, string, map[string]string, string) {
@@ -165,7 +175,7 @@ func buildSIPResponse(resp config.SIPResponse, reqHeaders map[string]string) []b
 	return []byte(b.String())
 }
 
-func (s *Server) matchMock(method, uri string) (config.SIPMock, bool) {
+func (s *Server) matchMock(method, uri string) (config.SIPMock, bool, map[string]string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, m := range s.mocks {
@@ -177,30 +187,56 @@ func (s *Server) matchMock(method, uri string) (config.SIPMock, bool) {
 		if m.Method != "*" && !strings.EqualFold(m.Method, method) {
 			continue
 		}
-		if m.URI != "" && !matchSIPURI(m.URI, uri) {
+		var (
+			matched   bool
+			uriParams map[string]string
+		)
+		if m.URIRegex != "" {
+			re, err := engine.CachedRegex(m.URIRegex)
+			if err == nil && re.MatchString(uri) {
+				matched = true
+			}
+		} else if m.URI != "" {
+			matched, uriParams = matchSIPURI(m.URI, uri)
+		} else {
+			matched = true
+		}
+		if !matched {
 			continue
 		}
-		return m, true
+		return m, true, uriParams
 	}
-	return config.SIPMock{}, false
+	return config.SIPMock{}, false, nil
 }
 
-func matchSIPURI(pattern, uri string) bool {
+// matchSIPURI matches a SIP URI against a pattern. Supports:
+//   - Exact match
+//   - "re:…" prefix for regex
+//   - "*" glob (prefix/suffix within non-slash-separated URIs like sip:*@host)
+//   - "/" path-segment wildcards with {name} capture when the URI contains slashes
+func matchSIPURI(pattern, uri string) (bool, map[string]string) {
 	if pattern == "" || pattern == "*" {
-		return true
+		return true, nil
 	}
 	if strings.HasPrefix(pattern, "re:") {
-		re, err := regexp.Compile(pattern[3:])
+		re, err := engine.CachedRegex(pattern[3:])
 		if err != nil {
-			return false
+			return false, nil
 		}
-		return re.MatchString(uri)
+		return re.MatchString(uri), nil
 	}
+	// {name} capture syntax: delegate to engine path matching when
+	// pattern has slash separators (e.g. sip:host/path/{resource}).
+	if strings.Contains(pattern, "/") && (strings.Contains(pattern, "{") || strings.Contains(pattern, "*:")) {
+		return engine.MatchPath(pattern, uri)
+	}
+	// Glob: * matches any substring (single split, no nested wildcards).
 	if strings.Contains(pattern, "*") {
 		parts := strings.SplitN(pattern, "*", 2)
-		return strings.HasPrefix(uri, parts[0]) && (parts[1] == "" || strings.HasSuffix(uri, parts[1]))
+		matched := strings.HasPrefix(uri, parts[0]) && (parts[1] == "" || strings.HasSuffix(uri, parts[1]))
+		return matched, nil
 	}
-	return pattern == uri
+	return pattern == uri, nil
 }
 
 func defaultSIPReason(status int) string {

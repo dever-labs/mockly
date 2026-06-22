@@ -56,6 +56,96 @@ func TestHTTPMatch_WildcardPath(t *testing.T) {
 	}
 }
 
+func TestHTTPMatch_MidSegmentWildcard(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/regions/*/emails"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	// Should match: wildcard replaces exactly one segment.
+	if _, ok := match(mocks, "GET", "/regions/fr-par/emails", nil); !ok {
+		t.Error("expected match for /regions/fr-par/emails")
+	}
+	if _, ok := match(mocks, "GET", "/regions/us-east/emails", nil); !ok {
+		t.Error("expected match for /regions/us-east/emails")
+	}
+
+	// Should not match: different segment count.
+	if _, ok := match(mocks, "GET", "/regions/fr-par/other/emails", nil); ok {
+		t.Error("expected no match for /regions/fr-par/other/emails (extra segment)")
+	}
+	if _, ok := match(mocks, "GET", "/regions/emails", nil); ok {
+		t.Error("expected no match for /regions/emails (missing segment)")
+	}
+}
+
+func TestHTTPMatch_DeepMidSegmentWildcard(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/api/*/users/*/profile"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	if _, ok := match(mocks, "GET", "/api/v1/users/42/profile", nil); !ok {
+		t.Error("expected match for /api/v1/users/42/profile")
+	}
+	if _, ok := match(mocks, "GET", "/api/v2/users/99/profile", nil); !ok {
+		t.Error("expected match for /api/v2/users/99/profile")
+	}
+	if _, ok := match(mocks, "GET", "/api/v1/users/profile", nil); ok {
+		t.Error("expected no match: segment count mismatch")
+	}
+}
+
+func TestHTTPMatch_NamedWildcard(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/regions/{region}/emails"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	result, ok := match(mocks, "GET", "/regions/fr-par/emails", nil)
+	if !ok {
+		t.Fatal("expected match for named wildcard path")
+	}
+	if result.PathParams["region"] != "fr-par" {
+		t.Errorf("expected PathParams[region]=fr-par, got %q", result.PathParams["region"])
+	}
+
+	result2, ok2 := match(mocks, "GET", "/regions/nl-ams/emails", nil)
+	if !ok2 {
+		t.Fatal("expected match for nl-ams")
+	}
+	if result2.PathParams["region"] != "nl-ams" {
+		t.Errorf("expected PathParams[region]=nl-ams, got %q", result2.PathParams["region"])
+	}
+
+	// Segment count mismatch should not match.
+	if _, ok3 := match(mocks, "GET", "/regions/fr-par/other/emails", nil); ok3 {
+		t.Error("expected no match for extra segment")
+	}
+}
+
+func TestHTTPMatch_MultipleNamedWildcards(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/api/{version}/users/{id}/profile"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	result, ok := match(mocks, "GET", "/api/v2/users/42/profile", nil)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if result.PathParams["version"] != "v2" {
+		t.Errorf("expected version=v2, got %q", result.PathParams["version"])
+	}
+	if result.PathParams["id"] != "42" {
+		t.Errorf("expected id=42, got %q", result.PathParams["id"])
+	}
+}
+
 func TestHTTPMatch_RegexPath(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "m1",
@@ -489,7 +579,7 @@ func TestHTTPMatch_DefaultStatus200(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRender_WithTemplate(t *testing.T) {
-	out := engine.Render(`{"id":"{{uuid}}"}`, nil, nil, "")
+	out := engine.Render(`{"id":"{{uuid}}"}`, engine.RequestContext{})
 	if out == `{"id":"{{uuid}}"}` {
 		t.Error("Render: template was not rendered")
 	}
@@ -500,7 +590,7 @@ func TestRender_WithTemplate(t *testing.T) {
 
 func TestRender_NoTemplate(t *testing.T) {
 	in := `{"static":"value"}`
-	out := engine.Render(in, nil, nil, "")
+	out := engine.Render(in, engine.RequestContext{})
 	if out != in {
 		t.Errorf("Render: plain string modified unexpectedly, got %q", out)
 	}
@@ -508,7 +598,7 @@ func TestRender_NoTemplate(t *testing.T) {
 
 func TestRender_InvalidTemplate_ReturnsOriginal(t *testing.T) {
 	in := `{{invalid template syntax`
-	out := engine.Render(in, nil, nil, "")
+	out := engine.Render(in, engine.RequestContext{})
 	// On template error Render returns the original string unchanged.
 	if out != in {
 		t.Errorf("Render: expected original on error, got %q", out)
@@ -516,9 +606,161 @@ func TestRender_InvalidTemplate_ReturnsOriginal(t *testing.T) {
 }
 
 func TestRender_QueryParam(t *testing.T) {
-	out := engine.Render(`hello {{.query.name}}`, map[string]string{"name": "world"}, nil, "")
+	out := engine.Render(`hello {{.query.name}}`, engine.RequestContext{Query: map[string]string{"name": "world"}})
 	if out != "hello world" {
 		t.Errorf("Render: unexpected output %q", out)
 	}
 }
 
+// ---------------------------------------------------------------------------
+// {name} brace syntax for named path params
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_BraceNamedParam(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/regions/{region}/emails"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	result, ok := match(mocks, "GET", "/regions/fr-par/emails", nil)
+	if !ok {
+		t.Fatal("expected match for brace-style named param")
+	}
+	if result.PathParams["region"] != "fr-par" {
+		t.Errorf("expected region=fr-par, got %q", result.PathParams["region"])
+	}
+}
+
+func TestHTTPMatch_MultipleBraceParams(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/api/{version}/users/{id}"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	result, ok := match(mocks, "GET", "/api/v2/users/42", nil)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if result.PathParams["version"] != "v2" {
+		t.Errorf("expected version=v2, got %q", result.PathParams["version"])
+	}
+	if result.PathParams["id"] != "42" {
+		t.Errorf("expected id=42, got %q", result.PathParams["id"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// path_regex field
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_PathRegex(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", PathRegex: `^/regions/[a-z-]+/emails$`},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	if _, ok := match(mocks, "GET", "/regions/fr-par/emails", nil); !ok {
+		t.Error("expected match for path_regex")
+	}
+	if _, ok := match(mocks, "GET", "/regions/UPPER/emails", nil); ok {
+		t.Error("expected no match: uppercase region")
+	}
+	if _, ok := match(mocks, "GET", "/regions/fr-par/other", nil); ok {
+		t.Error("expected no match: wrong suffix")
+	}
+}
+
+func TestHTTPMatch_PathRegex_NoMatch(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m1",
+		Request:  config.HTTPRequest{Method: "GET", PathRegex: `^/users/\d+$`},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	if _, ok := match(mocks, "GET", "/users/alice", nil); ok {
+		t.Fatal("expected no match for non-numeric path")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Request context templating: {{.request.*}}
+// ---------------------------------------------------------------------------
+
+func TestRender_RequestMethod(t *testing.T) {
+	out := engine.Render(`{{.request.method}}`, engine.RequestContext{Method: "POST"})
+	if out != "POST" {
+		t.Errorf("expected POST, got %q", out)
+	}
+}
+
+func TestRender_RequestPath(t *testing.T) {
+	out := engine.Render(`{{.request.path}}`, engine.RequestContext{Path: "/users/42"})
+	if out != "/users/42" {
+		t.Errorf("expected /users/42, got %q", out)
+	}
+}
+
+func TestRender_RequestPathParam(t *testing.T) {
+	out := engine.Render(`{{.request.params.region}}`, engine.RequestContext{
+		PathParams: map[string]string{"region": "fr-par"},
+	})
+	if out != "fr-par" {
+		t.Errorf("expected fr-par, got %q", out)
+	}
+}
+
+func TestRender_RequestQuery(t *testing.T) {
+	ctx := engine.RequestContext{
+		Query: map[string]string{"page": "3"},
+	}
+	got := engine.Render("page={{.request.query.page}}", ctx)
+	if got != "page=3" {
+		t.Errorf("want page=3, got %q", got)
+	}
+}
+
+func TestRender_RequestHeader(t *testing.T) {
+	ctx := engine.RequestContext{
+		Headers: map[string]string{"X-Token": "secret-123"},
+	}
+	got := engine.Render(`token={{index .request.headers "X-Token"}}`, ctx)
+	if got != "token=secret-123" {
+		t.Errorf("want token=secret-123, got %q", got)
+	}
+}
+
+func TestRender_RequestBodyField(t *testing.T) {
+	out := engine.Render(`{{.request.body.project_id}}`, engine.RequestContext{
+		Body: `{"project_id":"proj-abc"}`,
+	})
+	if out != "proj-abc" {
+		t.Errorf("expected proj-abc, got %q", out)
+	}
+}
+
+func TestRender_RequestBodyField_NonJSON(t *testing.T) {
+	// Non-JSON body falls back to empty map; missing key renders as "<no value>".
+	out := engine.Render(`{{.request.body.x}}`, engine.RequestContext{Body: "not-json"})
+	if out != "<no value>" {
+		t.Errorf("expected <no value> for non-JSON body missing key, got %q", out)
+	}
+}
+
+func TestHTTPMatch_ResponseTemplateWithRequestBody(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "create",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/emails"},
+		Response: config.HTTPResponse{Status: 201, Body: `{"id":"{{.request.body.project_id}}"}`},
+	}}
+
+	result, ok := engine.HTTPMatch(mocks, "POST", "/emails", nil, nil, `{"project_id":"proj-xyz"}`, nil)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if result.Body != `{"id":"proj-xyz"}` {
+		t.Errorf("unexpected body: %q", result.Body)
+	}
+}

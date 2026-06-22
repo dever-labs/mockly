@@ -391,6 +391,7 @@ func (s *Server) buildRouter() http.Handler {
 		r.Get("/api/logs", s.getLogs)
 		r.Delete("/api/logs", s.clearLogs)
 		r.Get("/api/logs/stream", s.streamLogs)
+		r.Get("/api/logs/count", s.getLogsCount)
 
 		// Call verification
 		r.Get("/api/calls/http/{mockId}", s.getHTTPCalls)
@@ -1498,7 +1499,31 @@ func (s *Server) deleteState(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.log.Entries())
+	entries := s.log.Entries()
+	if id := r.URL.Query().Get("matched_id"); id != "" {
+		filtered := entries[:0:0]
+		for _, e := range entries {
+			if e.MatchedID == id {
+				filtered = append(filtered, e)
+			}
+		}
+		entries = filtered
+	}
+	writeJSON(w, http.StatusOK, entries)
+}
+
+func (s *Server) getLogsCount(w http.ResponseWriter, r *http.Request) {
+	entries := s.log.Entries()
+	count := len(entries)
+	if id := r.URL.Query().Get("matched_id"); id != "" {
+		count = 0
+		for _, e := range entries {
+			if e.MatchedID == id {
+				count++
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"count": count})
 }
 
 func (s *Server) clearLogs(w http.ResponseWriter, r *http.Request) {

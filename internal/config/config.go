@@ -153,6 +153,10 @@ type HTTPRequest struct {
 	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 	Body    string            `yaml:"body,omitempty" json:"body,omitempty"`
 
+	// PathRegex matches the request path against a regular expression.
+	// When set it takes priority over Path.
+	PathRegex string `yaml:"path_regex,omitempty" json:"path_regex,omitempty"`
+
 	// Query matches URL query parameters (exact value or "*" wildcard).
 	Query map[string]string `yaml:"query,omitempty" json:"query,omitempty"`
 
@@ -660,12 +664,13 @@ type CoAPConfig struct {
 }
 
 type CoAPMock struct {
-	ID       string          `yaml:"id" json:"id"`
-	Method   string          `yaml:"method" json:"method"`
-	Path     string          `yaml:"path" json:"path"`
-	Response CoAPResponse    `yaml:"response" json:"response"`
-	Delay    Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
-	State    *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+	ID        string          `yaml:"id" json:"id"`
+	Method    string          `yaml:"method" json:"method"`
+	Path      string          `yaml:"path" json:"path"`
+	PathRegex string          `yaml:"path_regex,omitempty" json:"path_regex,omitempty"`
+	Response  CoAPResponse    `yaml:"response" json:"response"`
+	Delay     Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State     *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
 }
 
 type CoAPResponse struct {
@@ -685,12 +690,13 @@ type SIPConfig struct {
 }
 
 type SIPMock struct {
-	ID       string          `yaml:"id" json:"id"`
-	Method   string          `yaml:"method" json:"method"`
-	URI      string          `yaml:"uri,omitempty" json:"uri,omitempty"`
-	Response SIPResponse     `yaml:"response" json:"response"`
-	Delay    Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
-	State    *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+	ID        string          `yaml:"id" json:"id"`
+	Method    string          `yaml:"method" json:"method"`
+	URI       string          `yaml:"uri,omitempty" json:"uri,omitempty"`
+	URIRegex  string          `yaml:"uri_regex,omitempty" json:"uri_regex,omitempty"`
+	Response  SIPResponse     `yaml:"response" json:"response"`
+	Delay     Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State     *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
 }
 
 type SIPResponse struct {

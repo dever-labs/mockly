@@ -160,6 +160,15 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		matchedID = result.MockID
 		delay = result.Delay
 
+		reqCtx := engine.RequestContext{
+			Method:     r.Method,
+			Path:       r.URL.Path,
+			Query:      query,
+			Headers:    hdrs,
+			Body:       string(body),
+			PathParams: result.PathParams,
+		}
+
 		// Increment call counter and select sequence response if configured.
 		s.mu.Lock()
 		s.callCounts[matchedID]++
@@ -185,10 +194,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 					status = entry.Status
 				}
 				if entry.Body != "" {
-					respBody = engine.Render(entry.Body, query, hdrs, string(body))
+					respBody = engine.Render(entry.Body, reqCtx)
 				}
 				for k, v := range entry.Headers {
-					respHdrs[k] = engine.Render(v, query, hdrs, string(body))
+					respHdrs[k] = engine.Render(v, reqCtx)
 				}
 				if entry.Delay.Duration > 0 {
 					delay = entry.Delay.Duration
@@ -206,10 +215,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 						status = entry.Status
 					}
 					if entry.Body != "" {
-						respBody = engine.Render(entry.Body, query, hdrs, string(body))
+						respBody = engine.Render(entry.Body, reqCtx)
 					}
 					for k, v := range entry.Headers {
-						respHdrs[k] = engine.Render(v, query, hdrs, string(body))
+						respHdrs[k] = engine.Render(v, reqCtx)
 					}
 					if entry.Delay.Duration > 0 {
 						delay = entry.Delay.Duration
@@ -223,10 +232,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 						status = entry.Status
 					}
 					if entry.Body != "" {
-						respBody = engine.Render(entry.Body, query, hdrs, string(body))
+						respBody = engine.Render(entry.Body, reqCtx)
 					}
 					for k, v := range entry.Headers {
-						respHdrs[k] = engine.Render(v, query, hdrs, string(body))
+						respHdrs[k] = engine.Render(v, reqCtx)
 					}
 					if entry.Delay.Duration > 0 {
 						delay = entry.Delay.Duration
@@ -247,10 +256,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 					status = patch.Status
 				}
 				if patch.Body != "" {
-					respBody = engine.Render(patch.Body, query, hdrs, string(body))
+					respBody = engine.Render(patch.Body, reqCtx)
 				}
 				for k, v := range patch.Headers {
-					respHdrs[k] = engine.Render(v, query, hdrs, string(body))
+					respHdrs[k] = engine.Render(v, reqCtx)
 				}
 				if patch.Delay != nil {
 					delay = patch.Delay.Duration
@@ -324,14 +333,15 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprint(w, respBody)
 
 	s.log.Log(logger.Entry{
-		Protocol:  "http",
-		Method:    r.Method,
-		Path:      r.URL.Path,
-		Status:    status,
-		Duration:  time.Since(start).Milliseconds(),
-		Headers:   hdrs,
-		Body:      string(body),
-		MatchedID: matchedID,
+		Protocol:   "http",
+		Method:     r.Method,
+		Path:       r.URL.Path,
+		Status:     status,
+		Duration:   time.Since(start).Milliseconds(),
+		Headers:    hdrs,
+		Body:       string(body),
+		MatchedID:  matchedID,
+		PathParams: result.PathParams,
 	})
 }
 

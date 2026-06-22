@@ -50,7 +50,7 @@ func TestSIP_GetMocks_IsolatesSlice(t *testing.T) {
 
 func TestSIP_MatchMock_NoMocks(t *testing.T) {
 	srv := newTestSIPServer(nil)
-	if _, ok := srv.matchMock("INVITE", "sip:bob@example.com"); ok {
+	if _, ok, _ := srv.matchMock("INVITE", "sip:bob@example.com"); ok {
 		t.Error("should not match when there are no mocks")
 	}
 }
@@ -59,7 +59,7 @@ func TestSIP_MatchMock_MethodMismatch(t *testing.T) {
 	srv := newTestSIPServer([]config.SIPMock{
 		{ID: "m1", Method: "INVITE", URI: "sip:alice@example.com"},
 	})
-	if _, ok := srv.matchMock("BYE", "sip:alice@example.com"); ok {
+	if _, ok, _ := srv.matchMock("BYE", "sip:alice@example.com"); ok {
 		t.Error("should not match different method")
 	}
 }
@@ -68,7 +68,7 @@ func TestSIP_MatchMock_URIMismatch(t *testing.T) {
 	srv := newTestSIPServer([]config.SIPMock{
 		{ID: "m1", Method: "INVITE", URI: "sip:alice@example.com"},
 	})
-	if _, ok := srv.matchMock("INVITE", "sip:bob@example.com"); ok {
+	if _, ok, _ := srv.matchMock("INVITE", "sip:bob@example.com"); ok {
 		t.Error("should not match different URI")
 	}
 }
@@ -77,7 +77,7 @@ func TestSIP_MatchMock_Exact(t *testing.T) {
 	srv := newTestSIPServer([]config.SIPMock{
 		{ID: "m1", Method: "INVITE", URI: "sip:alice@example.com", Response: config.SIPResponse{Status: 200}},
 	})
-	m, ok := srv.matchMock("INVITE", "sip:alice@example.com")
+	m, ok, _ := srv.matchMock("INVITE", "sip:alice@example.com")
 	if !ok {
 		t.Fatal("should match")
 	}
@@ -86,11 +86,24 @@ func TestSIP_MatchMock_Exact(t *testing.T) {
 	}
 }
 
+func TestSIP_MatchMock_URIRegex(t *testing.T) {
+	srv := newTestSIPServer([]config.SIPMock{
+		{ID: "m1", Method: "INVITE", URIRegex: `^sip:[a-z]+@example\.com$`, Response: config.SIPResponse{Status: 200}},
+	})
+
+	if _, ok, _ := srv.matchMock("INVITE", "sip:alice@example.com"); !ok {
+		t.Fatal("expected uri_regex to match sip:alice@example.com")
+	}
+	if _, ok, _ := srv.matchMock("INVITE", "sip:alice@other.com"); ok {
+		t.Fatal("expected uri_regex to reject sip:alice@other.com")
+	}
+}
+
 func TestSIP_MatchMock_WildcardMethod(t *testing.T) {
 	srv := newTestSIPServer([]config.SIPMock{
 		{ID: "m1", Method: "*", URI: ""},
 	})
-	if _, ok := srv.matchMock("OPTIONS", "sip:x@y.com"); !ok {
+	if _, ok, _ := srv.matchMock("OPTIONS", "sip:x@y.com"); !ok {
 		t.Error("wildcard method should match any method")
 	}
 }
@@ -103,13 +116,13 @@ func TestSIP_MatchMock_StateCondition(t *testing.T) {
 	srv := New(cfg, st, scenarios.New(nil), logger.New(100))
 
 	// State not set — should not match.
-	if _, ok := srv.matchMock("INVITE", "sip:a@b.com"); ok {
+	if _, ok, _ := srv.matchMock("INVITE", "sip:a@b.com"); ok {
 		t.Error("should not match when state condition is unmet")
 	}
 
 	// State set — should match.
 	st.Set("mode", "busy")
-	if _, ok := srv.matchMock("INVITE", "sip:a@b.com"); !ok {
+	if _, ok, _ := srv.matchMock("INVITE", "sip:a@b.com"); !ok {
 		t.Error("should match when state condition is met")
 	}
 }
@@ -119,32 +132,42 @@ func TestSIP_MatchMock_StateCondition(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMatchSIPURI_Empty(t *testing.T) {
-	if !matchSIPURI("", "sip:any@example.com") {
+	if ok, _ := matchSIPURI("", "sip:any@example.com"); !ok {
 		t.Error("empty pattern should match any URI")
 	}
 }
 
 func TestMatchSIPURI_Exact(t *testing.T) {
-	if !matchSIPURI("sip:alice@example.com", "sip:alice@example.com") {
+	if ok, _ := matchSIPURI("sip:alice@example.com", "sip:alice@example.com"); !ok {
 		t.Error("exact pattern should match identical URI")
 	}
-	if matchSIPURI("sip:alice@example.com", "sip:bob@example.com") {
+	if ok, _ := matchSIPURI("sip:alice@example.com", "sip:bob@example.com"); ok {
 		t.Error("exact pattern should not match different URI")
 	}
 }
 
 func TestMatchSIPURI_InvalidRegex(t *testing.T) {
-	if matchSIPURI("re:[bad", "sip:any@example.com") {
+	if ok, _ := matchSIPURI("re:[bad", "sip:any@example.com"); ok {
 		t.Error("invalid regex should not match")
 	}
 }
 
 func TestMatchSIPURI_WildcardNoSuffix(t *testing.T) {
-	if !matchSIPURI("sip:*@example.com", "sip:alice@example.com") {
+	if ok, _ := matchSIPURI("sip:*@example.com", "sip:alice@example.com"); !ok {
 		t.Error("wildcard prefix should match")
 	}
-	if matchSIPURI("sip:*@example.com", "sip:alice@other.com") {
+	if ok, _ := matchSIPURI("sip:*@example.com", "sip:alice@other.com"); ok {
 		t.Error("wildcard prefix should not match wrong suffix")
+	}
+}
+
+func TestMatchSIPURI_NamedSegment(t *testing.T) {
+	ok, params := matchSIPURI("sip:host/{resource}", "sip:host/room42")
+	if !ok {
+		t.Fatal("expected named segment URI to match")
+	}
+	if params["resource"] != "room42" {
+		t.Errorf("want resource=room42, got %q", params["resource"])
 	}
 }
 

@@ -268,6 +268,194 @@ protocols:
 	}
 }
 
+func TestE2E_HTTP_NamedPathParam_InTemplate(t *testing.T) {
+	_, httpBase := startMockly(t, `
+protocols:
+  http:
+    enabled: true
+    port: %d
+    mocks:
+      - id: get-product
+        request:
+          method: GET
+          path: /products/{sku}
+        response:
+          status: 200
+          body: '{"sku":"{{.request.params.sku}}"}'
+          headers:
+            Content-Type: application/json
+`)
+
+	resp, err := http.Get(httpBase + "/products/ABC123")
+	if err != nil {
+		t.Fatalf("GET /products/ABC123: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != 200 {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if got["sku"] != "ABC123" {
+		t.Errorf("want sku=ABC123, got %q", got["sku"])
+	}
+}
+
+func TestE2E_HTTP_PathRegex_Field(t *testing.T) {
+	_, httpBase := startMockly(t, `
+protocols:
+  http:
+    enabled: true
+    port: %d
+    mocks:
+      - id: status-regex
+        request:
+          method: GET
+          path_regex: '^/v\d+/status$'
+        response:
+          status: 200
+          body: ok
+`)
+
+	resp, err := http.Get(httpBase + "/v2/status")
+	if err != nil {
+		t.Fatalf("GET /v2/status: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("want 200 for regex match, got %d", resp.StatusCode)
+	}
+
+	resp2, err := http.Get(httpBase + "/vX/status")
+	if err != nil {
+		t.Fatalf("GET /vX/status: %v", err)
+	}
+	_ = resp2.Body.Close()
+	if resp2.StatusCode != 404 {
+		t.Fatalf("want 404 for regex miss, got %d", resp2.StatusCode)
+	}
+}
+
+func TestE2E_Logs_FilterByMatchedID(t *testing.T) {
+	apiBase, httpBase := startMockly(t, `
+protocols:
+  http:
+    enabled: true
+    port: %d
+    mocks:
+      - id: mock-a
+        request:
+          method: GET
+          path: /a
+        response:
+          status: 200
+          body: a
+      - id: mock-b
+        request:
+          method: GET
+          path: /b
+        response:
+          status: 200
+          body: b
+`)
+
+	resp, err := http.Get(httpBase + "/a")
+	if err != nil {
+		t.Fatalf("GET /a: %v", err)
+	}
+	_ = resp.Body.Close()
+	resp, err = http.Get(httpBase + "/b")
+	if err != nil {
+		t.Fatalf("GET /b: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	var entries []map[string]interface{}
+	mustGetJSON(t, apiBase+"/api/logs?matched_id=mock-a", &entries)
+	if len(entries) != 1 {
+		t.Fatalf("want 1 filtered log entry, got %d", len(entries))
+	}
+	if entries[0]["matched_id"] != "mock-a" {
+		t.Errorf("want matched_id=mock-a, got %#v", entries[0]["matched_id"])
+	}
+}
+
+func TestE2E_Logs_Count(t *testing.T) {
+	apiBase, httpBase := startMockly(t, `
+protocols:
+  http:
+    enabled: true
+    port: %d
+    mocks:
+      - id: count-me
+        request:
+          method: GET
+          path: /count
+        response:
+          status: 200
+          body: ok
+`)
+
+	for range 3 {
+		resp, err := http.Get(httpBase + "/count")
+		if err != nil {
+			t.Fatalf("GET /count: %v", err)
+		}
+		_ = resp.Body.Close()
+	}
+
+	var got map[string]int
+	mustGetJSON(t, apiBase+"/api/logs/count", &got)
+	if got["count"] != 3 {
+		t.Errorf("want count=3, got %d", got["count"])
+	}
+}
+
+func TestE2E_Logs_Count_FilterByMatchedID(t *testing.T) {
+	apiBase, httpBase := startMockly(t, `
+protocols:
+  http:
+    enabled: true
+    port: %d
+    mocks:
+      - id: mock-a
+        request:
+          method: GET
+          path: /a
+        response:
+          status: 200
+          body: a
+      - id: mock-b
+        request:
+          method: GET
+          path: /b
+        response:
+          status: 200
+          body: b
+`)
+
+	for _, path := range []string{"/a", "/a", "/b"} {
+		resp, err := http.Get(httpBase + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		_ = resp.Body.Close()
+	}
+
+	var got map[string]int
+	mustGetJSON(t, apiBase+"/api/logs/count?matched_id=mock-a", &got)
+	if got["count"] != 2 {
+		t.Errorf("want count=2 for mock-a, got %d", got["count"])
+	}
+}
+
 func TestE2E_ScenarioActivation(t *testing.T) {
 	apiBase, httpBase := startMockly(t, `
 protocols:
@@ -683,13 +871,13 @@ protocols:
 // startMocklyWithSNMP starts Mockly with SNMP enabled on a free port and
 // returns (apiBase, snmpPort).
 func startMocklyWithSNMP(t *testing.T, extraMocks string) (apiBase string, snmpPort int) {
-t.Helper()
+	t.Helper()
 
-apiPort := freePort(t)
-snmpPort = freePort(t)
-httpPort := freePort(t)
+	apiPort := freePort(t)
+	snmpPort = freePort(t)
+	httpPort := freePort(t)
 
-cfg := fmt.Sprintf(`mockly:
+	cfg := fmt.Sprintf(`mockly:
   api:
     port: %d
 protocols:
@@ -711,75 +899,75 @@ protocols:
         value: 987654
 %s`, apiPort, httpPort, snmpPort, extraMocks)
 
-dir := t.TempDir()
-cfgPath := filepath.Join(dir, "mockly.yaml")
-if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
-t.Fatalf("write config: %v", err)
-}
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "mockly.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
 
-cmd := exec.Command(binaryPath, "start", "--config", cfgPath)
-cmd.Stdout = os.Stdout
-cmd.Stderr = os.Stderr
-if err := cmd.Start(); err != nil {
-t.Fatalf("start mockly: %v", err)
-}
-t.Cleanup(func() {
-if err := cmd.Process.Kill(); err != nil {
-t.Logf("cleanup: failed to kill mockly process: %v", err)
-}
-_ = cmd.Wait()
-})
+	cmd := exec.Command(binaryPath, "start", "--config", cfgPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start mockly: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := cmd.Process.Kill(); err != nil {
+			t.Logf("cleanup: failed to kill mockly process: %v", err)
+		}
+		_ = cmd.Wait()
+	})
 
-apiBase = fmt.Sprintf("http://127.0.0.1:%d", apiPort)
-waitForHTTP(t, apiBase+"/api/protocols", 10*time.Second)
+	apiBase = fmt.Sprintf("http://127.0.0.1:%d", apiPort)
+	waitForHTTP(t, apiBase+"/api/protocols", 10*time.Second)
 
-// Wait for SNMP UDP port to become reachable.
-deadline := time.Now().Add(10 * time.Second)
-for time.Now().Before(deadline) {
-g := &gosnmp.GoSNMP{
-Target:    "127.0.0.1",
-Port:      uint16(snmpPort),
-Community: "public",
-Version:   gosnmp.Version2c,
-Timeout:   200 * time.Millisecond,
-Retries:   0,
-}
-if err := g.Connect(); err == nil {
-_, err = g.Get([]string{"1.3.6.1.2.1.1.1.0"})
-g.Conn.Close()
-if err == nil {
-break
-}
-}
-time.Sleep(50 * time.Millisecond)
-}
-return apiBase, snmpPort
+	// Wait for SNMP UDP port to become reachable.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		g := &gosnmp.GoSNMP{
+			Target:    "127.0.0.1",
+			Port:      uint16(snmpPort),
+			Community: "public",
+			Version:   gosnmp.Version2c,
+			Timeout:   200 * time.Millisecond,
+			Retries:   0,
+		}
+		if err := g.Connect(); err == nil {
+			_, err = g.Get([]string{"1.3.6.1.2.1.1.1.0"})
+			g.Conn.Close()
+			if err == nil {
+				break
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return apiBase, snmpPort
 }
 
 // snmpGet connects a v2c client to the given port and returns the value of the
 // first variable in the GET response.
 func snmpGet(t *testing.T, port int, oid string) gosnmp.SnmpPDU {
-t.Helper()
-g := &gosnmp.GoSNMP{
-Target:    "127.0.0.1",
-Port:      uint16(port),
-Community: "public",
-Version:   gosnmp.Version2c,
-Timeout:   3 * time.Second,
-Retries:   1,
-}
-if err := g.Connect(); err != nil {
-t.Fatalf("snmpGet Connect: %v", err)
-}
-defer g.Conn.Close()
-result, err := g.Get([]string{oid})
-if err != nil {
-t.Fatalf("snmpGet %s: %v", oid, err)
-}
-if len(result.Variables) == 0 {
-t.Fatalf("snmpGet %s: empty response", oid)
-}
-return result.Variables[0]
+	t.Helper()
+	g := &gosnmp.GoSNMP{
+		Target:    "127.0.0.1",
+		Port:      uint16(port),
+		Community: "public",
+		Version:   gosnmp.Version2c,
+		Timeout:   3 * time.Second,
+		Retries:   1,
+	}
+	if err := g.Connect(); err != nil {
+		t.Fatalf("snmpGet Connect: %v", err)
+	}
+	defer g.Conn.Close()
+	result, err := g.Get([]string{oid})
+	if err != nil {
+		t.Fatalf("snmpGet %s: %v", oid, err)
+	}
+	if len(result.Variables) == 0 {
+		t.Fatalf("snmpGet %s: empty response", oid)
+	}
+	return result.Variables[0]
 }
 
 // ---------------------------------------------------------------------------
@@ -787,165 +975,165 @@ return result.Variables[0]
 // ---------------------------------------------------------------------------
 
 func TestE2E_SNMP_GET_ReturnsConfiguredValue(t *testing.T) {
-_, snmpPort := startMocklyWithSNMP(t, "")
+	_, snmpPort := startMocklyWithSNMP(t, "")
 
-pdu := snmpGet(t, snmpPort, "1.3.6.1.2.1.1.1.0")
-got := string(pdu.Value.([]byte))
-if got != "Mockly Virtual Device" {
-t.Errorf("sys-descr: want %q, got %q", "Mockly Virtual Device", got)
-}
+	pdu := snmpGet(t, snmpPort, "1.3.6.1.2.1.1.1.0")
+	got := string(pdu.Value.([]byte))
+	if got != "Mockly Virtual Device" {
+		t.Errorf("sys-descr: want %q, got %q", "Mockly Virtual Device", got)
+	}
 }
 
 func TestE2E_SNMP_GETNEXT_WalksOIDs(t *testing.T) {
-_, snmpPort := startMocklyWithSNMP(t, "")
+	_, snmpPort := startMocklyWithSNMP(t, "")
 
-g := &gosnmp.GoSNMP{
-Target:    "127.0.0.1",
-Port:      uint16(snmpPort),
-Community: "public",
-Version:   gosnmp.Version2c,
-Timeout:   3 * time.Second,
-Retries:   1,
-}
-if err := g.Connect(); err != nil {
-t.Fatalf("Connect: %v", err)
-}
-defer g.Conn.Close()
+	g := &gosnmp.GoSNMP{
+		Target:    "127.0.0.1",
+		Port:      uint16(snmpPort),
+		Community: "public",
+		Version:   gosnmp.Version2c,
+		Timeout:   3 * time.Second,
+		Retries:   1,
+	}
+	if err := g.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer g.Conn.Close()
 
-// GETNEXT on sys-descr should return sys-uptime (next OID).
-result, err := g.GetNext([]string{"1.3.6.1.2.1.1.1.0"})
-if err != nil {
-t.Fatalf("GetNext: %v", err)
-}
-if len(result.Variables) == 0 {
-t.Fatal("GetNext: empty response")
-}
-nextOID := result.Variables[0].Name
-if !strings.Contains(nextOID, "1.3.6.1.2.1.1.3.0") {
-t.Errorf("GETNEXT from sys-descr: expected next OID to contain sys-uptime, got %s", nextOID)
-}
+	// GETNEXT on sys-descr should return sys-uptime (next OID).
+	result, err := g.GetNext([]string{"1.3.6.1.2.1.1.1.0"})
+	if err != nil {
+		t.Fatalf("GetNext: %v", err)
+	}
+	if len(result.Variables) == 0 {
+		t.Fatal("GetNext: empty response")
+	}
+	nextOID := result.Variables[0].Name
+	if !strings.Contains(nextOID, "1.3.6.1.2.1.1.3.0") {
+		t.Errorf("GETNEXT from sys-descr: expected next OID to contain sys-uptime, got %s", nextOID)
+	}
 }
 
 func TestE2E_SNMP_SET_UpdatesValue(t *testing.T) {
-_, snmpPort := startMocklyWithSNMP(t, "")
+	_, snmpPort := startMocklyWithSNMP(t, "")
 
-g := &gosnmp.GoSNMP{
-Target:    "127.0.0.1",
-Port:      uint16(snmpPort),
-Community: "public",
-Version:   gosnmp.Version2c,
-Timeout:   3 * time.Second,
-Retries:   1,
-}
-if err := g.Connect(); err != nil {
-t.Fatalf("Connect: %v", err)
-}
-defer g.Conn.Close()
+	g := &gosnmp.GoSNMP{
+		Target:    "127.0.0.1",
+		Port:      uint16(snmpPort),
+		Community: "public",
+		Version:   gosnmp.Version2c,
+		Timeout:   3 * time.Second,
+		Retries:   1,
+	}
+	if err := g.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer g.Conn.Close()
 
-pdus := []gosnmp.SnmpPDU{{
-Name:  "1.3.6.1.2.1.1.1.0",
-Type:  gosnmp.OctetString,
-Value: "Updated Device",
-}}
-if _, err := g.Set(pdus); err != nil {
-t.Fatalf("SET: %v", err)
-}
+	pdus := []gosnmp.SnmpPDU{{
+		Name:  "1.3.6.1.2.1.1.1.0",
+		Type:  gosnmp.OctetString,
+		Value: "Updated Device",
+	}}
+	if _, err := g.Set(pdus); err != nil {
+		t.Fatalf("SET: %v", err)
+	}
 
-// Verify with GET.
-got := snmpGet(t, snmpPort, "1.3.6.1.2.1.1.1.0")
-gotStr := string(got.Value.([]byte))
-if gotStr != "Updated Device" {
-t.Errorf("after SET: want %q, got %q", "Updated Device", gotStr)
-}
+	// Verify with GET.
+	got := snmpGet(t, snmpPort, "1.3.6.1.2.1.1.1.0")
+	gotStr := string(got.Value.([]byte))
+	if gotStr != "Updated Device" {
+		t.Errorf("after SET: want %q, got %q", "Updated Device", gotStr)
+	}
 }
 
 func TestE2E_SNMP_APICRUDReflectsInGET(t *testing.T) {
-apiBase, snmpPort := startMocklyWithSNMP(t, "")
+	apiBase, snmpPort := startMocklyWithSNMP(t, "")
 
-// Add a new OID mock via API.
-newMock := map[string]interface{}{
-"id":    "custom-oid",
-"oid":   "1.3.6.1.4.1.9999.99.0",
-"type":  "integer",
-"value": 42,
-}
-resp := postJSON(t, apiBase+"/api/mocks/snmp", newMock)
-defer resp.Body.Close()
-if resp.StatusCode != 201 {
-body, _ := io.ReadAll(resp.Body)
-t.Fatalf("POST /api/mocks/snmp: want 201, got %d — %s", resp.StatusCode, body)
-}
+	// Add a new OID mock via API.
+	newMock := map[string]interface{}{
+		"id":    "custom-oid",
+		"oid":   "1.3.6.1.4.1.9999.99.0",
+		"type":  "integer",
+		"value": 42,
+	}
+	resp := postJSON(t, apiBase+"/api/mocks/snmp", newMock)
+	defer resp.Body.Close()
+	if resp.StatusCode != 201 {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("POST /api/mocks/snmp: want 201, got %d — %s", resp.StatusCode, body)
+	}
 
-// Give the server a moment to apply the new mock.
-time.Sleep(300 * time.Millisecond)
+	// Give the server a moment to apply the new mock.
+	time.Sleep(300 * time.Millisecond)
 
-pdu := snmpGet(t, snmpPort, "1.3.6.1.4.1.9999.99.0")
-got, ok := pdu.Value.(int)
-if !ok {
-t.Fatalf("expected integer value, got %T", pdu.Value)
-}
-if got != 42 {
-t.Errorf("custom OID: want 42, got %d", got)
-}
+	pdu := snmpGet(t, snmpPort, "1.3.6.1.4.1.9999.99.0")
+	got, ok := pdu.Value.(int)
+	if !ok {
+		t.Fatalf("expected integer value, got %T", pdu.Value)
+	}
+	if got != 42 {
+		t.Errorf("custom OID: want 42, got %d", got)
+	}
 }
 
 func TestE2E_SNMP_TrapSend_Returns200(t *testing.T) {
-apiBase, _ := startMocklyWithSNMP(t, "")
+	apiBase, _ := startMocklyWithSNMP(t, "")
 
-// Add a trap config.
-trap := map[string]interface{}{
-"id":        "test-trap",
-"target":    "127.0.0.1:1162",
-"version":   "2c",
-"community": "public",
-"oid":       "1.3.6.1.6.3.1.1.5.1",
-"bindings": []map[string]interface{}{
-{"oid": "1.3.6.1.2.1.1.1.0", "type": "string", "value": "test"},
-},
-}
-r1 := postJSON(t, apiBase+"/api/snmp/traps", trap)
-defer r1.Body.Close()
-if r1.StatusCode != 201 {
-body, _ := io.ReadAll(r1.Body)
-t.Fatalf("POST /api/snmp/traps: want 201, got %d — %s", r1.StatusCode, body)
-}
+	// Add a trap config.
+	trap := map[string]interface{}{
+		"id":        "test-trap",
+		"target":    "127.0.0.1:1162",
+		"version":   "2c",
+		"community": "public",
+		"oid":       "1.3.6.1.6.3.1.1.5.1",
+		"bindings": []map[string]interface{}{
+			{"oid": "1.3.6.1.2.1.1.1.0", "type": "string", "value": "test"},
+		},
+	}
+	r1 := postJSON(t, apiBase+"/api/snmp/traps", trap)
+	defer r1.Body.Close()
+	if r1.StatusCode != 201 {
+		body, _ := io.ReadAll(r1.Body)
+		t.Fatalf("POST /api/snmp/traps: want 201, got %d — %s", r1.StatusCode, body)
+	}
 
-// Send the trap — 127.0.0.1:1162 likely has no listener, but the API
-// should still return 200 if the UDP packet was dispatched (best-effort).
-r2 := postJSON(t, apiBase+"/api/snmp/traps/test-trap/send", nil)
-defer r2.Body.Close()
-if r2.StatusCode != 200 {
-body, _ := io.ReadAll(r2.Body)
-t.Fatalf("POST /api/snmp/traps/test-trap/send: want 200, got %d — %s", r2.StatusCode, body)
-}
+	// Send the trap — 127.0.0.1:1162 likely has no listener, but the API
+	// should still return 200 if the UDP packet was dispatched (best-effort).
+	r2 := postJSON(t, apiBase+"/api/snmp/traps/test-trap/send", nil)
+	defer r2.Body.Close()
+	if r2.StatusCode != 200 {
+		body, _ := io.ReadAll(r2.Body)
+		t.Fatalf("POST /api/snmp/traps/test-trap/send: want 200, got %d — %s", r2.StatusCode, body)
+	}
 }
 
 func TestE2E_SNMP_UnknownOID_ReturnsNoSuchObject(t *testing.T) {
-_, snmpPort := startMocklyWithSNMP(t, "")
+	_, snmpPort := startMocklyWithSNMP(t, "")
 
-g := &gosnmp.GoSNMP{
-Target:    "127.0.0.1",
-Port:      uint16(snmpPort),
-Community: "public",
-Version:   gosnmp.Version2c,
-Timeout:   3 * time.Second,
-Retries:   1,
-}
-if err := g.Connect(); err != nil {
-t.Fatalf("Connect: %v", err)
-}
-defer g.Conn.Close()
+	g := &gosnmp.GoSNMP{
+		Target:    "127.0.0.1",
+		Port:      uint16(snmpPort),
+		Community: "public",
+		Version:   gosnmp.Version2c,
+		Timeout:   3 * time.Second,
+		Retries:   1,
+	}
+	if err := g.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer g.Conn.Close()
 
-result, err := g.Get([]string{"1.3.6.1.4.1.99999.0.0.0"})
-if err != nil {
-t.Fatalf("GET unknown OID: %v", err)
-}
-if len(result.Variables) == 0 {
-t.Fatal("GET unknown OID: no variables in response")
-}
-pduType := result.Variables[0].Type
-// GoSNMPServer returns NoSuchObject (0x80) or NoSuchInstance (0x81) for unknown OIDs.
-if pduType != gosnmp.NoSuchObject && pduType != gosnmp.NoSuchInstance {
-t.Errorf("unknown OID: expected NoSuchObject or NoSuchInstance, got type %v", pduType)
-}
+	result, err := g.Get([]string{"1.3.6.1.4.1.99999.0.0.0"})
+	if err != nil {
+		t.Fatalf("GET unknown OID: %v", err)
+	}
+	if len(result.Variables) == 0 {
+		t.Fatal("GET unknown OID: no variables in response")
+	}
+	pduType := result.Variables[0].Type
+	// GoSNMPServer returns NoSuchObject (0x80) or NoSuchInstance (0x81) for unknown OIDs.
+	if pduType != gosnmp.NoSuchObject && pduType != gosnmp.NoSuchInstance {
+		t.Errorf("unknown OID: expected NoSuchObject or NoSuchInstance, got type %v", pduType)
+	}
 }

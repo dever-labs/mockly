@@ -35,15 +35,16 @@
 | Feature | Details |
 |---|---|
 | **Protocols** | HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, SIP |
-| **Request matching** | Method + path (exact / wildcard / regex), headers, query params, JSON body fields |
+| **Request matching** | Method + path (exact / wildcard / named params / regex), headers, query params, JSON body fields |
 | **Response sequences** | Return a different response on each successive call — loop, hold last, or 404 when exhausted |
 | **Response control** | Status code, headers, body, artificial delay |
-| **Template responses** | Go template syntax in response bodies and headers (`{{now}}`, `{{.query.foo}}`, `{{.body}}`, etc.) |
+| **Template responses** | Go template syntax in response bodies and headers (`{{now}}`, `{{.request.params.id}}`, `{{.request.body.foo}}`, etc.) |
 | **State conditions** | Fire a mock only when a runtime state variable matches |
 | **Scenarios** | Named sets of mock patches — activate/deactivate atomically via API or CLI |
 | **Per-protocol fault injection** | Each protocol exposes its own native fault fields (DNS rcode, gRPC status code, Kafka error code, etc.) — activate via API or bundled inside a scenario |
 | **Per-mock fault injection** | Fault fields on individual HTTP mocks with independent delay, status/body override, and error rate |
 | **Call verification** | Track how many times each mock was hit; block until an expected count is reached |
+| **Log filtering** | Filter logs and log counts by matched mock ID via `/api/logs` and `/api/logs/count` |
 | **PATCH mocks** | Change only specific response fields at runtime without replacing the whole mock |
 | **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid |
 | **Web UI** | Served from the binary itself — no separate install |
@@ -201,8 +202,19 @@ scenarios:
 | Pattern | Matches |
 |---|---|
 | `/api/users` | Exact match |
-| `/api/*` | Any path starting with `/api/` |
-| `re:^/users/\d+$` | Regex — any `/users/<number>` |
+| `/api/*` | Any path starting with `/api/` (trailing wildcard) |
+| `/regions/*/emails` | Any single segment in the middle — e.g. `/regions/fr-par/emails` |
+| `/users/{id}` | Named segment — value captured as `{id}` in templates and logs |
+| `/orders/{id}/items/{item}` | Multiple named segments |
+| `re:^/users/\d+$` | Inline regex with `re:` prefix |
+
+Use `path_regex` when you prefer a dedicated regex field instead of the inline `re:` prefix on `path`:
+
+```yaml
+request:
+  method: GET
+  path_regex: "^/users/\\d+$"   # alternative to re: prefix
+```
 
 ### Template responses
 
@@ -244,7 +256,38 @@ Response bodies **and response headers** are rendered as Go templates. Built-in 
 | `{{.query.foo}}` | *(query value)* | Incoming request query parameter |
 | `{{state "key"}}` | *(state value)* | Value from runtime state store |
 
+#### Request context
+
+In addition to the legacy shorthand aliases above, templates expose a `request.*` namespace:
+
+| Variable | Example | Description |
+|---|---|---|
+| `{{.request.method}}` | `POST` | HTTP method of the incoming request |
+| `{{.request.path}}` | `/users/42` | Request path |
+| `{{.request.params.id}}` | `42` | Named path parameter captured by `{id}` |
+| `{{.request.query.foo}}` | `bar` | Query parameter (alias: `{{.query.foo}}` still works) |
+| `{{.request.headers.X-Foo}}` | `…` | Request header (alias: `{{.headers.X-Foo}}` still works) |
+| `{{.request.body.field}}` | `…` | JSON field from request body (alias: `{{.body}}` for raw body still works) |
+
 **Sequence counters** (`{{seq "name"}}`) are reset to zero by `POST /api/reset` or `mockly reset`.
+
+Example — echo request fields in a create-style API:
+
+```yaml
+- id: create-email
+  request:
+    method: POST
+    path: /transactional-email/v1alpha1/regions/{region}/emails
+  response:
+    status: 200
+    body: |
+      {
+        "id": "{{uuid}}",
+        "region": "{{.request.params.region}}",
+        "project_id": "{{.request.body.project_id}}",
+        "created_at": "{{now}}"
+      }
+```
 
 Example — generate a realistic user object on every request:
 
@@ -270,7 +313,7 @@ response:
 
 ### HTTP
 
-Full HTTP mock server. Matching on method + path (exact/wildcard/regex), optional query params, header match, JSON body field match, and state condition.
+Full HTTP mock server. Matching on method + path (exact/wildcard/named params/regex), optional query params, header match, JSON body field match, and state condition.
 
 ```yaml
 protocols:
@@ -373,6 +416,8 @@ Every HTTP mock can have its own `fault:` block — independently of protocol-le
 
 ### WebSocket
 
+`on_connect.send` and each `on_message[*].respond` value are rendered as Go templates. The incoming message text is available as `{{.request.body}}`.
+
 ```yaml
 protocols:
   websocket:
@@ -382,10 +427,10 @@ protocols:
       - id: ticker
         path: /ws/ticker
         on_connect:
-          send: '{"type":"connected"}'
+          send: '{"event":"connected","path":"{{.request.path}}"}'
         on_message:
-          match: subscribe
-          respond: '{"type":"tick","price":42.0}'
+          - match: ping
+            respond: '{"event":"pong","echo":"{{.request.body}}"}'
 ```
 
 ### gRPC
@@ -509,7 +554,15 @@ protocols:
           qos: 1
 ```
 
-Topic wildcards: `+` matches a single segment, `#` matches everything below.
+Topic wildcards: `+` matches a single segment, `#` matches everything below. `{name}` captures a single segment value for use in response templates and logs.
+
+```yaml
+      - id: device-command
+        topic: "devices/{device_id}/command"
+        response:
+          topic: "devices/{{.request.params.device_id}}/ack"
+          payload: '{"device":"{{.request.params.device_id}}","status":"ok"}'
+```
 
 ---
 
@@ -729,7 +782,7 @@ protocols:
 
 ### CoAP
 
-CoAP UDP mock server handling GET, POST, PUT, and DELETE requests. Matches on method + path with exact, wildcard, or regex patterns.
+CoAP UDP mock server handling GET, POST, PUT, and DELETE requests. Matches on method + path with exact, wildcard, named segment, or regex patterns. Use `path_regex` when you want a dedicated regex field.
 
 ```yaml
 protocols:
@@ -744,11 +797,25 @@ protocols:
           code: "2.05"
           payload: "23.5"
           content_format: 0   # text/plain
+
+      - id: region-sensor
+        method: GET
+        path: /sensors/{type}
+        response:
+          code: "2.05"
+          payload: "Reading for {{.request.params.type}}: 42"
+
+      - id: sensor-regex
+        method: GET
+        path_regex: "^/sensors/[a-z]+$"   # alternative regex field
+        response:
+          code: "2.05"
+          payload: "ok"
 ```
 
 ### SIP
 
-SIP UDP mock server handling INVITE, REGISTER, OPTIONS, BYE, CANCEL, and ACK. Matches on method + URI using exact, wildcard, or regex patterns.
+SIP UDP mock server handling INVITE, REGISTER, OPTIONS, BYE, CANCEL, and ACK. Matches on method + URI using exact, wildcard, named segment, or regex patterns. Use `uri_regex` when you want a dedicated regex field.
 
 ```yaml
 protocols:
@@ -768,7 +835,15 @@ protocols:
         response:
           status: 200
           reason: "OK"
+      - id: any-invite
+        method: INVITE
+        uri_regex: "^sip:[a-z]+@example\\.com$"
+        response:
+          status: 200
+          reason: "OK"
 ```
+
+If your SIP URI includes path segments, named captures are available in response templates, for example `{{.request.params.user}}` with a pattern like `sip:gateway.example.com/users/{user}`.
 
 ---
 
@@ -1210,8 +1285,11 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/logs` | Get recent log entries |
-| `DELETE` | `/api/logs` | Clear logs |
+| `GET` | `/api/logs` | Get recent log entries (all protocols) |
+| `GET` | `/api/logs?matched_id=<id>` | Filter log entries by mock ID |
+| `GET` | `/api/logs/count` | Count all log entries |
+| `GET` | `/api/logs/count?matched_id=<id>` | Count log entries for a specific mock |
+| `DELETE` | `/api/logs` | Clear all logs |
 | `GET` | `/api/logs/stream` | SSE stream of live log entries |
 
 ### Reset
@@ -1507,4 +1585,3 @@ For security issues, follow the process in [SECURITY.md](SECURITY.md) — **do n
 ## License
 
 Copyright © 2026 dever-labs. Released under the [MIT License](LICENSE).
-

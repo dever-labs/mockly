@@ -7,10 +7,10 @@ import (
 )
 
 func TestMatchSIPURI(t *testing.T) {
-	if !matchSIPURI("sip:*@example.com", "sip:alice@example.com") {
+	if ok, _ := matchSIPURI("sip:*@example.com", "sip:alice@example.com"); !ok {
 		t.Fatal("expected wildcard URI match")
 	}
-	if !matchSIPURI(`re:^sip:[a-z]+@example\.com$`, "sip:alice@example.com") {
+	if ok, _ := matchSIPURI(`re:^sip:[a-z]+@example\.com$`, "sip:alice@example.com"); !ok {
 		t.Fatal("expected regex URI match")
 	}
 }

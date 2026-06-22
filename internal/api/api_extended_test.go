@@ -2,11 +2,19 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/protocols/httpserver"
+	"github.com/dever-labs/mockly/internal/scenarios"
+	"github.com/dever-labs/mockly/internal/state"
 )
 
 // ---------------------------------------------------------------------------
@@ -230,6 +238,221 @@ func TestAPI_Logs_Clear(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Errorf("DELETE /api/logs: want 200, got %d", resp.StatusCode)
 	}
+}
+
+func TestAPI_Logs_PostThenClearFlow(t *testing.T) {
+	base, _, _, _, _, log := startAPIWithLogger(t)
+
+	// Seed a log entry to simulate an HTTP request being processed.
+	log.Log(logger.Entry{Protocol: "http", Method: "POST", Path: "/users", Status: 201})
+
+	// GET /api/logs — must be non-empty.
+	resp, err := http.Get(base + "/api/logs")
+	if err != nil {
+		t.Fatalf("GET /api/logs: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != 200 {
+		t.Fatalf("GET /api/logs: want 200, got %d", resp.StatusCode)
+	}
+	var entries []map[string]interface{}
+	mustDecodeJSON(t, resp.Body, &entries)
+	if len(entries) == 0 {
+		t.Fatal("GET /api/logs: expected at least one entry after logging, got none")
+	}
+
+	// DELETE /api/logs — clear all logs.
+	req, _ := http.NewRequest(http.MethodDelete, base+"/api/logs", nil)
+	delResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE /api/logs: %v", err)
+	}
+	defer delResp.Body.Close() //nolint:errcheck
+	if delResp.StatusCode != 200 {
+		t.Fatalf("DELETE /api/logs: want 200, got %d", delResp.StatusCode)
+	}
+
+	// GET /api/logs — must now be empty.
+	resp2, err := http.Get(base + "/api/logs")
+	if err != nil {
+		t.Fatalf("GET /api/logs after clear: %v", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	var afterClear []map[string]interface{}
+	mustDecodeJSON(t, resp2.Body, &afterClear)
+	if len(afterClear) != 0 {
+		t.Errorf("GET /api/logs after clear: expected empty, got %d entries", len(afterClear))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// /api/logs?matched_id filtering
+// ---------------------------------------------------------------------------
+
+func TestAPI_Logs_FilterByMatchedID(t *testing.T) {
+	base, _, _, _, _, log := startAPIWithLogger(t)
+
+	log.Log(logger.Entry{Protocol: "http", Path: "/a", MatchedID: "mock-a"})
+	log.Log(logger.Entry{Protocol: "http", Path: "/b", MatchedID: "mock-b"})
+	log.Log(logger.Entry{Protocol: "http", Path: "/a2", MatchedID: "mock-a"})
+
+	resp, err := http.Get(base + "/api/logs?matched_id=mock-a")
+	if err != nil {
+		t.Fatalf("GET /api/logs?matched_id=mock-a: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	var entries []map[string]interface{}
+	mustDecodeJSON(t, resp.Body, &entries)
+	if len(entries) != 2 {
+		t.Errorf("expected 2 entries for mock-a, got %d", len(entries))
+	}
+	for _, e := range entries {
+		if e["matched_id"] != "mock-a" {
+			t.Errorf("unexpected matched_id %q", e["matched_id"])
+		}
+	}
+}
+
+func TestAPI_Logs_FilterByMatchedID_NoMatch(t *testing.T) {
+	base, _, _, _, _, log := startAPIWithLogger(t)
+	log.Log(logger.Entry{Protocol: "http", Path: "/x", MatchedID: "other"})
+
+	resp, err := http.Get(base + "/api/logs?matched_id=nonexistent")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	var entries []map[string]interface{}
+	mustDecodeJSON(t, resp.Body, &entries)
+	if len(entries) != 0 {
+		t.Errorf("expected empty, got %d entries", len(entries))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// /api/logs/count
+// ---------------------------------------------------------------------------
+
+func TestAPI_Logs_Count(t *testing.T) {
+	base, _, _, _, _, log := startAPIWithLogger(t)
+
+	log.Log(logger.Entry{Protocol: "http", Path: "/a", MatchedID: "mock-x"})
+	log.Log(logger.Entry{Protocol: "http", Path: "/b", MatchedID: "mock-y"})
+	log.Log(logger.Entry{Protocol: "http", Path: "/c", MatchedID: "mock-x"})
+
+	// Total count (no filter).
+	resp, err := http.Get(base + "/api/logs/count")
+	if err != nil {
+		t.Fatalf("GET /api/logs/count: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	var total map[string]int
+	mustDecodeJSON(t, resp.Body, &total)
+	if total["count"] != 3 {
+		t.Errorf("expected total count=3, got %d", total["count"])
+	}
+
+	// Filtered count.
+	resp2, err := http.Get(base + "/api/logs/count?matched_id=mock-x")
+	if err != nil {
+		t.Fatalf("GET /api/logs/count?matched_id=mock-x: %v", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	var filtered map[string]int
+	mustDecodeJSON(t, resp2.Body, &filtered)
+	if filtered["count"] != 2 {
+		t.Errorf("expected filtered count=2, got %d", filtered["count"])
+	}
+}
+
+func TestAPI_Logs_Count_WithMatchedID_NoMatch(t *testing.T) {
+	base, _, _, _, _, log := startAPIWithLogger(t)
+
+	log.Log(logger.Entry{Protocol: "http", Path: "/a", MatchedID: "mock-a"})
+
+	resp, err := http.Get(base + "/api/logs/count?matched_id=missing")
+	if err != nil {
+		t.Fatalf("GET /api/logs/count?matched_id=missing: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	var got map[string]int
+	mustDecodeJSON(t, resp.Body, &got)
+	if got["count"] != 0 {
+		t.Errorf("expected count=0, got %d", got["count"])
+	}
+}
+
+func TestAPI_Logs_PathParams_InEntry(t *testing.T) {
+	base, _, _, _, _, log := startAPIWithLogger(t)
+	httpBase := startLoggedHTTPServer(t, []config.HTTPMock{{
+		ID:       "thing-by-id",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/things/{id}"},
+		Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+	}}, log)
+
+	resp, err := http.Get(httpBase + "/things/abc123")
+	if err != nil {
+		t.Fatalf("GET /things/abc123: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	logsResp, err := http.Get(base + "/api/logs")
+	if err != nil {
+		t.Fatalf("GET /api/logs: %v", err)
+	}
+	defer logsResp.Body.Close() //nolint:errcheck
+
+	var entries []map[string]interface{}
+	mustDecodeJSON(t, logsResp.Body, &entries)
+	if len(entries) == 0 {
+		t.Fatal("expected at least one log entry")
+	}
+
+	for _, entry := range entries {
+		if entry["matched_id"] != "thing-by-id" {
+			continue
+		}
+		params, ok := entry["path_params"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected path_params object, got %#v", entry["path_params"])
+		}
+		if params["id"] != "abc123" {
+			t.Errorf("want path_params.id=abc123, got %#v", params["id"])
+		}
+		return
+	}
+
+	t.Fatal("expected log entry for matched mock thing-by-id")
+}
+
+func startLoggedHTTPServer(t *testing.T, mocks []config.HTTPMock, log *logger.Logger) string {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+
+	cfg := &config.HTTPConfig{
+		Enabled: true,
+		Port:    port,
+		Mocks:   mocks,
+	}
+	srv := httpserver.New(cfg, state.New(), scenarios.New(nil), log)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go srv.Start(ctx) //nolint:errcheck
+
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+	waitForHTTP(t, base+"/", 2*time.Second)
+	return base
 }
 
 // ---------------------------------------------------------------------------

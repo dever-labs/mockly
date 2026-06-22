@@ -5,12 +5,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
@@ -85,11 +85,19 @@ func (s *Server) handlePacket(conn net.PacketConn, addr net.Addr, data []byte) {
 		_, _ = conn.WriteTo(buildCoAPResponse(msgID, token, config.CoAPResponse{Code: code}), addr)
 		return
 	}
-	mock, ok := s.matchMock(method, path)
+	mock, ok, pathParams := s.matchMock(method, path)
 	resp := config.CoAPResponse{Code: "4.04"}
 	matchedID := ""
 	if ok {
 		resp = mock.Response
+		if resp.Payload != "" {
+			reqCtx := engine.RequestContext{
+				Method:     method,
+				Path:       path,
+				PathParams: pathParams,
+			}
+			resp.Payload = engine.Render(resp.Payload, reqCtx)
+		}
 		if mock.Delay.Duration > 0 {
 			time.Sleep(mock.Delay.Duration)
 		}
@@ -97,7 +105,7 @@ func (s *Server) handlePacket(conn net.PacketConn, addr net.Addr, data []byte) {
 	}
 	packet := buildCoAPResponse(msgID, token, resp)
 	_, _ = conn.WriteTo(packet, addr)
-	s.log.Log(logger.Entry{Protocol: "coap", Method: method, Path: path, Status: 0, Body: resp.Payload, MatchedID: matchedID})
+	s.log.Log(logger.Entry{Protocol: "coap", Method: method, Path: path, Status: 0, Body: resp.Payload, MatchedID: matchedID, PathParams: pathParams})
 }
 
 func parseCoAPPacket(data []byte) (string, string, uint16, []byte, []byte) {
@@ -192,7 +200,7 @@ func coapResponseCode(code string) byte {
 	}
 }
 
-func (s *Server) matchMock(method, path string) (config.CoAPMock, bool) {
+func (s *Server) matchMock(method, path string) (config.CoAPMock, bool, map[string]string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, m := range s.mocks {
@@ -201,30 +209,27 @@ func (s *Server) matchMock(method, path string) (config.CoAPMock, bool) {
 				continue
 			}
 		}
-		if !strings.EqualFold(m.Method, method) || !matchCoAPPath(m.Path, path) {
+		if !strings.EqualFold(m.Method, method) {
 			continue
 		}
-		return m, true
-	}
-	return config.CoAPMock{}, false
-}
-
-func matchCoAPPath(pattern, path string) bool {
-	if pattern == "" || pattern == "*" {
-		return true
-	}
-	if strings.HasPrefix(pattern, "re:") {
-		re, err := regexp.Compile(pattern[3:])
-		if err != nil {
-			return false
+		var (
+			matched    bool
+			pathParams map[string]string
+		)
+		if m.PathRegex != "" {
+			re, err := engine.CachedRegex(m.PathRegex)
+			if err == nil && re.MatchString(path) {
+				matched = true
+			}
+		} else {
+			matched, pathParams = engine.MatchPath(m.Path, path)
 		}
-		return re.MatchString(path)
+		if !matched {
+			continue
+		}
+		return m, true, pathParams
 	}
-	if strings.Contains(pattern, "*") {
-		parts := strings.SplitN(pattern, "*", 2)
-		return strings.HasPrefix(path, parts[0]) && (parts[1] == "" || strings.HasSuffix(path, parts[1]))
-	}
-	return pattern == path
+	return config.CoAPMock{}, false, nil
 }
 
 func (s *Server) StatusInfo() map[string]interface{} {

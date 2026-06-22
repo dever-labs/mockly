@@ -15,6 +15,7 @@ import (
 	"github.com/mochi-mqtt/server/v2/packets"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
@@ -153,8 +154,8 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 // matchMock returns the first mock whose topic pattern matches the incoming topic.
-// Supports MQTT wildcards: + (single level), # (multi-level).
-func (s *Server) matchMock(topic string) (config.MQTTMock, bool) {
+// Supports MQTT wildcards: + (single level), # (multi-level), and {name} captures.
+func (s *Server) matchMock(topic string) (config.MQTTMock, bool, map[string]string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, m := range s.mocks {
@@ -163,36 +164,51 @@ func (s *Server) matchMock(topic string) (config.MQTTMock, bool) {
 				continue
 			}
 		}
-		if matchMQTTTopic(m.Topic, topic) {
-			return m, true
+		if ok, params := matchMQTTTopic(m.Topic, topic); ok {
+			return m, true, params
 		}
 	}
-	return config.MQTTMock{}, false
+	return config.MQTTMock{}, false, nil
 }
 
-// matchMQTTTopic returns true if the filter (possibly with wildcards) matches the topic.
-func matchMQTTTopic(filter, topic string) bool {
+// matchMQTTTopic returns whether filter matches topic and any named captures.
+// Supports MQTT standard wildcards (+ single-level, # multi-level) and {name}
+// captures which behave like + but also capture the segment value.
+func matchMQTTTopic(filter, topic string) (bool, map[string]string) {
 	if filter == "#" {
-		return true
+		return true, nil
 	}
 	if filter == topic {
-		return true
+		return true, nil
 	}
 	filterParts := strings.Split(filter, "/")
 	topicParts := strings.Split(topic, "/")
 
+	var params map[string]string
 	for i, f := range filterParts {
 		if f == "#" {
-			return true
+			return true, params
 		}
 		if i >= len(topicParts) {
-			return false
+			return false, nil
 		}
-		if f != "+" && f != topicParts[i] {
-			return false
+		if f == "+" {
+			continue
+		}
+		if strings.HasPrefix(f, "{") && strings.HasSuffix(f, "}") {
+			if name := f[1 : len(f)-1]; name != "" {
+				if params == nil {
+					params = make(map[string]string)
+				}
+				params[name] = topicParts[i]
+			}
+			continue
+		}
+		if f != topicParts[i] {
+			return false, nil
 		}
 	}
-	return len(filterParts) == len(topicParts)
+	return len(filterParts) == len(topicParts), params
 }
 
 // StatusInfo returns JSON-serialisable server info.
@@ -255,7 +271,7 @@ func (h *mockHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet
 		Body:     payload,
 	})
 
-	mock, matched := h.srv.matchMock(topic)
+	mock, matched, topicParams := h.srv.matchMock(topic)
 	if !matched || mock.Response == nil {
 		return pk, nil
 	}
@@ -266,15 +282,21 @@ func (h *mockHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet
 	// Publish the response asynchronously to avoid re-entrancy issues.
 	resp := mock.Response
 	broker := h.srv.broker
+	reqCtx := engine.RequestContext{
+		Path:       topic,
+		Body:       payload,
+		PathParams: topicParams,
+	}
 	go func() {
 		if resp.Delay.Duration > 0 {
 			time.Sleep(resp.Delay.Duration)
 		}
-		responseTopic := resp.Topic
+		responseTopic := engine.Render(resp.Topic, reqCtx)
 		if responseTopic == "" {
 			responseTopic = topic + "/response"
 		}
-		if err := broker.Publish(responseTopic, []byte(resp.Payload), resp.Retain, resp.QoS); err != nil {
+		responsePayload := engine.Render(resp.Payload, reqCtx)
+		if err := broker.Publish(responseTopic, []byte(responsePayload), resp.Retain, resp.QoS); err != nil {
 			// Non-fatal: log and continue — this is a mock server best-effort publish.
 			h.srv.log.Log(logger.Entry{
 				Protocol: "mqtt",
@@ -286,12 +308,13 @@ func (h *mockHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet
 			return
 		}
 		h.srv.log.Log(logger.Entry{
-			Protocol:  "mqtt",
-			Method:    "PUBLISH_RESP",
-			Path:      responseTopic,
-			Status:    0,
-			Body:      resp.Payload,
-			MatchedID: mock.ID,
+			Protocol:   "mqtt",
+			Method:     "PUBLISH_RESP",
+			Path:       responseTopic,
+			Status:     0,
+			Body:       responsePayload,
+			MatchedID:  mock.ID,
+			PathParams: topicParams,
 		})
 	}()
 

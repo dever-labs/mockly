@@ -111,6 +111,83 @@ func TestHTTPServer_WildcardPath(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_MidSegmentWildcardPath(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "regions",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/transactional-email/v1alpha1/regions/*/emails"},
+		Response: config.HTTPResponse{Status: 200, Body: `{"emails":[]}`},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	// Wildcard segment matches any single region name.
+	for _, region := range []string{"fr-par", "nl-ams", "pl-waw"} {
+		path := "/transactional-email/v1alpha1/regions/" + region + "/emails"
+		resp, err := http.Get(base + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Errorf("path %s: want 200, got %d", path, resp.StatusCode)
+		}
+	}
+
+	// Extra segment should not match.
+	resp, _ := http.Get(base + "/transactional-email/v1alpha1/regions/fr-par/extra/emails")
+	_ = resp.Body.Close()
+	if resp.StatusCode != 404 {
+		t.Errorf("extra segment: want 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestHTTPServer_NamedWildcard_LogsPathParams(t *testing.T) {
+	log := logger.New(100)
+	mocks := []config.HTTPMock{{
+		ID:       "regions",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/regions/{region}/emails"},
+		Response: config.HTTPResponse{Status: 200, Body: `{"emails":[]}`},
+	}}
+
+	cfg := &config.HTTPConfig{Enabled: true}
+	store := state.New()
+	sc := scenarios.New(nil)
+	srv := httpserver.New(cfg, store, sc, log)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+	cfg.Port = port
+	srv.SetMocks(mocks)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go srv.Start(ctx) //nolint:errcheck
+
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+	waitForHTTP(t, base, 2*time.Second)
+
+	resp, err := http.Get(base + "/regions/fr-par/emails")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	entries := log.Entries()
+	if len(entries) == 0 {
+		t.Fatal("expected log entry")
+	}
+	params := entries[len(entries)-1].PathParams
+	if params["region"] != "fr-par" {
+		t.Errorf("expected PathParams[region]=fr-par, got %q", params["region"])
+	}
+}
+
 func TestHTTPServer_POST_WithBody(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "create",
@@ -273,6 +350,121 @@ func TestHTTPServer_TemplateResponse(t *testing.T) {
 	}
 	if m["time"] == "" {
 		t.Error("time value should not be empty")
+	}
+}
+
+func TestHTTPServer_PathRegex_Field(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "user-by-id",
+		Request:  config.HTTPRequest{Method: "GET", PathRegex: `^/users/\d+$`},
+		Response: config.HTTPResponse{Status: 200, Body: "ok"},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/users/42")
+	if err != nil {
+		t.Fatalf("GET /users/42: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("want 200 for regex match, got %d", resp.StatusCode)
+	}
+
+	resp2, err := http.Get(base + "/users/alice")
+	if err != nil {
+		t.Fatalf("GET /users/alice: %v", err)
+	}
+	_ = resp2.Body.Close()
+	if resp2.StatusCode != 404 {
+		t.Fatalf("want 404 for regex miss, got %d", resp2.StatusCode)
+	}
+}
+
+func TestHTTPServer_NamedParam_TemplateInBody(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "user-by-id",
+		Request: config.HTTPRequest{Method: "GET", Path: "/users/{id}"},
+		Response: config.HTTPResponse{
+			Status: 200,
+			Body:   `{"user":"{{.request.params.id}}"}`,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/users/42")
+	if err != nil {
+		t.Fatalf("GET /users/42: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != 200 {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if got["user"] != "42" {
+		t.Errorf("want user=42, got %q", got["user"])
+	}
+}
+
+func TestHTTPServer_RequestQuery_TemplateInBody(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "search",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/search"},
+		Response: config.HTTPResponse{Status: 200, Body: `{{.request.query.filter}}`},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/search?filter=active")
+	if err != nil {
+		t.Fatalf("GET /search?filter=active: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
+	if string(body) != "active" {
+		t.Errorf("want active, got %q", body)
+	}
+}
+
+func TestHTTPServer_RequestHeader_TemplateInBody(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "trace",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/trace"},
+		Response: config.HTTPResponse{Status: 200, Body: `{{index .request.headers "X-Trace"}}`},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	req, err := http.NewRequest(http.MethodGet, base+"/trace", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("X-Trace", "trace-123")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /trace: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
+	if string(body) != "trace-123" {
+		t.Errorf("want trace-123, got %q", body)
 	}
 }
 
@@ -840,8 +1032,8 @@ func TestHTTPServer_GlobalFault_ServiceUnavailable_WithRetryAfter(t *testing.T) 
 
 func TestHTTPServer_PerMockFault_Headers(t *testing.T) {
 	mocks := []config.HTTPMock{{
-		ID:      "rate-limited",
-		Request: config.HTTPRequest{Method: "GET", Path: "/api/resource"},
+		ID:       "rate-limited",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/api/resource"},
 		Response: config.HTTPResponse{Status: 200, Body: `{"data":"value"}`},
 		Fault: &config.MockFault{
 			StatusOverride: http.StatusTooManyRequests,
@@ -959,7 +1151,7 @@ func TestHTTPServer_GlobalFault_TemporaryRedirect(t *testing.T) {
 	}
 }
 
-func TestHTTPServer_GlobalFault_ArbitraryStatusCode(t *testing.T) {	// Any integer status code can be injected — test a few representative values.
+func TestHTTPServer_GlobalFault_ArbitraryStatusCode(t *testing.T) { // Any integer status code can be injected — test a few representative values.
 	cases := []struct {
 		status int
 		name   string

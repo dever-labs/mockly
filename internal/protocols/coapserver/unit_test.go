@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
@@ -91,7 +92,7 @@ func TestCoapResponseCode_AllCodes(t *testing.T) {
 
 func TestCoAP_MatchMock_NoMocks(t *testing.T) {
 	srv := newTestCoAPServer(nil)
-	if _, ok := srv.matchMock("GET", "/sensor/temp"); ok {
+	if _, ok, _ := srv.matchMock("GET", "/sensor/temp"); ok {
 		t.Error("should not match when there are no mocks")
 	}
 }
@@ -100,7 +101,7 @@ func TestCoAP_MatchMock_MethodMismatch(t *testing.T) {
 	srv := newTestCoAPServer([]config.CoAPMock{
 		{ID: "m1", Method: "GET", Path: "/sensor/temp"},
 	})
-	if _, ok := srv.matchMock("POST", "/sensor/temp"); ok {
+	if _, ok, _ := srv.matchMock("POST", "/sensor/temp"); ok {
 		t.Error("should not match different method")
 	}
 }
@@ -109,7 +110,7 @@ func TestCoAP_MatchMock_PathMismatch(t *testing.T) {
 	srv := newTestCoAPServer([]config.CoAPMock{
 		{ID: "m1", Method: "GET", Path: "/sensor/temp"},
 	})
-	if _, ok := srv.matchMock("GET", "/sensor/humidity"); ok {
+	if _, ok, _ := srv.matchMock("GET", "/sensor/humidity"); ok {
 		t.Error("should not match different path")
 	}
 }
@@ -118,12 +119,39 @@ func TestCoAP_MatchMock_Exact(t *testing.T) {
 	srv := newTestCoAPServer([]config.CoAPMock{
 		{ID: "m1", Method: "GET", Path: "/sensor/temp", Response: config.CoAPResponse{Code: "2.05"}},
 	})
-	m, ok := srv.matchMock("GET", "/sensor/temp")
+	m, ok, _ := srv.matchMock("GET", "/sensor/temp")
 	if !ok {
 		t.Fatal("should match")
 	}
 	if m.ID != "m1" {
 		t.Errorf("unexpected mock ID: %s", m.ID)
+	}
+}
+
+func TestCoAP_MatchMock_PathRegex(t *testing.T) {
+	srv := newTestCoAPServer([]config.CoAPMock{
+		{ID: "m1", Method: "GET", PathRegex: `^/sensors/[a-z]+$`, Response: config.CoAPResponse{Code: "2.05"}},
+	})
+
+	if _, ok, _ := srv.matchMock("GET", "/sensors/temp"); !ok {
+		t.Fatal("expected path_regex to match /sensors/temp")
+	}
+	if _, ok, _ := srv.matchMock("GET", "/sensors/123"); ok {
+		t.Fatal("expected path_regex to reject /sensors/123")
+	}
+}
+
+func TestCoAP_MatchMock_NamedParam(t *testing.T) {
+	srv := newTestCoAPServer([]config.CoAPMock{
+		{ID: "m1", Method: "GET", Path: "/sensors/{type}", Response: config.CoAPResponse{Code: "2.05"}},
+	})
+
+	_, ok, params := srv.matchMock("GET", "/sensors/humidity")
+	if !ok {
+		t.Fatal("expected named param match")
+	}
+	if params["type"] != "humidity" {
+		t.Errorf("want type=humidity, got %q", params["type"])
 	}
 }
 
@@ -134,12 +162,12 @@ func TestCoAP_MatchMock_StateCondition(t *testing.T) {
 	}}
 	srv := New(cfg, st, scenarios.New(nil), logger.New(100))
 
-	if _, ok := srv.matchMock("GET", "/sensor/temp"); ok {
+	if _, ok, _ := srv.matchMock("GET", "/sensor/temp"); ok {
 		t.Error("should not match when state condition is unmet")
 	}
 
 	st.Set("active", "yes")
-	if _, ok := srv.matchMock("GET", "/sensor/temp"); !ok {
+	if _, ok, _ := srv.matchMock("GET", "/sensor/temp"); !ok {
 		t.Error("should match when state condition is met")
 	}
 }
@@ -149,31 +177,31 @@ func TestCoAP_MatchMock_StateCondition(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMatchCoAPPath_Empty(t *testing.T) {
-	if !matchCoAPPath("", "/any/path") {
+	if ok, _ := engine.MatchPath("", "/any/path"); !ok {
 		t.Error("empty pattern should match any path")
 	}
 }
 
 func TestMatchCoAPPath_Exact(t *testing.T) {
-	if !matchCoAPPath("/sensor/temp", "/sensor/temp") {
+	if ok, _ := engine.MatchPath("/sensor/temp", "/sensor/temp"); !ok {
 		t.Error("exact pattern should match identical path")
 	}
-	if matchCoAPPath("/sensor/temp", "/sensor/humidity") {
+	if ok, _ := engine.MatchPath("/sensor/temp", "/sensor/humidity"); ok {
 		t.Error("exact pattern should not match different path")
 	}
 }
 
 func TestMatchCoAPPath_InvalidRegex(t *testing.T) {
-	if matchCoAPPath("re:[bad", "/sensor/temp") {
+	if ok, _ := engine.MatchPath("re:[bad", "/sensor/temp"); ok {
 		t.Error("invalid regex should not match")
 	}
 }
 
 func TestMatchCoAPPath_WildcardSuffix(t *testing.T) {
-	if !matchCoAPPath("/sensor/*", "/sensor/temp") {
+	if ok, _ := engine.MatchPath("/sensor/*", "/sensor/temp"); !ok {
 		t.Error("wildcard should match suffix")
 	}
-	if matchCoAPPath("/sensor/*", "/other/temp") {
+	if ok, _ := engine.MatchPath("/sensor/*", "/other/temp"); ok {
 		t.Error("wildcard prefix should not match wrong prefix")
 	}
 }

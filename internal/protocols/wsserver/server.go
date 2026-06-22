@@ -135,7 +135,8 @@ func (s *Server) handleConn(w http.ResponseWriter, r *http.Request, mock *config
 			time.Sleep(mock.OnConnect.Delay.Duration)
 		}
 		if mock.OnConnect.Send != "" {
-			_ = conn.WriteMessage(websocket.TextMessage, []byte(mock.OnConnect.Send))
+			connCtx := engine.RequestContext{Path: r.URL.Path}
+			_ = conn.WriteMessage(websocket.TextMessage, []byte(engine.Render(mock.OnConnect.Send, connCtx)))
 		}
 	}
 
@@ -187,7 +188,8 @@ func (s *Server) handleConn(w http.ResponseWriter, r *http.Request, mock *config
 		}
 
 		if rule.Respond != "" {
-			_ = conn.WriteMessage(websocket.TextMessage, []byte(rule.Respond))
+			msgCtx := engine.RequestContext{Path: r.URL.Path, Body: text}
+			_ = conn.WriteMessage(websocket.TextMessage, []byte(engine.Render(rule.Respond, msgCtx)))
 		}
 
 		s.log.Log(logger.Entry{

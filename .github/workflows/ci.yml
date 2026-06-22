@@ -217,6 +217,10 @@ jobs:
             -c Release \
             -o dist/nuget \
             /p:Version="$VERSION"
+          dotnet pack clients/dotnet/src/Testcontainers.Mockly/Testcontainers.Mockly.csproj \
+            -c Release \
+            -o dist/nuget \
+            /p:Version="$VERSION"
 
       - name: Push to NuGet.org
         run: |
@@ -299,6 +303,26 @@ jobs:
           npm run build
           npm publish --access public --provenance
 
+      - name: Set version in testcontainers package
+        run: |
+          VERSION="${{ github.ref_name }}"
+          node -e "
+            const fs = require('fs');
+            const p = 'clients/node-testcontainers/package.json';
+            const j = JSON.parse(fs.readFileSync(p));
+            j.version = process.argv[1].replace(/^v/, '');
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+          " "$VERSION"
+
+      - name: Build and publish testcontainers package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: clients/node-testcontainers
+        run: |
+          npm install
+          npm run build
+          npm publish --access public --provenance
+
 
   docker:
     name: Docker Image
@@ -353,6 +377,22 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 
+      - name: Set version in testcontainers package
+        run: |
+          VERSION="${{ github.ref_name }}"
+          SEMVER="${VERSION#v}"
+          sed -i "s/^version = \".*\"/version = \"${SEMVER}\"/" clients/python-testcontainers/pyproject.toml
+
+      - name: Build testcontainers wheel and sdist
+        run: |
+          cd clients/python-testcontainers && hatch build
+
+      - name: Publish testcontainers to PyPI
+        run: twine upload --non-interactive clients/python-testcontainers/dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
   # ─── Publish Maven Central package ──────────────────────────────────────────
   java-publish:
     name: Publish Maven Central
@@ -391,3 +431,51 @@ jobs:
           MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: mvn -B deploy -f clients/java/pom.xml -DskipTests -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}"
+
+      - name: Set testcontainers version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          SEMVER="${VERSION#v}"
+          mvn -B versions:set -DnewVersion="${SEMVER}" -DgenerateBackupPoms=false \
+            -f clients/java/testcontainers/pom.xml
+
+      - name: Deploy testcontainers to Maven Central
+        env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: mvn -B deploy -f clients/java/testcontainers/pom.xml -DskipTests -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}"
+
+  rust-publish:
+    name: Publish crates.io
+    needs: [build, e2e]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # actions/checkout@v6.0.3
+
+      - name: Install Rust stable
+        run: rustup update stable && rustup default stable
+
+      - name: Set version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          SEMVER="${VERSION#v}"
+          sed -i "s/^version = \".*\"/version = \"${SEMVER}\"/" clients/rust/Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"${SEMVER}\"/" clients/rust-testcontainers/Cargo.toml
+          sed -i "s/mockly-driver = { path = \"..\/rust\", version = \"[^\"]*\" }/mockly-driver = { path = \"..\/rust\", version = \"${SEMVER}\" }/" clients/rust-testcontainers/Cargo.toml
+
+      - name: Publish driver to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --manifest-path clients/rust/Cargo.toml
+
+      - name: Wait for crates.io to index driver
+        run: sleep 30
+
+      - name: Publish testcontainers to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --manifest-path clients/rust-testcontainers/Cargo.toml

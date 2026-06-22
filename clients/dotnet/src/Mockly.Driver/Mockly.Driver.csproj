@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net9.0;net10.0;net11.0</TargetFrameworks>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <_SdkMajorVersion>$(NETCoreSdkVersion.Split('-')[0].Split('.')[0])</_SdkMajorVersion>
+    <TargetFrameworks Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(_SdkMajorVersion).0', '10.0'))">$(TargetFrameworks);net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(_SdkMajorVersion).0', '11.0'))">$(TargetFrameworks);net11.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>

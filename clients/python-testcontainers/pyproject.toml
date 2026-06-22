@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mockly-testcontainers"
+version = "0.1.0"
+description = "Testcontainers module for Mockly — run Mockly as a Docker container in tests"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["mock", "testing", "http", "integration-test", "mockly", "testcontainers", "docker"]
+dependencies = ["testcontainers>=4.0.0"]
+
+[project.urls]
+Homepage = "https://github.com/dever-labs/mockly/tree/main/clients/python-testcontainers"
+Repository = "https://github.com/dever-labs/mockly"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mockly_testcontainers"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not integration'"
+markers = [
+    "integration: marks tests that require a running Docker daemon (deselect with '-m not integration')",
+]

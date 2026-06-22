@@ -5,9 +5,11 @@ on:
     branches: [main]
     paths:
       - 'clients/python/**'
+      - 'clients/python-testcontainers/**'
   pull_request:
     paths:
       - 'clients/python/**'
+      - 'clients/python-testcontainers/**'
   workflow_dispatch:
 
 permissions: {}
@@ -23,6 +25,30 @@ jobs:
     defaults:
       run:
         working-directory: clients/python
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4.2.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Install dev dependencies
+        run: pip install pytest
+
+      - name: Test
+        run: pytest
+
+  ci-testcontainers:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: clients/python-testcontainers
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4.2.2

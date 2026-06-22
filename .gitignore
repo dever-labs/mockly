@@ -33,6 +33,10 @@ clients/node/node_modules/
 clients/node/dist/
 clients/node/bin/
 
+# Node testcontainers
+clients/node-testcontainers/node_modules/
+clients/node-testcontainers/dist/
+
 # Python client
 clients/python/.pytest_cache/
 clients/python/__pycache__/
@@ -41,6 +45,12 @@ clients/python/*.egg-info/
 clients/python/dist/
 clients/python/.venv/
 
+# Python testcontainers
+clients/python-testcontainers/.venv/
+clients/python-testcontainers/dist/
+clients/python-testcontainers/src/**/__pycache__/
+clients/python-testcontainers/*.egg-info/
+
 # Python cache (all locations)
 **/__pycache__/
 **/*.pyc
@@ -48,9 +58,15 @@ clients/python/.venv/
 # Java client
 clients/java/target/
 
+# Java testcontainers
+clients/java/testcontainers/target/
+
 # .NET client
 clients/dotnet/**/bin/
 clients/dotnet/**/obj/
 
 # Rust client
 clients/rust/target/
+
+# Rust testcontainers
+clients/rust-testcontainers/target/

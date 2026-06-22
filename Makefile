@@ -5,7 +5,7 @@ DIST_DIR   := dist
 
 GO_BUILD_FLAGS := -ldflags="-s -w"
 
-.PHONY: all build build-ui build-go clean test lint dev
+.PHONY: all build build-ui build-go clean test lint dev test-tc test-tc-go test-tc-node test-tc-python
 
 all: build
 
@@ -50,3 +50,18 @@ dev:
 ## tidy: Tidy Go modules
 tidy:
 	go mod tidy
+
+## test-tc: Run Testcontainers integration tests for all supported languages (requires Docker)
+test-tc: test-tc-go test-tc-node test-tc-python
+
+## test-tc-go: Run Go Testcontainers integration tests
+test-tc-go:
+	cd clients/go/testcontainers && go test -tags integration -timeout 120s -v ./...
+
+## test-tc-node: Run Node.js Testcontainers integration tests
+test-tc-node:
+	cd clients/node-testcontainers && npm run test:integration
+
+## test-tc-python: Run Python Testcontainers integration tests
+test-tc-python:
+	cd clients/python-testcontainers && python3 -m pytest -m integration tests/ -v

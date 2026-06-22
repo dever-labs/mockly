@@ -1,0 +1,35 @@
+{
+  "name": "@dever-labs/mockly-testcontainers",
+  "version": "0.1.0",
+  "description": "Testcontainers module for Mockly — run Mockly as a Docker container in tests",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "INTEGRATION=1 vitest run --config vitest.integration.config.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "testcontainers": ">=10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "testcontainers": "^10.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.2"
+  },
+  "keywords": ["mock", "testing", "http", "integration-test", "mockly", "testcontainers", "docker"]
+}

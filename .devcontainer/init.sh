@@ -6,6 +6,19 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+echo -e "${CYAN}==> Installing Java 21 + Maven...${NC}"
+sudo apt-get install -y --no-install-recommends openjdk-21-jdk-headless maven > /dev/null
+
+echo -e "${CYAN}==> Installing .NET 9 SDK...${NC}"
+curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 9.0 > /dev/null
+grep -qxF 'export PATH="$HOME/.dotnet:$PATH"' ~/.bashrc || echo 'export PATH="$HOME/.dotnet:$PATH"' >> ~/.bashrc
+export PATH="$HOME/.dotnet:$PATH"
+
+echo -e "${CYAN}==> Installing Rust (stable)...${NC}"
+curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain stable -y > /dev/null
+grep -qxF '. "$HOME/.cargo/env"' ~/.bashrc || echo '. "$HOME/.cargo/env"' >> ~/.bashrc
+. "$HOME/.cargo/env"
+
 echo -e "${CYAN}==> Installing Go tools...${NC}"
 GOTOOLCHAIN=auto go install github.com/air-verse/air@v1.61.7
 GOTOOLCHAIN=auto go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8

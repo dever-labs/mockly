@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <!-- Strip any pre-release suffix before parsing, then add newer TFMs when SDK supports them -->
+    <_SdkMajorVersion>$(NETCoreSdkVersion.Split('-')[0].Split('.')[0])</_SdkMajorVersion>
+    <TargetFrameworks Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(_SdkMajorVersion).0', '10.0'))">$(TargetFrameworks);net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(_SdkMajorVersion).0', '11.0'))">$(TargetFrameworks);net11.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Documentation & quality -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Deterministic>true</Deterministic>
+
+    <!-- Symbol & source packages -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+
+    <!-- NuGet package metadata -->
+    <PackageId>Testcontainers.Mockly</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>dever-labs</Authors>
+    <Description>Testcontainers module for Mockly — run Mockly as a Docker container in tests</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/dever-labs/mockly/tree/main/clients/dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/dever-labs/mockly</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>mock testing http integration-test mockly testcontainers docker</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Testcontainers" Version="4.4.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Testcontainers.Mockly.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Mockly.Driver\Mockly.Driver.csproj" />
+  </ItemGroup>
+</Project>

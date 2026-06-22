@@ -1,0 +1,4 @@
+[toolchain]
+# testcontainers 0.23.x transitive dependencies require edition2024,
+# which needs Cargo 1.85+ (Rust 1.85, released February 2025).
+channel = "stable"

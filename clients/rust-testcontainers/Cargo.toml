@@ -1,0 +1,19 @@
+[package]
+name = "mockly-testcontainers"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Testcontainers module for Mockly — run Mockly as a Docker container in tests"
+license = "MIT"
+repository = "https://github.com/dever-labs/mockly"
+keywords = ["mock", "testing", "http", "mockly", "testcontainers"]
+readme = "README.md"
+
+[dependencies]
+testcontainers = { version = "0.23", features = ["blocking", "http_wait"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+mockly-driver = { path = "../rust", version = "0.1.0" }
+
+[dev-dependencies]

@@ -22,6 +22,7 @@
 - [CLI Reference](#cli-reference)
 - [Management API Reference](#management-api-reference)
 - [Client Libraries](#client-libraries)
+  - [Testcontainers](#testcontainers)
 - [CI Integration](#ci-integration)
 - [Architecture](#architecture)
 - [Development](#development)
@@ -1302,22 +1303,26 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 
 ## Client Libraries
 
-Mockly ships official clients that manage the process lifecycle, port allocation, and the management API for you — so tests stay clean and portable.
+Mockly ships official clients for both native-process and Docker-backed test setups, so you can choose between a locally managed binary or a containerized Mockly instance.
 
-| Language | Package | Install |
-|---|---|---|
-| **Go** | `github.com/dever-labs/mockly/clients/go` | `go get github.com/dever-labs/mockly/clients/go` |
-| **Node.js / TypeScript** | `@dever-labs/mockly-driver` | `npm i -D @dever-labs/mockly-driver` |
-| **Java** | `io.github.dever-labs:mockly-driver` | See Maven/Gradle below |
-| **.NET / C#** | `Mockly.Driver` | `dotnet add package Mockly.Driver` |
-| **Python** | `mockly-driver` | `pip install mockly-driver` |
-| **Rust** | `mockly-driver` | `mockly-driver = "0.4"` in `[dev-dependencies]` |
+| Language | Driver package | Testcontainers package | Install |
+|---|---|---|---|
+| **Go** | `github.com/dever-labs/mockly/clients/go` | `github.com/dever-labs/mockly/clients/go/testcontainers` | `go get github.com/dever-labs/mockly/clients/go` or `go get github.com/dever-labs/mockly/clients/go/testcontainers` |
+| **Node.js / TypeScript** | `@dever-labs/mockly-driver` | `@dever-labs/mockly-testcontainers` | `npm i -D @dever-labs/mockly-driver` or `npm i -D @dever-labs/mockly-testcontainers testcontainers` |
+| **Java** | `io.github.dever-labs:mockly-driver` | `io.github.dever-labs:mockly-testcontainers` | See Maven/Gradle below |
+| **.NET / C#** | `Mockly.Driver` | `Testcontainers.Mockly` | `dotnet add package Mockly.Driver` or `dotnet add package Testcontainers.Mockly` |
+| **Python** | `mockly-driver` | `mockly-testcontainers` | `pip install mockly-driver` or `pip install mockly-testcontainers` |
+| **Rust** | `mockly-driver` | `mockly-testcontainers` | `mockly-driver = "0.4"` or `mockly-testcontainers = "0.1.0"` in `[dev-dependencies]` |
 
-All clients:
+Driver clients:
 - Automatically find or install the Mockly binary for the current platform
 - Allocate two free ports atomically (no TOCTOU races)
 - Retry startup up to 3 times on port conflicts
-- Expose the same concepts: `addMock`, `activateScenario`, `setFault`, `reset`, `stop`
+
+Testcontainers modules:
+- Start `ghcr.io/dever-labs/mockly:latest` in Docker using each language's Testcontainers library
+- Require no binary download on the host machine
+- Expose the same core concepts: `addMock`, `activateScenario`, `setFault`, `reset`, `stop` / cleanup
 
 ### Go
 
@@ -1434,6 +1439,105 @@ server.add_mock(&Mock {
 ```
 
 [→ Full Rust docs](docs/clients/rust.md)
+
+### Testcontainers
+
+Every supported language also has Docker-backed Testcontainers support. These modules run `ghcr.io/dever-labs/mockly:latest`, avoid a host binary download, and keep the same Mockly control surface for mocks, scenarios, reset, and fault injection.
+
+#### Go
+
+```go
+ctx := context.Background()
+container, _ := testcontainersmockly.Run(ctx)
+defer container.Terminate(ctx)
+container.AddMock(ctx, mocklydriver.Mock{
+    ID: "ping",
+    Request: mocklydriver.MockRequest{Method: http.MethodGet, Path: "/ping"},
+    Response: mocklydriver.MockResponse{Status: 200, Body: `{"ok":true}`},
+})
+httpBase, _ := container.HTTPBase(ctx)
+resp, _ := http.Get(httpBase + "/ping")
+```
+
+#### Node.js / TypeScript
+
+```ts
+const container = await new MocklyContainerBuilder().start()
+try {
+  await container.addMock({
+    id: 'ping',
+    request: { method: 'GET', path: '/ping' },
+    response: { status: 200, body: '{"ok":true}' },
+  })
+  const response = await fetch(`${container.getHttpBase()}/ping`)
+} finally {
+  await container.stop()
+}
+```
+
+#### Java
+
+```java
+MocklyContainer container = new MocklyContainer();
+container.start();
+try {
+    container.addMock(Mock.builder(
+            "ping",
+            MockRequest.builder("GET", "/ping").build(),
+            MockResponse.builder(200).body("{\"ok\":true}").build()
+    ).build());
+    HttpResponse<String> response = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI.create(container.getHttpBase() + "/ping")).GET().build(),
+            HttpResponse.BodyHandlers.ofString());
+} finally {
+    container.stop();
+}
+```
+
+#### .NET / C#
+
+```csharp
+await using var container = new MocklyBuilder().Build();
+await container.StartAsync();
+await container.AddMockAsync(new Mock(
+    "ping",
+    new MockRequest("GET", "/ping"),
+    new MockResponse(200, """{"ok":true}""")));
+using var http = new HttpClient();
+var response = await http.GetAsync($"{container.GetHttpBaseAddress()}/ping");
+```
+
+#### Python
+
+```python
+with MocklyContainer() as container:
+    container.add_mock(Mock(
+        id="ping",
+        request=MockRequest(method="GET", path="/ping"),
+        response=MockResponse(status=200, body='{"ok":true}'),
+    ))
+    response = urllib.request.urlopen(f"{container.get_http_base()}/ping")
+```
+
+#### Rust
+
+```rust
+let container = MocklyContainer::new(MocklyImage::default().start()?);
+container.add_mock(&Mock {
+    id: "ping".into(),
+    request: MockRequest { method: "GET".into(), path: "/ping".into(), headers: Default::default() },
+    response: MockResponse { status: 200, body: Some(r#"{"ok":true}"#.into()), headers: Default::default(), delay: None },
+})?;
+let response = reqwest::blocking::get(format!("{}/ping", container.http_base()))?;
+```
+
+Full references:
+- [Go](docs/clients/go.md)
+- [Node.js / TypeScript](docs/clients/node.md)
+- [Java](docs/clients/java.md)
+- [.NET / C#](docs/clients/dotnet.md)
+- [Python](docs/clients/python.md)
+- [Rust](docs/clients/rust.md)
 
 ---
 

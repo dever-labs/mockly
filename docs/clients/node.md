@@ -201,3 +201,53 @@ export async function teardown() {
 | `server.apiBase` | Base URL of the management API, e.g. `http://127.0.0.1:45124` |
 | `server.httpPort` | Numeric HTTP port |
 | `server.apiPort` | Numeric API port |
+
+## Testcontainers
+
+Mockly also ships a Docker-backed Node.js / TypeScript testcontainers module: `@dever-labs/mockly-testcontainers`.
+
+Use it instead of the driver when you want Docker-managed lifecycle, no local binary download, and the same container image in local tests and CI.
+
+### Install
+
+```sh
+npm i -D @dever-labs/mockly-testcontainers testcontainers
+```
+
+### Example
+
+```ts
+import assert from 'node:assert/strict'
+import { MocklyContainerBuilder } from '@dever-labs/mockly-testcontainers'
+
+const container = await new MocklyContainerBuilder().start()
+
+try {
+  await container.addMock({
+    id: 'get-user',
+    request: { method: 'GET', path: '/users/1' },
+    response: { status: 200, body: '{"id":1}' },
+  })
+
+  const response = await fetch(`${container.getHttpBase()}/users/1`)
+  assert.equal(response.status, 200)
+  assert.equal(await response.text(), '{"id":1}')
+} finally {
+  await container.stop()
+}
+```
+
+### Key API
+
+- `MocklyContainerBuilder.withInlineConfig(yaml)`
+- `StartedMocklyContainer.getHttpBase()` / `getApiBase()`
+- `addMock`, `deleteMock`, `reset`
+- `activateScenario`, `deactivateScenario`
+- `setFault`, `clearFault`
+
+### Requirements
+
+- Node 18+
+- Docker
+
+See `clients/node-testcontainers/README.md` for the full module reference.

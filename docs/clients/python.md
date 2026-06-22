@@ -186,3 +186,51 @@ def test_isolated(isolated_mockly):
 | `server.api_base` | Base URL of the management API, e.g. `http://127.0.0.1:45124` |
 | `server.http_port` | Numeric HTTP port |
 | `server.api_port` | Numeric API port |
+
+## Testcontainers
+
+Mockly also ships a Docker-backed Python testcontainers module: `mockly-testcontainers`.
+
+Use it instead of the driver when you want Docker-managed lifecycle, no local binary download, and the same container image in local tests and CI.
+
+### Install
+
+```sh
+pip install mockly-testcontainers
+```
+
+### Example
+
+```python
+import urllib.request
+
+from mockly_testcontainers import Mock, MockRequest, MockResponse, MocklyContainer
+
+with MocklyContainer() as container:
+    container.add_mock(
+        Mock(
+            id="get-user",
+            request=MockRequest(method="GET", path="/users/1"),
+            response=MockResponse(status=200, body='{"id":1}'),
+        )
+    )
+
+    with urllib.request.urlopen(f"{container.get_http_base()}/users/1") as response:
+        assert response.status == 200
+        assert response.read().decode() == '{"id":1}'
+```
+
+### Key API
+
+- `MocklyContainer.with_inline_config(yaml)`
+- `get_http_base()` / `get_api_base()`
+- `add_mock`, `delete_mock`, `reset`
+- `activate_scenario`, `deactivate_scenario`
+- `set_fault`, `clear_fault`
+
+### Requirements
+
+- Python 3.10+
+- Docker
+
+See `clients/python-testcontainers/README.md` for the full module reference.

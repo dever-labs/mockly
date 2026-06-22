@@ -229,3 +229,59 @@ public class OrderServiceTests
 | `server.ApiBase` | Base URL of the management API, e.g. `http://127.0.0.1:45124` |
 | `server.HttpPort` | Numeric HTTP port |
 | `server.ApiPort` | Numeric API port |
+
+## Testcontainers
+
+Mockly also ships a Docker-backed testcontainers module for .NET: `Testcontainers.Mockly`.
+
+Use it instead of the driver when you want Docker-managed lifecycle, no local binary download, and the same container image in local tests and CI.
+
+### Install
+
+```sh
+dotnet add package Testcontainers.Mockly
+```
+
+### Example
+
+```csharp
+using System.Net.Http;
+using Mockly.Driver.Models;
+using Testcontainers.Mockly;
+using Xunit;
+
+public class PaymentTests
+{
+    [Fact]
+    public async Task ReturnsUserFromContainer()
+    {
+        await using var container = new MocklyBuilder().Build();
+        await container.StartAsync();
+
+        await container.AddMockAsync(new Mock(
+            "get-user",
+            new MockRequest("GET", "/users/1"),
+            new MockResponse(200, """{"id":1}""")));
+
+        using var http = new HttpClient();
+        var body = await http.GetStringAsync($"{container.GetHttpBaseAddress()}/users/1");
+
+        Assert.Equal("""{"id":1}""", body);
+    }
+}
+```
+
+### Key API
+
+- `MocklyBuilder.WithInlineConfig(yaml)` to replace the container config
+- `MocklyContainer.GetHttpBaseAddress()` / `GetApiBaseAddress()` for base URLs
+- `AddMockAsync`, `DeleteMockAsync`, `ResetAsync`
+- `ActivateScenarioAsync`, `DeactivateScenarioAsync`
+- `SetFaultAsync`, `ClearFaultAsync`
+
+### Requirements
+
+- .NET 8+
+- Docker
+
+See `clients/dotnet/src/Testcontainers.Mockly/README.md` for the full module reference.

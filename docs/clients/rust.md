@@ -192,3 +192,56 @@ fn isolated_test() {
 | `server.api_base` | Base URL of the management API, e.g. `http://127.0.0.1:45124` |
 | `server.http_port` | Numeric HTTP port |
 | `server.api_port` | Numeric API port |
+
+## Testcontainers
+
+Mockly also ships a Docker-backed Rust testcontainers crate: `mockly-testcontainers`.
+
+Use it instead of the driver when you want Docker-managed lifecycle, no local binary download, and the same container image in local tests and CI.
+
+### Install
+
+```toml
+[dev-dependencies]
+mockly-testcontainers = "0.1.0"
+reqwest = { version = "0.12", features = ["blocking"] }
+testcontainers = { version = "0.23", features = ["blocking", "http_wait"] }
+```
+
+### Example
+
+```rust
+use mockly_testcontainers::{Mock, MockRequest, MockResponse, MocklyContainer, MocklyImage};
+use testcontainers::runners::SyncRunner;
+
+#[test]
+fn returns_user_from_container() -> Result<(), Box<dyn std::error::Error>> {
+    let container = MocklyContainer::new(MocklyImage::default().start()?);
+
+    container.add_mock(&Mock {
+        id: "get-user".into(),
+        request: MockRequest { method: "GET".into(), path: "/users/1".into(), headers: Default::default() },
+        response: MockResponse { status: 200, body: Some(r#"{"id":1}"#.into()), headers: Default::default(), delay: None },
+    })?;
+
+    let response = reqwest::blocking::get(format!("{}/users/1", container.http_base()))?;
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.text()?, r#"{"id":1}"#);
+    Ok(())
+}
+```
+
+### Key API
+
+- `MocklyImage::with_inline_config(yaml)`
+- `MocklyContainer::http_base()` / `api_base()`
+- `add_mock`, `delete_mock`, `reset`
+- `activate_scenario`, `deactivate_scenario`
+- `set_fault`, `clear_fault`
+
+### Requirements
+
+- Rust 1.85+
+- Docker
+
+See `clients/rust-testcontainers/README.md` for the full module reference.

@@ -200,3 +200,76 @@ void isolated() throws Exception {
 | `server.apiBase` | Base URL of the management API, e.g. `http://127.0.0.1:45124` |
 | `server.httpPort` | Numeric HTTP port |
 | `server.apiPort` | Numeric API port |
+
+## Testcontainers
+
+Mockly also ships a Docker-backed Testcontainers module for Java: Maven artifact `io.github.dever-labs:mockly-testcontainers` and package `io.mockly.testcontainers`.
+
+Use it instead of the driver when you want Docker-managed lifecycle, no local binary download, and the same container image in local tests and CI.
+
+### Install
+
+```xml
+<dependency>
+  <groupId>io.github.dever-labs</groupId>
+  <artifactId>mockly-testcontainers</artifactId>
+  <version>0.1.0</version>
+  <scope>test</scope>
+</dependency>
+```
+
+### Example
+
+```java
+import io.mockly.testcontainers.MocklyContainer;
+import io.mockly.testcontainers.model.Mock;
+import io.mockly.testcontainers.model.MockRequest;
+import io.mockly.testcontainers.model.MockResponse;
+import org.junit.jupiter.api.Test;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+@Testcontainers
+class PaymentServiceTest {
+    @Container
+    static MocklyContainer mockly = new MocklyContainer();
+
+    @Test
+    void returnsUserFromContainer() throws Exception {
+        mockly.addMock(Mock.builder(
+                "get-user",
+                MockRequest.builder("GET", "/users/1").build(),
+                MockResponse.builder(200).body("{\"id\":1}").build()
+        ).build());
+
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(mockly.getHttpBase() + "/users/1")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, response.statusCode());
+        assertEquals("{\"id\":1}", response.body());
+    }
+}
+```
+
+### Key API
+
+- `new MocklyContainer()` / `withInlineConfig(yaml)`
+- `getHttpBase()` / `getApiBase()`
+- `addMock`, `deleteMock`, `reset`
+- `activateScenario`, `deactivateScenario`
+- `setFault`, `clearFault`
+
+### Requirements
+
+- Java 11+
+- Docker
+
+See `clients/java/testcontainers/README.md` for the full module reference.

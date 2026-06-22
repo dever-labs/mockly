@@ -199,3 +199,75 @@ func TestIsolated(t *testing.T) {
 | `server.APIBase` | Base URL of the management API, e.g. `http://127.0.0.1:45124` |
 | `server.HTTPPort` | Numeric HTTP port |
 | `server.APIPort` | Numeric API port |
+
+## Testcontainers
+
+Mockly also ships a Docker-backed Go testcontainers module in the same repository: `github.com/dever-labs/mockly/clients/go/testcontainers`.
+
+Use it instead of the driver when you want Docker-managed lifecycle, no local binary download, and the same container image in local tests and CI.
+
+### Install
+
+```sh
+go get github.com/dever-labs/mockly/clients/go/testcontainers
+go get github.com/testcontainers/testcontainers-go
+```
+
+### Example
+
+```go
+package mypackage_test
+
+import (
+    "context"
+    "io"
+    "net/http"
+    "testing"
+
+    mocklydriver "github.com/dever-labs/mockly/clients/go"
+    testcontainersmockly "github.com/dever-labs/mockly/clients/go/testcontainers"
+)
+
+func TestReturnsUserFromContainer(t *testing.T) {
+    ctx := context.Background()
+    container, err := testcontainersmockly.Run(ctx)
+    if err != nil {
+        t.Fatal(err)
+    }
+    t.Cleanup(func() { _ = container.Terminate(context.Background()) })
+
+    if err := container.AddMock(ctx, mocklydriver.Mock{
+        ID: "get-user",
+        Request: mocklydriver.MockRequest{Method: http.MethodGet, Path: "/users/1"},
+        Response: mocklydriver.MockResponse{Status: 200, Body: `{"id":1}`},
+    }); err != nil {
+        t.Fatal(err)
+    }
+
+    httpBase, _ := container.HTTPBase(ctx)
+    resp, err := http.Get(httpBase + "/users/1")
+    if err != nil {
+        t.Fatal(err)
+    }
+    defer resp.Body.Close()
+    body, _ := io.ReadAll(resp.Body)
+
+    if got := string(body); resp.StatusCode != 200 || got != `{"id":1}` {
+        t.Fatalf("unexpected response: status=%d body=%s", resp.StatusCode, got)
+    }
+}
+```
+
+### Key API
+
+- `Run(ctx, opts...)` to start the container
+- `WithImage(image)` and `WithInlineConfig(yaml)` startup options
+- `HTTPBase(ctx)` / `APIBase(ctx)`
+- `AddMock`, `DeleteMock`, `Reset`
+- `ActivateScenario`, `DeactivateScenario`
+- `SetFault`, `ClearFault`
+
+### Requirements
+
+- Go 1.21+
+- Docker

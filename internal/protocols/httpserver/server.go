@@ -393,6 +393,11 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 		for k, v := range headers {
 			w.Header().Set(k, v)
 		}
+		// Ensure Content-Type is always set so browsers cannot sniff the body
+		// as HTML and execute embedded scripts (reflected XSS).
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "application/octet-stream")
+		}
 		w.WriteHeader(status)
 		_, _ = fmt.Fprint(w, body)
 		return

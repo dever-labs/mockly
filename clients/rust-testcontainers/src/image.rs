@@ -61,11 +61,11 @@ impl Image for MocklyImage {
     }
 
     fn ready_conditions(&self) -> Vec<WaitFor> {
-        vec![WaitFor::Http(
+        vec![WaitFor::Http(Box::new(
             HttpWaitStrategy::new("/api/protocols")
                 .with_port(ContainerPort::Tcp(API_PORT))
                 .with_expected_status_code(200u16),
-        )]
+        ))]
     }
 
     fn expose_ports(&self) -> &[ContainerPort] {

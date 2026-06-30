@@ -175,7 +175,7 @@ fn fault_payload(config: &FaultConfig) -> Value {
     if let Some(delay) = &config.delay {
         map.insert("delay".to_string(), Value::String(delay.clone()));
     }
-    if let Some(status) = config.status_override {
+    if let Some(status) = config.status {
         map.insert("status".to_string(), Value::Number(status.into()));
     }
     if let Some(error_rate) = config.error_rate {
@@ -196,7 +196,7 @@ mod tests {
         let payload = fault_payload(&FaultConfig {
             enabled: true,
             delay: Some("25ms".to_string()),
-            status_override: Some(503),
+            status: Some(503),
             error_rate: Some(0.25),
         });
 

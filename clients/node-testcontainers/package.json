@@ -5,6 +5,11 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dever-labs/mockly.git",
+    "directory": "clients/node-testcontainers"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",

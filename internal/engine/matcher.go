@@ -4,8 +4,10 @@ package engine
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -110,6 +112,9 @@ func HTTPMatch(
 			continue
 		}
 		if !matchState(m.State, store) {
+			continue
+		}
+		if m.Request.Auth != nil && !matchAuth(m.Request.Auth, headers, query) {
 			continue
 		}
 
@@ -261,7 +266,17 @@ func matchPattern(pattern, text string) bool {
 
 func matchHeaders(want, got map[string]string) bool {
 	for k, v := range want {
-		if got[k] != v {
+		// HTTP header names are case-insensitive; normalise to canonical form.
+		actual, ok := got[k]
+		if !ok {
+			// Try canonical form lookup (e.g. "content-type" → "Content-Type").
+			canonical := http.CanonicalHeaderKey(k)
+			actual, ok = got[canonical]
+			if !ok {
+				return false
+			}
+		}
+		if !matchPattern(v, actual) {
 			return false
 		}
 	}
@@ -356,6 +371,119 @@ func matchState(cond *config.StateCondition, store *state.Store) bool {
 	}
 	v, _ := store.Get(cond.Key)
 	return v == cond.Value
+}
+
+// matchAuth validates the authentication credentials in the request against the
+// configured HTTPAuth policy. Returns true when the credentials satisfy the policy.
+// Auth type "ntlm" is handled at the server layer (3-step handshake); at the
+// engine level it only checks that a type-3 Authenticate token is present.
+func matchAuth(auth *config.HTTPAuth, headers map[string]string, query map[string]string) bool {
+	if auth == nil {
+		return true
+	}
+	switch strings.ToLower(auth.Type) {
+	case "bearer":
+		return matchBearerAuth(auth.Token, headers)
+	case "basic":
+		return matchBasicAuth(auth.Username, auth.Password, headers)
+	case "api_key", "apikey":
+		return matchAPIKey(auth.Header, auth.Query, auth.Value, headers, query)
+	case "digest":
+		// Only verify that a Digest Authorization header is present.
+		// Full Digest validation (nonce, hash) is out of scope for a mock server.
+		authHdr := authorizationHeader(headers)
+		return strings.HasPrefix(strings.TrimSpace(authHdr), "Digest ")
+	case "ntlm":
+		// The server handles steps 1 and 2 of the handshake automatically.
+		// At the engine level we only accept type-3 (Authenticate) tokens.
+		authHdr := authorizationHeader(headers)
+		return isNTLMType3(authHdr)
+	}
+	return false
+}
+
+// matchBearerAuth checks that the Authorization header carries a Bearer token
+// matching the configured token pattern. An empty/missing token means "any".
+func matchBearerAuth(wantToken string, headers map[string]string) bool {
+	authHdr := authorizationHeader(headers)
+	const prefix = "Bearer "
+	if !strings.HasPrefix(authHdr, prefix) {
+		return false
+	}
+	token := strings.TrimSpace(authHdr[len(prefix):])
+	if wantToken == "" || wantToken == "*" {
+		return token != ""
+	}
+	return matchPattern(wantToken, token)
+}
+
+// matchBasicAuth decodes the Basic Authorization header and compares the
+// credentials. Empty username/password fields act as wildcards.
+func matchBasicAuth(wantUser, wantPass string, headers map[string]string) bool {
+	authHdr := authorizationHeader(headers)
+	const prefix = "Basic "
+	if !strings.HasPrefix(authHdr, prefix) {
+		return false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(authHdr[len(prefix):]))
+	if err != nil {
+		return false
+	}
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	user, pass := parts[0], parts[1]
+	if wantUser != "" && wantUser != "*" && user != wantUser {
+		return false
+	}
+	if wantPass != "" && wantPass != "*" && pass != wantPass {
+		return false
+	}
+	return true
+}
+
+// matchAPIKey checks for an API key in either a request header or query parameter.
+func matchAPIKey(headerName, queryName, wantValue string, headers map[string]string, query map[string]string) bool {
+	var got string
+	switch {
+	case headerName != "":
+		got = headers[headerName]
+		if got == "" {
+			got = headers[http.CanonicalHeaderKey(headerName)]
+		}
+	case queryName != "":
+		got = query[queryName]
+	default:
+		return false
+	}
+	if wantValue == "" || wantValue == "*" {
+		return got != ""
+	}
+	return matchPattern(wantValue, got)
+}
+
+// authorizationHeader returns the Authorization header value from the request
+// headers map, trying both the canonical form and lowercase.
+func authorizationHeader(headers map[string]string) string {
+	if v, ok := headers["Authorization"]; ok {
+		return v
+	}
+	return headers["authorization"]
+}
+
+// isNTLMType3 returns true when the Authorization header contains an NTLM
+// type-3 (Authenticate) message, identified by the binary signature NTLMSSP\0\x03.
+func isNTLMType3(authHdr string) bool {
+	const prefix = "NTLM "
+	if !strings.HasPrefix(authHdr, prefix) {
+		return false
+	}
+	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(authHdr[len(prefix):]))
+	if err != nil || len(b) < 12 {
+		return false
+	}
+	return string(b[:8]) == "NTLMSSP\x00" && b[8] == 0x03
 }
 
 // RequestContext carries the inbound request fields that are available inside

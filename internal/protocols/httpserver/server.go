@@ -145,6 +145,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	mocks := s.mocks
 	s.mu.RUnlock()
 
+	// NTLM pre-flight: if any mock for this path/method requires NTLM auth,
+	// handle the 3-step handshake before normal matching.
+	if handled := s.handleNTLM(w, r, mocks, hdrs); handled {
+		return
+	}
+
 	result, matched := engine.HTTPMatch(mocks, r.Method, r.URL.Path, query, hdrs, string(body), s.store)
 
 	status := http.StatusNotFound
@@ -343,6 +349,75 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		MatchedID:  matchedID,
 		PathParams: result.PathParams,
 	})
+}
+
+// handleNTLM intercepts requests for mocks that require NTLM authentication and
+// drives the 3-step handshake. It returns true when it has written a response
+// (steps 1 and 2), meaning the caller should not process the request further.
+// On step 3 (type-3 Authenticate token) it returns false so normal matching proceeds.
+//
+// Step 1 — no NTLM token present:
+//
+//	→ 401 Unauthorized + WWW-Authenticate: NTLM
+//
+// Step 2 — NTLM type-1 (Negotiate) token present:
+//
+//	→ 401 Unauthorized + WWW-Authenticate: NTLM <type2-challenge>
+//
+// Step 3 — NTLM type-3 (Authenticate) token present:
+//
+//	→ returns false; normal HTTPMatch runs and the mock is served.
+func (s *Server) handleNTLM(w http.ResponseWriter, r *http.Request, mocks []config.HTTPMock, hdrs map[string]string) bool {
+	// Check whether any mock on this path+method requires NTLM auth.
+	requiresNTLM := false
+	for i := range mocks {
+		m := &mocks[i]
+		if m.Request.Auth == nil || !strings.EqualFold(m.Request.Auth.Type, "ntlm") {
+			continue
+		}
+		// Only activate NTLM handling when the path/method could match.
+		pathOK, _ := engine.MatchPath(m.Request.Path, r.URL.Path)
+		if m.Request.PathRegex != "" {
+			if re, err := engine.CachedRegex(m.Request.PathRegex); err == nil {
+				pathOK = re.MatchString(r.URL.Path)
+			}
+		}
+		methodOK := m.Request.Method == "" || m.Request.Method == "*" ||
+			strings.EqualFold(m.Request.Method, r.Method)
+		if pathOK && methodOK {
+			requiresNTLM = true
+			break
+		}
+	}
+	if !requiresNTLM {
+		return false
+	}
+
+	authHdr := hdrs["Authorization"]
+	if authHdr == "" {
+		authHdr = hdrs["authorization"]
+	}
+
+	tokenType := NTLMTokenType(authHdr)
+	switch tokenType {
+	case 1:
+		// Type-1 Negotiate: respond with a type-2 Challenge.
+		w.Header().Set("WWW-Authenticate", "NTLM "+ntlmChallengeToken())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = fmt.Fprint(w, `{"error":"NTLM negotiation in progress"}`)
+		return true
+	case 3:
+		// Type-3 Authenticate: let normal matching proceed.
+		return false
+	default:
+		// No token or unrecognised: initiate handshake.
+		w.Header().Set("WWW-Authenticate", "NTLM")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = fmt.Fprint(w, `{"error":"NTLM authentication required"}`)
+		return true
+	}
 }
 
 // StatusInfo returns JSON-serialisable info about this server.

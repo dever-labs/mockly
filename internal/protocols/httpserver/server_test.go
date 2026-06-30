@@ -3,6 +3,7 @@ package httpserver_test
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1345,4 +1346,231 @@ func TestHTTPServer_GlobalFault_TruncateBody_WithStatus(t *testing.T) {
 	if strings.Contains(got, "server-exploded") {
 		t.Error("full body must not appear in truncated response")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Authentication tests
+// ---------------------------------------------------------------------------
+
+func TestHTTPServer_BearerAuth(t *testing.T) {
+	mocks := []config.HTTPMock{
+		{
+			ID: "authenticated",
+			Request: config.HTTPRequest{
+				Method: "GET",
+				Path:   "/secure",
+				Auth:   &config.HTTPAuth{Type: "bearer", Token: "mysecret"},
+			},
+			Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+		},
+		{
+			ID:       "unauthenticated",
+			Request:  config.HTTPRequest{Method: "GET", Path: "/secure"},
+			Response: config.HTTPResponse{Status: 401, Body: `{"error":"unauthorized"}`},
+		},
+	}
+	base := startTestServer(t, mocks, nil)
+	client := &http.Client{}
+
+	// Valid token → 200.
+	req, _ := http.NewRequest("GET", base+"/secure", nil)
+	req.Header.Set("Authorization", "Bearer mysecret")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 with valid token, got %d", resp.StatusCode)
+	}
+
+	// Wrong token → fallback 401.
+	req2, _ := http.NewRequest("GET", base+"/secure", nil)
+	req2.Header.Set("Authorization", "Bearer wrong")
+	resp2, err := client.Do(req2)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != 401 {
+		t.Errorf("expected 401 with wrong token, got %d", resp2.StatusCode)
+	}
+
+	// No token → fallback 401.
+	resp3, err := client.Get(base + "/secure")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp3.Body.Close()
+	if resp3.StatusCode != 401 {
+		t.Errorf("expected 401 with no token, got %d", resp3.StatusCode)
+	}
+}
+
+func TestHTTPServer_BasicAuth(t *testing.T) {
+	mocks := []config.HTTPMock{
+		{
+			ID: "admin",
+			Request: config.HTTPRequest{
+				Method: "GET",
+				Path:   "/admin",
+				Auth:   &config.HTTPAuth{Type: "basic", Username: "admin", Password: "s3cret"},
+			},
+			Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+		},
+		{
+			ID:       "admin-unauth",
+			Request:  config.HTTPRequest{Method: "GET", Path: "/admin"},
+			Response: config.HTTPResponse{Status: 401, Body: `{"error":"unauthorized"}`},
+		},
+	}
+	base := startTestServer(t, mocks, nil)
+	client := &http.Client{}
+
+	// Valid credentials → 200.
+	req, _ := http.NewRequest("GET", base+"/admin", nil)
+	req.SetBasicAuth("admin", "s3cret")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 with valid basic auth, got %d", resp.StatusCode)
+	}
+
+	// Wrong password → fallback 401.
+	req2, _ := http.NewRequest("GET", base+"/admin", nil)
+	req2.SetBasicAuth("admin", "wrong")
+	resp2, err := client.Do(req2)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != 401 {
+		t.Errorf("expected 401 with wrong password, got %d", resp2.StatusCode)
+	}
+}
+
+func TestHTTPServer_APIKey_Header(t *testing.T) {
+	mocks := []config.HTTPMock{
+		{
+			ID: "weather",
+			Request: config.HTTPRequest{
+				Method: "GET",
+				Path:   "/weather",
+				Auth:   &config.HTTPAuth{Type: "api_key", Header: "X-API-Key", Value: "key-abc"},
+			},
+			Response: config.HTTPResponse{Status: 200, Body: `{"temp":22}`},
+		},
+		{
+			ID:       "weather-unauth",
+			Request:  config.HTTPRequest{Method: "GET", Path: "/weather"},
+			Response: config.HTTPResponse{Status: 401, Body: `{"error":"unauthorized"}`},
+		},
+	}
+	base := startTestServer(t, mocks, nil)
+	client := &http.Client{}
+
+	// Valid key → 200.
+	req, _ := http.NewRequest("GET", base+"/weather", nil)
+	req.Header.Set("X-API-Key", "key-abc")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 with valid API key, got %d", resp.StatusCode)
+	}
+
+	// Missing key → fallback 401.
+	resp2, err := client.Get(base + "/weather")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != 401 {
+		t.Errorf("expected 401 without API key, got %d", resp2.StatusCode)
+	}
+}
+
+func TestHTTPServer_NTLMHandshake(t *testing.T) {
+	mocks := []config.HTTPMock{
+		{
+			ID: "ntlm-endpoint",
+			Request: config.HTTPRequest{
+				Method: "GET",
+				Path:   "/ntlm",
+				Auth:   &config.HTTPAuth{Type: "ntlm"},
+			},
+			Response: config.HTTPResponse{Status: 200, Body: `{"authenticated":true}`},
+		},
+	}
+	base := startTestServer(t, mocks, nil)
+	client := &http.Client{
+		// Do not follow redirects; we need to inspect each response.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+
+	// Step 1: no token → 401 + WWW-Authenticate: NTLM.
+	resp1, err := client.Get(base + "/ntlm")
+	if err != nil {
+		t.Fatalf("step1 request failed: %v", err)
+	}
+	resp1.Body.Close()
+	if resp1.StatusCode != 401 {
+		t.Fatalf("step1: expected 401, got %d", resp1.StatusCode)
+	}
+	wwwAuth1 := resp1.Header.Get("WWW-Authenticate")
+	if wwwAuth1 != "NTLM" {
+		t.Errorf("step1: expected WWW-Authenticate: NTLM, got %q", wwwAuth1)
+	}
+
+	// Step 2: NTLM type-1 Negotiate token → 401 + WWW-Authenticate: NTLM <challenge>.
+	// Minimal type-1 message: NTLMSSP\0 + message-type 1 + flags + workstation/domain (all zeros).
+	type1Token := buildNTLMType1Token()
+	req2, _ := http.NewRequest("GET", base+"/ntlm", nil)
+	req2.Header.Set("Authorization", "NTLM "+type1Token)
+	resp2, err := client.Do(req2)
+	if err != nil {
+		t.Fatalf("step2 request failed: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != 401 {
+		t.Fatalf("step2: expected 401, got %d", resp2.StatusCode)
+	}
+	wwwAuth2 := resp2.Header.Get("WWW-Authenticate")
+	if !strings.HasPrefix(wwwAuth2, "NTLM ") {
+		t.Errorf("step2: expected WWW-Authenticate: NTLM <token>, got %q", wwwAuth2)
+	}
+
+	// Step 3: NTLM type-3 Authenticate token → 200.
+	type3Token := buildNTLMType3Token()
+	req3, _ := http.NewRequest("GET", base+"/ntlm", nil)
+	req3.Header.Set("Authorization", "NTLM "+type3Token)
+	resp3, err := client.Do(req3)
+	if err != nil {
+		t.Fatalf("step3 request failed: %v", err)
+	}
+	resp3.Body.Close()
+	if resp3.StatusCode != 200 {
+		t.Fatalf("step3: expected 200, got %d", resp3.StatusCode)
+	}
+}
+
+// buildNTLMType1Token returns a minimal base64-encoded NTLM type-1 (Negotiate) message.
+func buildNTLMType1Token() string {
+	msg := make([]byte, 32)
+	copy(msg[0:8], "NTLMSSP\x00")
+	msg[8] = 0x01 // MessageType = 1
+	return base64.StdEncoding.EncodeToString(msg)
+}
+
+// buildNTLMType3Token returns a minimal base64-encoded NTLM type-3 (Authenticate) message.
+func buildNTLMType3Token() string {
+	msg := make([]byte, 32)
+	copy(msg[0:8], "NTLMSSP\x00")
+	msg[8] = 0x03 // MessageType = 3
+	return base64.StdEncoding.EncodeToString(msg)
 }

@@ -163,6 +163,52 @@ type HTTPRequest struct {
 	// BodyJSON matches fields in a JSON request body using dot-notation paths.
 	// Example: {"user.role": "admin"} matches {"user":{"role":"admin"}}.
 	BodyJSON map[string]string `yaml:"body_json,omitempty" json:"body_json,omitempty"`
+
+	// Auth requires the incoming request to carry valid credentials.
+	// When set, the mock is skipped if authentication fails — add a fallback
+	// mock (without auth) to return a 401 for unauthenticated callers.
+	// For type "ntlm" the server automatically handles the 3-step handshake.
+	Auth *HTTPAuth `yaml:"auth,omitempty" json:"auth,omitempty"`
+}
+
+// HTTPAuth configures authentication matching for an HTTP mock.
+// Type selects the authentication scheme; the remaining fields depend on Type:
+//
+//   - bearer: Token is matched against the value in "Authorization: Bearer <token>".
+//     Token supports exact strings, "re:…" regex, and "*" (any token present).
+//
+//   - basic: Username and Password are matched against the decoded Basic credentials.
+//
+//   - api_key: Value is matched against the key found in the named Header or Query param.
+//     Value supports exact strings, "re:…" regex, and "*" (any value present).
+//
+//   - ntlm: The server performs a full 3-step NTLM challenge/response handshake.
+//     Any well-formed NTLM token is accepted (no credential validation).
+//
+//   - digest: The mock matches when an Authorization: Digest header is present.
+type HTTPAuth struct {
+	// Type is the authentication scheme: bearer | basic | api_key | ntlm | digest.
+	Type string `yaml:"type" json:"type"`
+
+	// Token is the expected bearer token value (bearer only).
+	// Supports exact match, "re:…" regex, and "*" (any non-empty token).
+	Token string `yaml:"token,omitempty" json:"token,omitempty"`
+
+	// Username and Password are the expected Basic auth credentials (basic only).
+	Username string `yaml:"username,omitempty" json:"username,omitempty"`
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
+
+	// Header is the request header name that carries the API key (api_key only).
+	// Mutually exclusive with Query.
+	Header string `yaml:"header,omitempty" json:"header,omitempty"`
+
+	// Query is the URL query parameter name that carries the API key (api_key only).
+	// Mutually exclusive with Header.
+	Query string `yaml:"query,omitempty" json:"query,omitempty"`
+
+	// Value is the expected API key value (api_key only).
+	// Supports exact match, "re:…" regex, and "*" (any non-empty value).
+	Value string `yaml:"value,omitempty" json:"value,omitempty"`
 }
 
 type HTTPResponse struct {

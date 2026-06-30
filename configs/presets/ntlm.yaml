@@ -1,0 +1,101 @@
+# Mockly preset: NTLM Authentication
+#
+# Demonstrates mocking Windows-integrated (NTLM) authentication over HTTP.
+#
+# The NTLM handshake is a 3-step protocol:
+#   1. Client sends a request with no Authorization header
+#      → Server responds 401 + WWW-Authenticate: NTLM
+#   2. Client sends Authorization: NTLM <type-1 Negotiate token>
+#      → Server responds 401 + WWW-Authenticate: NTLM <type-2 Challenge token>
+#   3. Client sends Authorization: NTLM <type-3 Authenticate token>
+#      → Server responds with the configured mock response (e.g. 200)
+#
+# Mockly drives this handshake automatically when auth.type is "ntlm".
+# Any well-formed NTLM token sequence is accepted — no credential validation.
+#
+# Start:
+#   mockly start --config configs/presets/ntlm.yaml
+#
+# Test with curl (simulating the handshake):
+#   # Step 1 — expect 401 + WWW-Authenticate: NTLM
+#   curl -v http://localhost:8080/api/secure
+#
+#   # Step 2 — send a type-1 Negotiate token (base64 of minimal NTLMSSP\0\x01 message)
+#   curl -v -H 'Authorization: NTLM TlRMTVNTUAABAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+#        http://localhost:8080/api/secure
+#
+#   # Step 3 — send a type-3 Authenticate token (base64 of minimal NTLMSSP\0\x03 message)
+#   curl -v -H 'Authorization: NTLM TlRMTVNTUAADAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+#        http://localhost:8080/api/secure
+#
+# Most HTTP clients (Windows WinHTTP, .NET HttpClient, PowerShell Invoke-WebRequest)
+# handle the NTLM handshake transparently when you pass --negotiate or
+# set UseDefaultCredentials = true.
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── NTLM-protected endpoint ────────────────────────────────────────────
+      # Requires a complete NTLM handshake before serving the response.
+      - id: ntlm-secure-api
+        request:
+          method: GET
+          path: /api/secure
+          auth:
+            type: ntlm
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "authenticated": true,
+              "message": "Welcome, Windows user!"
+            }
+
+      # ── NTLM on a POST endpoint ────────────────────────────────────────────
+      - id: ntlm-post-data
+        request:
+          method: POST
+          path: /api/data
+          auth:
+            type: ntlm
+        response:
+          status: 201
+          headers:
+            Content-Type: application/json
+          body: '{"created":true}'
+
+      # ── Mixed: NTLM endpoint alongside a bearer-token endpoint ─────────────
+      - id: bearer-api
+        request:
+          method: GET
+          path: /api/modern
+          auth:
+            type: bearer
+            token: "*"   # accept any bearer token
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: '{"auth":"bearer","ok":true}'
+
+      - id: bearer-api-unauth
+        request:
+          method: GET
+          path: /api/modern
+        response:
+          status: 401
+          headers:
+            WWW-Authenticate: 'Bearer realm="api"'
+          body: '{"error":"bearer token required"}'

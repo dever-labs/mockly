@@ -125,6 +125,91 @@ protocols:
           status: 401
           body: '{"error":"unauthorized"}'
 
+      # ── Authentication mocking ───────────────────────────────────────────
+      # The auth block validates credentials before the mock is considered a
+      # match. Add a fallback mock (without auth) to return 401 for callers
+      # that provide missing or wrong credentials.
+
+      # Bearer token — exact token, regex, or "*" (any token present)
+      - id: bearer-protected
+        request:
+          method: GET
+          path: /api/protected
+          auth:
+            type: bearer
+            token: "my-secret-token"         # or "re:^ey[A-Za-z0-9]" for JWTs, or "*"
+        response:
+          status: 200
+          body: '{"data":"sensitive"}'
+
+      - id: bearer-protected-unauth
+        request:
+          method: GET
+          path: /api/protected
+        response:
+          status: 401
+          headers:
+            WWW-Authenticate: 'Bearer realm="api"'
+          body: '{"error":"unauthorized"}'
+
+      # Basic auth — username + password (Mockly decodes the Base64 header internally)
+      - id: basic-admin
+        request:
+          method: GET
+          path: /admin
+          auth:
+            type: basic
+            username: admin
+            password: s3cret
+        response:
+          status: 200
+          body: '{"admin":true}'
+
+      - id: basic-admin-unauth
+        request:
+          method: GET
+          path: /admin
+        response:
+          status: 401
+          headers:
+            WWW-Authenticate: 'Basic realm="admin area"'
+          body: '{"error":"unauthorized"}'
+
+      # API key — in a header or query parameter
+      - id: api-key-header
+        request:
+          method: GET
+          path: /api/weather
+          auth:
+            type: api_key
+            header: X-API-Key          # or: query: api_key
+            value: "key-abc123"        # or "*" to accept any non-empty key
+        response:
+          status: 200
+          body: '{"temp":22}'
+
+      - id: api-key-unauth
+        request:
+          method: GET
+          path: /api/weather
+        response:
+          status: 401
+          body: '{"error":"api key required"}'
+
+      # NTLM — the server drives the 3-step handshake automatically:
+      #   1. No token    → 401 + WWW-Authenticate: NTLM
+      #   2. Type-1 token → 401 + WWW-Authenticate: NTLM <challenge>
+      #   3. Type-3 token → 200 (configured response below)
+      - id: ntlm-protected
+        request:
+          method: GET
+          path: /api/windows
+          auth:
+            type: ntlm
+        response:
+          status: 200
+          body: '{"os":"windows","authenticated":true}'
+
       # Response sequence — return different responses on successive calls
       # Useful for simulating transient failures or retry flows
       - id: flaky-service

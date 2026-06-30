@@ -764,3 +764,346 @@ func TestHTTPMatch_ResponseTemplateWithRequestBody(t *testing.T) {
 		t.Errorf("unexpected body: %q", result.Body)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Header pattern matching
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_HeaderPatternRegex(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method:  "GET",
+			Path:    "/api",
+			Headers: map[string]string{"Authorization": "re:^Bearer .+"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	hdrs := map[string]string{"Authorization": "Bearer mytoken"}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/api", nil, hdrs, "", nil)
+	if !ok {
+		t.Fatal("expected match when Authorization header matches regex")
+	}
+
+	noToken := map[string]string{"Authorization": "Basic dXNlcjpwYXNz"}
+	_, ok = engine.HTTPMatch(mocks, "GET", "/api", nil, noToken, "", nil)
+	if ok {
+		t.Fatal("expected no match for non-Bearer Authorization")
+	}
+}
+
+func TestHTTPMatch_HeaderWildcard(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method:  "GET",
+			Path:    "/api",
+			Headers: map[string]string{"X-Custom": "*"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	_, ok := engine.HTTPMatch(mocks, "GET", "/api", nil, map[string]string{"X-Custom": "anything"}, "", nil)
+	if !ok {
+		t.Fatal("expected wildcard header to match any value")
+	}
+}
+
+func TestHTTPMatch_HeaderCaseInsensitiveKey(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method:  "GET",
+			Path:    "/api",
+			Headers: map[string]string{"content-type": "application/json"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	// Incoming headers use canonical form (as net/http does).
+	hdrs := map[string]string{"Content-Type": "application/json"}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/api", nil, hdrs, "", nil)
+	if !ok {
+		t.Fatal("expected case-insensitive header key match")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Auth matching — bearer
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_BearerAuth_ValidToken(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/secure",
+			Auth:   &config.HTTPAuth{Type: "bearer", Token: "secret"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	hdrs := map[string]string{"Authorization": "Bearer secret"}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/secure", nil, hdrs, "", nil)
+	if !ok {
+		t.Fatal("expected match with valid bearer token")
+	}
+}
+
+func TestHTTPMatch_BearerAuth_WrongToken(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/secure",
+			Auth:   &config.HTTPAuth{Type: "bearer", Token: "secret"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	hdrs := map[string]string{"Authorization": "Bearer wrong"}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/secure", nil, hdrs, "", nil)
+	if ok {
+		t.Fatal("expected no match with wrong bearer token")
+	}
+}
+
+func TestHTTPMatch_BearerAuth_MissingHeader(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/secure",
+			Auth:   &config.HTTPAuth{Type: "bearer", Token: "secret"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	_, ok := engine.HTTPMatch(mocks, "GET", "/secure", nil, nil, "", nil)
+	if ok {
+		t.Fatal("expected no match when Authorization header is absent")
+	}
+}
+
+func TestHTTPMatch_BearerAuth_WildcardToken(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/secure",
+			Auth:   &config.HTTPAuth{Type: "bearer", Token: "*"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	hdrs := map[string]string{"Authorization": "Bearer anyvalue"}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/secure", nil, hdrs, "", nil)
+	if !ok {
+		t.Fatal("expected wildcard token to match any bearer value")
+	}
+}
+
+func TestHTTPMatch_BearerAuth_RegexToken(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/secure",
+			Auth:   &config.HTTPAuth{Type: "bearer", Token: "re:^ey[A-Za-z0-9]"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	hdrs := map[string]string{"Authorization": "Bearer eyJWT"}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/secure", nil, hdrs, "", nil)
+	if !ok {
+		t.Fatal("expected regex token match")
+	}
+
+	hdrs2 := map[string]string{"Authorization": "Bearer notajwt"}
+	_, ok = engine.HTTPMatch(mocks, "GET", "/secure", nil, hdrs2, "", nil)
+	if ok {
+		t.Fatal("expected no match for non-matching token regex")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Auth matching — basic
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_BasicAuth_Valid(t *testing.T) {
+	// "user:pass" in base64 = "dXNlcjpwYXNz"
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/admin",
+			Auth:   &config.HTTPAuth{Type: "basic", Username: "user", Password: "pass"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	hdrs := map[string]string{"Authorization": "Basic dXNlcjpwYXNz"}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/admin", nil, hdrs, "", nil)
+	if !ok {
+		t.Fatal("expected match with valid basic credentials")
+	}
+}
+
+func TestHTTPMatch_BasicAuth_WrongPassword(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/admin",
+			Auth:   &config.HTTPAuth{Type: "basic", Username: "user", Password: "pass"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	// "user:wrong" in base64 = "dXNlcjp3cm9uZw=="
+	hdrs := map[string]string{"Authorization": "Basic dXNlcjp3cm9uZw=="}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/admin", nil, hdrs, "", nil)
+	if ok {
+		t.Fatal("expected no match with wrong password")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Auth matching — api_key
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_APIKey_Header(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/weather",
+			Auth:   &config.HTTPAuth{Type: "api_key", Header: "X-API-Key", Value: "key-abc"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	hdrs := map[string]string{"X-API-Key": "key-abc"}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/weather", nil, hdrs, "", nil)
+	if !ok {
+		t.Fatal("expected match with valid API key header")
+	}
+
+	hdrs2 := map[string]string{"X-API-Key": "wrong"}
+	_, ok = engine.HTTPMatch(mocks, "GET", "/weather", nil, hdrs2, "", nil)
+	if ok {
+		t.Fatal("expected no match with wrong API key")
+	}
+}
+
+func TestHTTPMatch_APIKey_Query(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/data",
+			Auth:   &config.HTTPAuth{Type: "api_key", Query: "apikey", Value: "key-xyz"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	query := map[string]string{"apikey": "key-xyz"}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/data", query, nil, "", nil)
+	if !ok {
+		t.Fatal("expected match with valid API key query param")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Auth matching — digest
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_DigestAuth_Present(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/digest",
+			Auth:   &config.HTTPAuth{Type: "digest"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	hdrs := map[string]string{"Authorization": `Digest username="alice", realm="mockly", nonce="abc"`}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/digest", nil, hdrs, "", nil)
+	if !ok {
+		t.Fatal("expected match when Digest Authorization header is present")
+	}
+}
+
+func TestHTTPMatch_DigestAuth_Missing(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/digest",
+			Auth:   &config.HTTPAuth{Type: "digest"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	_, ok := engine.HTTPMatch(mocks, "GET", "/digest", nil, nil, "", nil)
+	if ok {
+		t.Fatal("expected no match when Digest Authorization header is absent")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Auth is optional — mock without auth still matches normally
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_NoAuth_StillMatches(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "m",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/open"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	_, ok := engine.HTTPMatch(mocks, "GET", "/open", nil, nil, "", nil)
+	if !ok {
+		t.Fatal("expected match for mock without auth config")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Fallback pattern: auth mock + open fallback mock
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_AuthFallback(t *testing.T) {
+	mocks := []config.HTTPMock{
+		{
+			ID: "authenticated",
+			Request: config.HTTPRequest{
+				Method: "GET",
+				Path:   "/api/users",
+				Auth:   &config.HTTPAuth{Type: "bearer", Token: "valid"},
+			},
+			Response: config.HTTPResponse{Status: 200, Body: `{"users":[]}`},
+		},
+		{
+			ID:       "unauthenticated",
+			Request:  config.HTTPRequest{Method: "GET", Path: "/api/users"},
+			Response: config.HTTPResponse{Status: 401, Body: `{"error":"unauthorized"}`},
+		},
+	}
+
+	// With valid token → first mock matches.
+	result, ok := engine.HTTPMatch(mocks, "GET", "/api/users", nil,
+		map[string]string{"Authorization": "Bearer valid"}, "", nil)
+	if !ok || result.Status != 200 {
+		t.Fatalf("expected 200 with valid token, got ok=%v status=%d", ok, result.Status)
+	}
+
+	// Without token → first mock skipped, fallback matches.
+	result, ok = engine.HTTPMatch(mocks, "GET", "/api/users", nil, nil, "", nil)
+	if !ok || result.Status != 401 {
+		t.Fatalf("expected 401 fallback, got ok=%v status=%d", ok, result.Status)
+	}
+}

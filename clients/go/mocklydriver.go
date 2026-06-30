@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -96,6 +97,60 @@ func (s *Server) AddMock(mock Mock) error {
 	return nil
 }
 
+// ListMocks returns all configured HTTP mocks.
+func (s *Server) ListMocks() ([]Mock, error) {
+	resp, err := s.get("/api/mocks/http")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ListMocks: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var mocks []Mock
+	if err := json.NewDecoder(resp.Body).Decode(&mocks); err != nil {
+		return nil, fmt.Errorf("ListMocks: decoding response: %w", err)
+	}
+	return mocks, nil
+}
+
+// UpdateMock replaces an existing mock and returns the updated value.
+func (s *Server) UpdateMock(id string, mock Mock) (*Mock, error) {
+	resp, err := s.put("/api/mocks/http/"+url.PathEscape(id), mock)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("UpdateMock: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var updated Mock
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		return nil, fmt.Errorf("UpdateMock: decoding response: %w", err)
+	}
+	return &updated, nil
+}
+
+// PatchMock applies a partial response update and returns the updated mock.
+func (s *Server) PatchMock(id string, patch MockResponsePatch) (*Mock, error) {
+	resp, err := s.patch("/api/mocks/http/"+url.PathEscape(id), patch)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("PatchMock: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var updated Mock
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		return nil, fmt.Errorf("PatchMock: decoding response: %w", err)
+	}
+	return &updated, nil
+}
+
 // DeleteMock removes a mock by ID.
 func (s *Server) DeleteMock(id string) error {
 	resp, err := s.delete("/api/mocks/http/" + id)
@@ -108,6 +163,224 @@ func (s *Server) DeleteMock(id string) error {
 		return fmt.Errorf("DeleteMock: unexpected status %d: %s", resp.StatusCode, body)
 	}
 	return nil
+}
+
+// GetState returns the full server state map.
+func (s *Server) GetState() (map[string]string, error) {
+	resp, err := s.get("/api/state")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("GetState: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var state map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
+		return nil, fmt.Errorf("GetState: decoding response: %w", err)
+	}
+	return state, nil
+}
+
+// SetState updates server state and returns the resulting map.
+func (s *Server) SetState(state map[string]string) (map[string]string, error) {
+	resp, err := s.post("/api/state", state)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("SetState: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var updated map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		return nil, fmt.Errorf("SetState: decoding response: %w", err)
+	}
+	return updated, nil
+}
+
+// DeleteState removes a single state key.
+func (s *Server) DeleteState(key string) error {
+	resp, err := s.delete("/api/state/" + url.PathEscape(key))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("DeleteState: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	return nil
+}
+
+// GetLogs returns recorded logs, optionally filtered by matched mock ID.
+func (s *Server) GetLogs(matchedID string) ([]CallEntry, error) {
+	path := "/api/logs"
+	if matchedID != "" {
+		q := url.Values{}
+		q.Set("matched_id", matchedID)
+		path += "?" + q.Encode()
+	}
+	resp, err := s.get(path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("GetLogs: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var entries []CallEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return nil, fmt.Errorf("GetLogs: decoding response: %w", err)
+	}
+	return entries, nil
+}
+
+// ClearLogs clears all recorded logs.
+func (s *Server) ClearLogs() error {
+	resp, err := s.delete("/api/logs")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("ClearLogs: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	return nil
+}
+
+// GetLogsCount returns the number of recorded logs, optionally filtered by matched mock ID.
+func (s *Server) GetLogsCount(matchedID string) (int, error) {
+	path := "/api/logs/count"
+	if matchedID != "" {
+		q := url.Values{}
+		q.Set("matched_id", matchedID)
+		path += "?" + q.Encode()
+	}
+	resp, err := s.get(path)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("GetLogsCount: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var count struct {
+		Count int `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&count); err != nil {
+		return 0, fmt.Errorf("GetLogsCount: decoding response: %w", err)
+	}
+	return count.Count, nil
+}
+
+// ListScenarios returns all configured scenarios.
+func (s *Server) ListScenarios() ([]Scenario, error) {
+	resp, err := s.get("/api/scenarios")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ListScenarios: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var scenarios []Scenario
+	if err := json.NewDecoder(resp.Body).Decode(&scenarios); err != nil {
+		return nil, fmt.Errorf("ListScenarios: decoding response: %w", err)
+	}
+	return scenarios, nil
+}
+
+// CreateScenario registers a scenario and returns the created value.
+func (s *Server) CreateScenario(scenario Scenario) (*Scenario, error) {
+	resp, err := s.post("/api/scenarios", scenario)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("CreateScenario: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var created Scenario
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return nil, fmt.Errorf("CreateScenario: decoding response: %w", err)
+	}
+	return &created, nil
+}
+
+// GetScenario returns a scenario by ID.
+func (s *Server) GetScenario(id string) (*Scenario, error) {
+	resp, err := s.get("/api/scenarios/" + url.PathEscape(id))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("GetScenario: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var scenario Scenario
+	if err := json.NewDecoder(resp.Body).Decode(&scenario); err != nil {
+		return nil, fmt.Errorf("GetScenario: decoding response: %w", err)
+	}
+	return &scenario, nil
+}
+
+// UpdateScenario replaces a scenario and returns the updated value.
+func (s *Server) UpdateScenario(id string, scenario Scenario) (*Scenario, error) {
+	resp, err := s.put("/api/scenarios/"+url.PathEscape(id), scenario)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("UpdateScenario: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var updated Scenario
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		return nil, fmt.Errorf("UpdateScenario: decoding response: %w", err)
+	}
+	return &updated, nil
+}
+
+// DeleteScenario removes a scenario by ID.
+func (s *Server) DeleteScenario(id string) error {
+	resp, err := s.delete("/api/scenarios/" + url.PathEscape(id))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("DeleteScenario: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	return nil
+}
+
+// ListActiveScenarios returns active scenario IDs together with their full definitions.
+func (s *Server) ListActiveScenarios() (*ActiveScenariosResponse, error) {
+	resp, err := s.get("/api/scenarios/active")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ListActiveScenarios: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var active ActiveScenariosResponse
+	if err := json.NewDecoder(resp.Body).Decode(&active); err != nil {
+		return nil, fmt.Errorf("ListActiveScenarios: decoding response: %w", err)
+	}
+	return &active, nil
 }
 
 // Reset removes all dynamic mocks, deactivates scenarios, and clears faults.
@@ -315,6 +588,9 @@ func (s *Server) writeConfig(scenarios []Scenario) (string, error) {
 		for _, sc := range scenarios {
 			sb.WriteString(fmt.Sprintf("  - id: %s\n", yamlStr(sc.ID)))
 			sb.WriteString(fmt.Sprintf("    name: %s\n", yamlStr(sc.Name)))
+			if sc.Description != "" {
+				sb.WriteString(fmt.Sprintf("    description: %s\n", yamlStr(sc.Description)))
+			}
 			if len(sc.Patches) > 0 {
 				sb.WriteString("    patches:\n")
 				for _, p := range sc.Patches {
@@ -325,8 +601,17 @@ func (s *Server) writeConfig(scenarios []Scenario) (string, error) {
 					if p.Body != nil {
 						sb.WriteString(fmt.Sprintf("        body: %s\n", yamlStr(*p.Body)))
 					}
+					if len(p.Headers) > 0 {
+						sb.WriteString("        headers:\n")
+						for key, value := range p.Headers {
+							sb.WriteString(fmt.Sprintf("          %s: %s\n", yamlStr(key), yamlStr(value)))
+						}
+					}
 					if p.Delay != nil {
 						sb.WriteString(fmt.Sprintf("        delay: %s\n", yamlStr(*p.Delay)))
+					}
+					if p.Disabled != nil {
+						sb.WriteString(fmt.Sprintf("        disabled: %t\n", *p.Disabled))
 					}
 				}
 			}
@@ -390,6 +675,48 @@ func (s *Server) post(path string, body any) (*http.Response, error) {
 	}
 
 	req, err := http.NewRequest(http.MethodPost, s.APIBase+path, r)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return http.DefaultClient.Do(req)
+}
+
+// put sends a PUT request to the management API.
+func (s *Server) put(path string, body any) (*http.Response, error) {
+	var r io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling request body: %w", err)
+		}
+		r = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequest(http.MethodPut, s.APIBase+path, r)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return http.DefaultClient.Do(req)
+}
+
+// patch sends a PATCH request to the management API.
+func (s *Server) patch(path string, body any) (*http.Response, error) {
+	var r io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling request body: %w", err)
+		}
+		r = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, s.APIBase+path, r)
 	if err != nil {
 		return nil, err
 	}

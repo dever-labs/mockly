@@ -6,7 +6,7 @@ mod utils;
 pub use install::{get_binary_path, install, DEFAULT_VERSION};
 pub use server::MocklyServer;
 pub use types::{
-    FaultConfig, InstallOptions, Mock, MockRequest, MockResponse, Scenario, ScenarioPatch,
-    ServerOptions,
+    ActiveScenariosResponse, CallEntry, CallSummary, FaultConfig, InstallOptions, Mock,
+    MockRequest, MockResponse, MockResponsePatch, Scenario, ScenarioPatch, ServerOptions,
 };
 pub use utils::get_free_port;

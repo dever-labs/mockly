@@ -37,6 +37,14 @@ type MockResponse struct {
 	Delay   string            `json:"delay,omitempty"` // e.g. "50ms"
 }
 
+// MockResponsePatch describes a partial response update for an existing mock.
+type MockResponsePatch struct {
+	Status  *int              `json:"status,omitempty"`
+	Body    *string           `json:"body,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Delay   *string           `json:"delay,omitempty"`
+}
+
 // Mock is a request/response pair registered with Mockly.
 type Mock struct {
 	ID       string       `json:"id"`
@@ -46,17 +54,26 @@ type Mock struct {
 
 // ScenarioPatch overrides a mock's behaviour when a scenario is active.
 type ScenarioPatch struct {
-	MockID string  `json:"mock_id"`
-	Status *int    `json:"status,omitempty"`
-	Body   *string `json:"body,omitempty"`
-	Delay  *string `json:"delay,omitempty"`
+	MockID   string            `json:"mock_id"`
+	Status   *int              `json:"status,omitempty"`
+	Body     *string           `json:"body,omitempty"`
+	Headers  map[string]string `json:"headers,omitempty"`
+	Delay    *string           `json:"delay,omitempty"`
+	Disabled *bool             `json:"disabled,omitempty"`
 }
 
 // Scenario groups patches that are applied together when activated.
 type Scenario struct {
-	ID      string          `json:"id"`
-	Name    string          `json:"name"`
-	Patches []ScenarioPatch `json:"patches"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Patches     []ScenarioPatch `json:"patches"`
+}
+
+// ActiveScenariosResponse reports active scenario IDs and their full definitions.
+type ActiveScenariosResponse struct {
+	Active    []string   `json:"active"`
+	Scenarios []Scenario `json:"scenarios"`
 }
 
 // FaultConfig configures global fault injection.

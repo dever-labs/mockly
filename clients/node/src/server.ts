@@ -3,7 +3,16 @@ import { writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import yaml from 'js-yaml'
-import type { HttpMock, Scenario, FaultConfig, MocklyServerOptions, CallSummary } from './types.js'
+import type {
+  ActiveScenariosResponse,
+  CallEntry,
+  CallSummary,
+  FaultConfig,
+  HttpMock,
+  MockResponsePatch,
+  MocklyServerOptions,
+  Scenario,
+} from './types.js'
 import type { InstallOptions } from './install.js'
 import { install, getBinaryPath } from './install.js'
 import { getFreePorts, sleep } from './utils.js'
@@ -114,9 +123,98 @@ export class MocklyServer {
     if (!res.ok) throw new Error(`addMock(${mock.id}) failed: HTTP ${res.status}`)
   }
 
+  /** Returns all configured HTTP mocks. */
+  async listMocks(): Promise<HttpMock[]> {
+    return this._get<HttpMock[]>('/api/mocks/http')
+  }
+
+  /** Replaces an existing mock definition and returns the updated mock. */
+  async updateMock(id: string, mock: HttpMock): Promise<HttpMock> {
+    return this._putAndRead<HttpMock>(`/api/mocks/http/${encodeURIComponent(id)}`, mock)
+  }
+
+  /** Applies a partial response patch to an existing mock and returns the updated mock. */
+  async patchMock(id: string, patch: MockResponsePatch): Promise<HttpMock> {
+    return this._patchAndRead<HttpMock>(`/api/mocks/http/${encodeURIComponent(id)}`, patch)
+  }
+
   /** Removes a mock by id. */
   async deleteMock(id: string): Promise<void> {
     await fetch(`${this.apiBase}/api/mocks/http/${id}`, { method: 'DELETE' })
+  }
+
+  /** Returns the full server state map. */
+  async getState(): Promise<Record<string, string>> {
+    return this._get<Record<string, string>>('/api/state')
+  }
+
+  /** Replaces or merges server state and returns the updated state map. */
+  async setState(kvMap: Record<string, string>): Promise<Record<string, string>> {
+    const res = await this._post('/api/state', kvMap)
+    if (!res.ok) throw new Error(`setState failed: HTTP ${res.status}`)
+    return res.json() as Promise<Record<string, string>>
+  }
+
+  /** Deletes a single state key. */
+  async deleteState(key: string): Promise<void> {
+    const res = await fetch(`${this.apiBase}/api/state/${encodeURIComponent(key)}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`deleteState(${key}) failed: HTTP ${res.status}`)
+  }
+
+  /** Returns recorded logs, optionally filtered by matched mock ID. */
+  async getLogs(matchedId?: string): Promise<CallEntry[]> {
+    const path = matchedId
+      ? `/api/logs?matched_id=${encodeURIComponent(matchedId)}`
+      : '/api/logs'
+    return this._get<CallEntry[]>(path)
+  }
+
+  /** Clears all recorded logs. */
+  async clearLogs(): Promise<void> {
+    const res = await fetch(`${this.apiBase}/api/logs`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`clearLogs failed: HTTP ${res.status}`)
+  }
+
+  /** Returns the number of recorded logs, optionally filtered by matched mock ID. */
+  async getLogsCount(matchedId?: string): Promise<number> {
+    const path = matchedId
+      ? `/api/logs/count?matched_id=${encodeURIComponent(matchedId)}`
+      : '/api/logs/count'
+    const res = await this._get<{ count: number }>(path)
+    return res.count
+  }
+
+  /** Returns all configured scenarios. */
+  async listScenarios(): Promise<Scenario[]> {
+    return this._get<Scenario[]>('/api/scenarios')
+  }
+
+  /** Creates a scenario and returns the created value. */
+  async createScenario(scenario: Scenario): Promise<Scenario> {
+    const res = await this._post('/api/scenarios', scenario)
+    if (!res.ok) throw new Error(`createScenario(${scenario.id}) failed: HTTP ${res.status}`)
+    return res.json() as Promise<Scenario>
+  }
+
+  /** Returns a scenario by ID. */
+  async getScenario(id: string): Promise<Scenario> {
+    return this._get<Scenario>(`/api/scenarios/${encodeURIComponent(id)}`)
+  }
+
+  /** Replaces an existing scenario and returns the updated scenario. */
+  async updateScenario(id: string, scenario: Scenario): Promise<Scenario> {
+    return this._putAndRead<Scenario>(`/api/scenarios/${encodeURIComponent(id)}`, scenario)
+  }
+
+  /** Deletes a scenario by ID. */
+  async deleteScenario(id: string): Promise<void> {
+    const res = await fetch(`${this.apiBase}/api/scenarios/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`deleteScenario(${id}) failed: HTTP ${res.status}`)
+  }
+
+  /** Returns all active scenario IDs together with their full definitions. */
+  async listActiveScenarios(): Promise<ActiveScenariosResponse> {
+    return this._get<ActiveScenariosResponse>('/api/scenarios/active')
   }
 
   /**
@@ -221,7 +319,9 @@ export class MocklyServer {
     try {
       await this._waitReady()
     } catch (err) {
-      const detail = stderrOutput.trim() ? `\nMockly output:\n${stderrOutput.trim()}` : ''
+      const detail = stderrOutput.trim() ? `
+Mockly output:
+${stderrOutput.trim()}` : ''
       throw new Error(`${(err as Error).message}${detail}`)
     }
   }
@@ -240,11 +340,14 @@ export class MocklyServer {
       config.scenarios = scenarios.map((s) => ({
         id: s.id,
         name: s.name,
+        ...(s.description !== undefined ? { description: s.description } : {}),
         patches: s.patches.map((p) => {
           const patch: Record<string, unknown> = { mock_id: p.mock_id }
           if (p.status !== undefined) patch.status = p.status
           if (p.body !== undefined) patch.body = p.body
+          if (p.headers !== undefined) patch.headers = p.headers
           if (p.delay !== undefined) patch.delay = p.delay
+          if (p.disabled !== undefined) patch.disabled = p.disabled
           return patch
         }),
       }))
@@ -268,12 +371,46 @@ export class MocklyServer {
     throw new Error(`Mockly did not become ready on port ${this.apiPort} within ${maxMs}ms`)
   }
 
+  private async _get<T>(path: string): Promise<T> {
+    const res = await fetch(`${this.apiBase}${path}`)
+    if (!res.ok) throw new Error(`GET ${path} failed: HTTP ${res.status}`)
+    return res.json() as Promise<T>
+  }
+
   private _post(path: string, body: unknown): Promise<Response> {
     return fetch(`${this.apiBase}${path}`, {
       method: 'POST',
       headers: body !== null ? { 'Content-Type': 'application/json' } : {},
       body: body !== null ? JSON.stringify(body) : undefined,
     })
+  }
+
+  private _put(path: string, body: unknown): Promise<Response> {
+    return fetch(`${this.apiBase}${path}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
+  private _patch(path: string, body: unknown): Promise<Response> {
+    return fetch(`${this.apiBase}${path}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
+  private async _putAndRead<T>(path: string, body: unknown): Promise<T> {
+    const res = await this._put(path, body)
+    if (!res.ok) throw new Error(`PUT ${path} failed: HTTP ${res.status}`)
+    return res.json() as Promise<T>
+  }
+
+  private async _patchAndRead<T>(path: string, body: unknown): Promise<T> {
+    const res = await this._patch(path, body)
+    if (!res.ok) throw new Error(`PATCH ${path} failed: HTTP ${res.status}`)
+    return res.json() as Promise<T>
   }
 }
 

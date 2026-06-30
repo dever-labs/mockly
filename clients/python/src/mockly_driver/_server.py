@@ -7,9 +7,21 @@ import subprocess
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from ._install import get_binary_path, install
-from ._types import FaultConfig, Mock, Scenario, CallSummary, CallEntry
+from ._types import (
+    ActiveScenariosResponse,
+    CallEntry,
+    CallSummary,
+    FaultConfig,
+    Mock,
+    MockResponse,
+    MockResponsePatch,
+    MockRequest,
+    Scenario,
+    ScenarioPatch,
+)
 
 
 def _get_free_port() -> int:
@@ -36,6 +48,8 @@ def _write_config(http_port: int, api_port: int, scenarios: list[Scenario] | Non
         for scenario in scenarios:
             lines.append(f"  - id: {_yaml_str(scenario.id)}")
             lines.append(f"    name: {_yaml_str(scenario.name)}")
+            if scenario.description is not None:
+                lines.append(f"    description: {_yaml_str(scenario.description)}")
             if scenario.patches:
                 lines.append("    patches:")
                 for patch in scenario.patches:
@@ -44,8 +58,14 @@ def _write_config(http_port: int, api_port: int, scenarios: list[Scenario] | Non
                         lines.append(f"        status: {patch.status}")
                     if patch.body is not None:
                         lines.append(f"        body: {_yaml_str(patch.body)}")
+                    if patch.headers:
+                        lines.append("        headers:")
+                        for key, value in patch.headers.items():
+                            lines.append(f"          {_yaml_str(key)}: {_yaml_str(value)}")
                     if patch.delay is not None:
                         lines.append(f"        delay: {_yaml_str(patch.delay)}")
+                    if patch.disabled is not None:
+                        lines.append(f"        disabled: {'true' if patch.disabled else 'false'}")
 
     content = "\n".join(lines) + "\n"
 
@@ -92,10 +112,6 @@ class MocklyServer:
         self.http_base = f"http://127.0.0.1:{http_port}"
         self.api_base = f"http://127.0.0.1:{api_port}"
 
-    # ------------------------------------------------------------------
-    # Factory methods
-    # ------------------------------------------------------------------
-
     @classmethod
     def create(
         cls,
@@ -137,8 +153,7 @@ class MocklyServer:
             config_path = _write_config(http_port, api_port, scenarios)
             try:
                 process = subprocess.Popen(
-                    [binary, "start", "--config", config_path,
-                     "--api-port", str(api_port)],
+                    [binary, "start", "--config", config_path, "--api-port", str(api_port)],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
@@ -146,7 +161,6 @@ class MocklyServer:
                 try:
                     server._wait_ready()
                 except TimeoutError as exc:
-                    # Check whether the process died with a port conflict
                     process.poll()
                     if process.returncode is not None:
                         stderr_text = ""
@@ -169,13 +183,7 @@ class MocklyServer:
                     pass
                 continue
 
-        raise RuntimeError(
-            f"Failed to start mockly after {attempts} attempts"
-        ) from last_error
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
+        raise RuntimeError(f"Failed to start mockly after {attempts} attempts") from last_error
 
     def stop(self) -> None:
         """Kill the Mockly process and clean up the config file."""
@@ -187,33 +195,77 @@ class MocklyServer:
         except OSError:
             pass
 
-    # ------------------------------------------------------------------
-    # Management API helpers
-    # ------------------------------------------------------------------
-
     def add_mock(self, mock: Mock) -> None:
-        body: dict = {
-            "id": mock.id,
-            "request": {
-                "method": mock.request.method,
-                "path": mock.request.path,
-            },
-            "response": {
-                "status": mock.response.status,
-                "body": mock.response.body,
-            },
-        }
-        if mock.request.headers:
-            body["request"]["headers"] = mock.request.headers
-        if mock.response.headers:
-            body["response"]["headers"] = mock.response.headers
-        if mock.response.delay is not None:
-            body["response"]["delay"] = mock.response.delay
+        self._request("POST", "/api/mocks/http", _mock_to_dict(mock), expected=(200, 201))
 
-        self._request("POST", "/api/mocks/http", body, expected=(200, 201))
+    def list_mocks(self) -> list[Mock]:
+        data = json.loads(self._request("GET", "/api/mocks/http", expected=(200,)))
+        return [_parse_mock(item) for item in data]
+
+    def update_mock(self, mock_id: str, mock: Mock) -> Mock:
+        path = f"/api/mocks/http/{urllib.parse.quote(mock_id, safe='')}"
+        data = json.loads(self._request("PUT", path, _mock_to_dict(mock), expected=(200,)))
+        return _parse_mock(data)
+
+    def patch_mock(self, mock_id: str, patch: MockResponsePatch) -> Mock:
+        path = f"/api/mocks/http/{urllib.parse.quote(mock_id, safe='')}"
+        data = json.loads(self._request("PATCH", path, _mock_response_patch_to_dict(patch), expected=(200,)))
+        return _parse_mock(data)
 
     def delete_mock(self, mock_id: str) -> None:
         self._request("DELETE", f"/api/mocks/http/{mock_id}", expected=(204,))
+
+    def get_state(self) -> dict[str, str]:
+        return json.loads(self._request("GET", "/api/state", expected=(200,)))
+
+    def set_state(self, kv_map: dict[str, str]) -> dict[str, str]:
+        return json.loads(self._request("POST", "/api/state", kv_map, expected=(200,)))
+
+    def delete_state(self, key: str) -> None:
+        path = f"/api/state/{urllib.parse.quote(key, safe='')}"
+        self._request("DELETE", path, expected=(200,))
+
+    def get_logs(self, matched_id: str | None = None) -> list[CallEntry]:
+        path = _with_optional_matched_id("/api/logs", matched_id)
+        data = json.loads(self._request("GET", path, expected=(200,)))
+        return [_parse_call_entry(item) for item in data]
+
+    def clear_logs(self) -> None:
+        self._request("DELETE", "/api/logs", expected=(200,))
+
+    def get_logs_count(self, matched_id: str | None = None) -> int:
+        path = _with_optional_matched_id("/api/logs/count", matched_id)
+        data = json.loads(self._request("GET", path, expected=(200,)))
+        return data.get("count", 0)
+
+    def list_scenarios(self) -> list[Scenario]:
+        data = json.loads(self._request("GET", "/api/scenarios", expected=(200,)))
+        return [_parse_scenario(item) for item in data]
+
+    def create_scenario(self, scenario: Scenario) -> Scenario:
+        data = json.loads(self._request("POST", "/api/scenarios", _scenario_to_dict(scenario), expected=(201,)))
+        return _parse_scenario(data)
+
+    def get_scenario(self, scenario_id: str) -> Scenario:
+        path = f"/api/scenarios/{urllib.parse.quote(scenario_id, safe='')}"
+        data = json.loads(self._request("GET", path, expected=(200,)))
+        return _parse_scenario(data)
+
+    def update_scenario(self, scenario_id: str, scenario: Scenario) -> Scenario:
+        path = f"/api/scenarios/{urllib.parse.quote(scenario_id, safe='')}"
+        data = json.loads(self._request("PUT", path, _scenario_to_dict(scenario), expected=(200,)))
+        return _parse_scenario(data)
+
+    def delete_scenario(self, scenario_id: str) -> None:
+        path = f"/api/scenarios/{urllib.parse.quote(scenario_id, safe='')}"
+        self._request("DELETE", path, expected=(200,))
+
+    def list_active_scenarios(self) -> ActiveScenariosResponse:
+        data = json.loads(self._request("GET", "/api/scenarios/active", expected=(200,)))
+        return ActiveScenariosResponse(
+            active=list(data.get("active") or []),
+            scenarios=[_parse_scenario(item) for item in (data.get("scenarios") or [])],
+        )
 
     def reset(self) -> None:
         self._request("POST", "/api/reset", expected=(200,))
@@ -238,23 +290,16 @@ class MocklyServer:
         self._request("DELETE", "/api/fault", expected=(200,))
 
     def get_calls(self, mock_id: str) -> CallSummary:
-        """Return recorded calls for the given mock ID."""
         data = json.loads(self._request("GET", f"/api/calls/http/{mock_id}", expected=(200,)))
         return _parse_call_summary(data)
 
     def clear_calls(self, mock_id: str) -> None:
-        """Clear recorded calls for the given mock ID."""
         self._request("DELETE", f"/api/calls/http/{mock_id}", expected=(200,))
 
     def clear_all_calls(self) -> None:
-        """Clear all recorded HTTP calls."""
         self._request("DELETE", "/api/calls/http", expected=(200,))
 
     def wait_for_calls(self, mock_id: str, count: int = 1, timeout_seconds: int = 10) -> CallSummary:
-        """Block until mock_id has been called at least count times, or timeout expires.
-
-        Raises RuntimeError if the timeout is reached before count calls are recorded.
-        """
         body = {"count": count, "timeout": f"{timeout_seconds}s"}
         data = json.loads(self._request("POST", f"/api/calls/http/{mock_id}/wait", body, expected=(200, 408)))
         if data.get("error"):
@@ -263,10 +308,6 @@ class MocklyServer:
                 f"got {data.get('got', 0)}"
             )
         return _parse_call_summary(data)
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
 
     def _wait_ready(self, max_ms: int = 10000) -> None:
         url = f"{self.api_base}/api/protocols"
@@ -277,9 +318,7 @@ class MocklyServer:
                     return
             except Exception:
                 time.sleep(0.05)
-        raise TimeoutError(
-            f"Mockly did not become ready within {max_ms}ms (api={self.api_base})"
-        )
+        raise TimeoutError(f"Mockly did not become ready within {max_ms}ms (api={self.api_base})")
 
     def _request(
         self,
@@ -295,9 +334,7 @@ class MocklyServer:
         try:
             with urllib.request.urlopen(req) as resp:
                 if resp.status not in expected:
-                    raise RuntimeError(
-                        f"Unexpected status {resp.status} for {method} {path}"
-                    )
+                    raise RuntimeError(f"Unexpected status {resp.status} for {method} {path}")
                 return resp.read()
         except urllib.error.HTTPError as exc:
             if exc.code in expected:
@@ -307,25 +344,135 @@ class MocklyServer:
             ) from exc
 
 
-def _parse_call_summary(data: dict) -> "CallSummary":
-    calls = [
-        CallEntry(
-            id=c.get("id", ""),
-            timestamp=c.get("timestamp", ""),
-            protocol=c.get("protocol", ""),
-            path=c.get("path", ""),
-            duration_ms=c.get("duration_ms", 0),
-            method=c.get("method"),
-            status=c.get("status"),
-            headers=c.get("headers") or {},
-            body=c.get("body"),
-            matched_id=c.get("matched_id"),
-            path_params=c.get("path_params") or {},
-        )
-        for c in (data.get("calls") or [])
-    ]
+def _with_optional_matched_id(path: str, matched_id: str | None) -> str:
+    if not matched_id:
+        return path
+    return f"{path}?matched_id={urllib.parse.quote(matched_id, safe='')}"
+
+
+def _mock_to_dict(mock: Mock) -> dict:
+    body: dict = {
+        "id": mock.id,
+        "request": {
+            "method": mock.request.method,
+            "path": mock.request.path,
+        },
+        "response": _mock_response_to_dict(mock.response),
+    }
+    if mock.request.headers:
+        body["request"]["headers"] = mock.request.headers
+    return body
+
+
+def _mock_response_to_dict(response: MockResponse) -> dict:
+    body: dict = {"status": response.status}
+    if response.body != "":
+        body["body"] = response.body
+    if response.headers:
+        body["headers"] = response.headers
+    if response.delay is not None:
+        body["delay"] = response.delay
+    return body
+
+
+def _mock_response_patch_to_dict(patch: MockResponsePatch) -> dict:
+    body: dict = {}
+    if patch.status is not None:
+        body["status"] = patch.status
+    if patch.body is not None:
+        body["body"] = patch.body
+    if patch.headers is not None:
+        body["headers"] = patch.headers
+    if patch.delay is not None:
+        body["delay"] = patch.delay
+    return body
+
+
+def _scenario_to_dict(scenario: Scenario) -> dict:
+    body: dict = {
+        "id": scenario.id,
+        "name": scenario.name,
+        "patches": [_scenario_patch_to_dict(patch) for patch in scenario.patches],
+    }
+    if scenario.description is not None:
+        body["description"] = scenario.description
+    return body
+
+
+def _scenario_patch_to_dict(patch: ScenarioPatch) -> dict:
+    body: dict = {"mock_id": patch.mock_id}
+    if patch.status is not None:
+        body["status"] = patch.status
+    if patch.body is not None:
+        body["body"] = patch.body
+    if patch.headers is not None:
+        body["headers"] = patch.headers
+    if patch.delay is not None:
+        body["delay"] = patch.delay
+    if patch.disabled is not None:
+        body["disabled"] = patch.disabled
+    return body
+
+
+def _parse_mock(data: dict) -> Mock:
+    request = data.get("request") or {}
+    response = data.get("response") or {}
+    return Mock(
+        id=data.get("id", ""),
+        request=MockRequest(
+            method=request.get("method", ""),
+            path=request.get("path", ""),
+            headers=request.get("headers") or {},
+        ),
+        response=MockResponse(
+            status=response.get("status", 0),
+            body=response.get("body") or "",
+            headers=response.get("headers") or {},
+            delay=response.get("delay"),
+        ),
+    )
+
+
+def _parse_scenario(data: dict) -> Scenario:
+    return Scenario(
+        id=data.get("id", ""),
+        name=data.get("name", ""),
+        description=data.get("description"),
+        patches=[_parse_scenario_patch(item) for item in (data.get("patches") or [])],
+    )
+
+
+def _parse_scenario_patch(data: dict) -> ScenarioPatch:
+    return ScenarioPatch(
+        mock_id=data.get("mock_id", ""),
+        status=data.get("status"),
+        body=data.get("body"),
+        headers=data.get("headers"),
+        delay=data.get("delay"),
+        disabled=data.get("disabled"),
+    )
+
+
+def _parse_call_summary(data: dict) -> CallSummary:
+    calls = [_parse_call_entry(item) for item in (data.get("calls") or [])]
     return CallSummary(
         mock_id=data.get("mock_id", ""),
         count=data.get("count", 0),
         calls=calls,
+    )
+
+
+def _parse_call_entry(data: dict) -> CallEntry:
+    return CallEntry(
+        id=data.get("id", ""),
+        timestamp=data.get("timestamp", ""),
+        protocol=data.get("protocol", ""),
+        path=data.get("path", ""),
+        duration_ms=data.get("duration_ms", 0),
+        method=data.get("method"),
+        status=data.get("status"),
+        headers=data.get("headers") or {},
+        body=data.get("body"),
+        matched_id=data.get("matched_id"),
+        path_params=data.get("path_params") or {},
     )

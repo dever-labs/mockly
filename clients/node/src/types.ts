@@ -15,6 +15,15 @@ export interface MockResponse {
   delay?: string
 }
 
+/** Partial response update for an existing HTTP mock. */
+export interface MockResponsePatch {
+  status?: number
+  body?: string
+  headers?: Record<string, string>
+  /** Artificial delay — e.g. `'100ms'`, `'1s'` */
+  delay?: string
+}
+
 /** A full HTTP mock definition. */
 export interface HttpMock {
   id: string
@@ -27,14 +36,23 @@ export interface ScenarioPatch {
   mock_id: string
   status?: number
   body?: string
+  headers?: Record<string, string>
   delay?: string
+  disabled?: boolean
 }
 
 /** A named scenario that patches one or more mock responses when activated. */
 export interface Scenario {
   id: string
   name: string
+  description?: string
   patches: ScenarioPatch[]
+}
+
+/** Active scenario state reported by the server. */
+export interface ActiveScenariosResponse {
+  active: string[]
+  scenarios: Scenario[]
 }
 
 /** Global fault injection configuration. */
@@ -72,10 +90,6 @@ export interface CallSummary {
 
 /** Options accepted by `MocklyServer.create()`. */
 export interface MocklyServerOptions {
-  /**
-   * Scenarios to include in the startup config.
-   * Scenarios can only be activated/deactivated via the management API;
-   * they cannot be created dynamically after the server starts.
-   */
+  /** Scenarios to include in the startup config. */
   scenarios?: Scenario[]
 }

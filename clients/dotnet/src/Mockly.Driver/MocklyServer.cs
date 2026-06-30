@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -33,9 +34,6 @@ public sealed class MocklyServer : IAsyncDisposable
         ApiBase = $"http://127.0.0.1:{apiPort}";
     }
 
-    /// <summary>
-    /// Starts a new Mockly server instance. Installs the binary if needed.
-    /// </summary>
     public static async Task<MocklyServer> CreateAsync(MocklyServerOptions? opts = null)
     {
         opts ??= new MocklyServerOptions();
@@ -102,9 +100,6 @@ public sealed class MocklyServer : IAsyncDisposable
         throw new InvalidOperationException("Failed to start Mockly after 3 attempts (port conflict).");
     }
 
-    /// <summary>
-    /// Like CreateAsync but also resets the server state, useful for test setup.
-    /// </summary>
     public static async Task<MocklyServer> EnsureAsync(MocklyServerOptions? opts = null)
     {
         var server = await CreateAsync(opts);
@@ -133,8 +128,53 @@ public sealed class MocklyServer : IAsyncDisposable
     public Task AddMockAsync(Mock mock)
         => PostAsync("/api/mocks/http", mock);
 
+    public Task<IReadOnlyList<Mock>> ListMocksAsync()
+        => GetAsync<IReadOnlyList<Mock>>("/api/mocks/http");
+
+    public Task<Mock> UpdateMockAsync(string id, Mock mock)
+        => PutAndReadAsync<Mock>($"/api/mocks/http/{Uri.EscapeDataString(id)}", mock);
+
+    public Task<Mock> PatchMockAsync(string id, MockResponsePatch patch)
+        => PatchAndReadAsync<Mock>($"/api/mocks/http/{Uri.EscapeDataString(id)}", patch);
+
     public Task DeleteMockAsync(string id)
         => DeleteAsync($"/api/mocks/http/{Uri.EscapeDataString(id)}");
+
+    public Task<Dictionary<string, string>> GetStateAsync()
+        => GetAsync<Dictionary<string, string>>("/api/state");
+
+    public Task<Dictionary<string, string>> SetStateAsync(Dictionary<string, string> kvMap)
+        => PostAndReadAsync<Dictionary<string, string>>("/api/state", kvMap);
+
+    public Task DeleteStateAsync(string key)
+        => DeleteAsync($"/api/state/{Uri.EscapeDataString(key)}");
+
+    public Task<IReadOnlyList<CallEntry>> GetLogsAsync(string? matchedId = null)
+        => GetAsync<IReadOnlyList<CallEntry>>(WithMatchedId("/api/logs", matchedId));
+
+    public Task ClearLogsAsync()
+        => DeleteAsync("/api/logs");
+
+    public async Task<int> GetLogsCountAsync(string? matchedId = null)
+        => (await GetAsync<CountResponse>(WithMatchedId("/api/logs/count", matchedId))).Count;
+
+    public Task<IReadOnlyList<Scenario>> ListScenariosAsync()
+        => GetAsync<IReadOnlyList<Scenario>>("/api/scenarios");
+
+    public Task<Scenario> CreateScenarioAsync(Scenario scenario)
+        => PostAndReadAsync<Scenario>("/api/scenarios", scenario);
+
+    public Task<Scenario> GetScenarioAsync(string scenarioId)
+        => GetAsync<Scenario>($"/api/scenarios/{Uri.EscapeDataString(scenarioId)}");
+
+    public Task<Scenario> UpdateScenarioAsync(string scenarioId, Scenario scenario)
+        => PutAndReadAsync<Scenario>($"/api/scenarios/{Uri.EscapeDataString(scenarioId)}", scenario);
+
+    public Task DeleteScenarioAsync(string scenarioId)
+        => DeleteAsync($"/api/scenarios/{Uri.EscapeDataString(scenarioId)}");
+
+    public Task<ActiveScenariosResponse> ListActiveScenariosAsync()
+        => GetAsync<ActiveScenariosResponse>("/api/scenarios/active");
 
     public Task ResetAsync()
         => PostAsync("/api/reset", null);
@@ -151,22 +191,15 @@ public sealed class MocklyServer : IAsyncDisposable
     public Task ClearFaultAsync()
         => DeleteAsync("/api/fault");
 
-    /// <summary>Returns recorded calls for the specified mock ID.</summary>
     public Task<CallSummary> GetCallsAsync(string mockId)
         => GetAsync<CallSummary>($"/api/calls/http/{Uri.EscapeDataString(mockId)}");
 
-    /// <summary>Clears recorded calls for the specified mock ID.</summary>
     public Task ClearCallsAsync(string mockId)
         => DeleteAsync($"/api/calls/http/{Uri.EscapeDataString(mockId)}");
 
-    /// <summary>Clears all recorded HTTP calls across every mock.</summary>
     public Task ClearAllCallsAsync()
         => DeleteAsync("/api/calls/http");
 
-    /// <summary>
-    /// Blocks until the mock has been called at least <paramref name="count"/> times,
-    /// or until <paramref name="timeout"/> elapses. Throws on timeout.
-    /// </summary>
     public Task<CallSummary> WaitForCallsAsync(string mockId, int count = 1, TimeSpan? timeout = null)
     {
         var t = timeout ?? TimeSpan.FromSeconds(10);
@@ -174,35 +207,17 @@ public sealed class MocklyServer : IAsyncDisposable
         return PostAndReadAsync<CallSummary>($"/api/calls/http/{Uri.EscapeDataString(mockId)}/wait", body);
     }
 
-    private async Task PostAsync(string path, object? body)
-    {
-        using HttpContent content = body != null
-            ? new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json")
-            : new StringContent(string.Empty, Encoding.UTF8, "application/json");
+    private Task PostAsync(string path, object? body)
+        => SendWithoutReadingAsync(HttpMethod.Post, path, body);
 
-        var response = await _http.PostAsync(path, content);
-        if (!response.IsSuccessStatusCode)
-        {
-            var msg = await response.Content.ReadAsStringAsync();
-            throw new HttpRequestException($"Mockly API {path} failed ({(int)response.StatusCode}): {msg}");
-        }
-    }
+    private Task<T> PostAndReadAsync<T>(string path, object? body)
+        => SendAndReadAsync<T>(HttpMethod.Post, path, body);
 
-    private async Task<T> PostAndReadAsync<T>(string path, object? body)
-    {
-        using HttpContent content = body != null
-            ? new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json")
-            : new StringContent(string.Empty, Encoding.UTF8, "application/json");
+    private Task<T> PutAndReadAsync<T>(string path, object? body)
+        => SendAndReadAsync<T>(HttpMethod.Put, path, body);
 
-        var response = await _http.PostAsync(path, content);
-        if (!response.IsSuccessStatusCode)
-        {
-            var msg = await response.Content.ReadAsStringAsync();
-            throw new HttpRequestException($"Mockly API {path} failed ({(int)response.StatusCode}): {msg}");
-        }
-        var json = await response.Content.ReadAsStringAsync();
-        return JsonSerializer.Deserialize<T>(json, JsonOpts)!;
-    }
+    private Task<T> PatchAndReadAsync<T>(string path, object? body)
+        => SendAndReadAsync<T>(HttpMethod.Patch, path, body);
 
     private async Task<T> GetAsync<T>(string path)
     {
@@ -226,6 +241,48 @@ public sealed class MocklyServer : IAsyncDisposable
         }
     }
 
+    private async Task SendWithoutReadingAsync(HttpMethod method, string path, object? body)
+    {
+        using var request = new HttpRequestMessage(method, path)
+        {
+            Content = CreateContent(body),
+        };
+
+        var response = await _http.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await response.Content.ReadAsStringAsync();
+            throw new HttpRequestException($"Mockly API {method.Method} {path} failed ({(int)response.StatusCode}): {msg}");
+        }
+    }
+
+    private async Task<T> SendAndReadAsync<T>(HttpMethod method, string path, object? body)
+    {
+        using var request = new HttpRequestMessage(method, path)
+        {
+            Content = CreateContent(body),
+        };
+
+        var response = await _http.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await response.Content.ReadAsStringAsync();
+            throw new HttpRequestException($"Mockly API {method.Method} {path} failed ({(int)response.StatusCode}): {msg}");
+        }
+        var json = await response.Content.ReadAsStringAsync();
+        return JsonSerializer.Deserialize<T>(json, JsonOpts)!;
+    }
+
+    private static HttpContent CreateContent(object? body)
+        => body != null
+            ? new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json")
+            : new StringContent(string.Empty, Encoding.UTF8, "application/json");
+
+    private static string WithMatchedId(string path, string? matchedId)
+        => string.IsNullOrEmpty(matchedId)
+            ? path
+            : $"{path}?matched_id={Uri.EscapeDataString(matchedId)}";
+
     private static Task<int> GetFreePortAsync()
     {
         using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
@@ -243,6 +300,7 @@ public sealed class MocklyServer : IAsyncDisposable
             {
                 scenariosYaml.AppendLine($"  - id: \"{scenario.Id}\"");
                 scenariosYaml.AppendLine($"    name: \"{scenario.Name}\"");
+                if (scenario.Description is not null) scenariosYaml.AppendLine($"    description: \"{scenario.Description}\"");
                 if (scenario.Patches.Count > 0)
                 {
                     scenariosYaml.AppendLine("    patches:");
@@ -251,7 +309,16 @@ public sealed class MocklyServer : IAsyncDisposable
                         scenariosYaml.AppendLine($"      - mock_id: \"{patch.MockId}\"");
                         if (patch.Status.HasValue) scenariosYaml.AppendLine($"        status: {patch.Status}");
                         if (patch.Body != null) scenariosYaml.AppendLine($"        body: \"{patch.Body}\"");
+                        if (patch.Headers is { Count: > 0 })
+                        {
+                            scenariosYaml.AppendLine("        headers:");
+                            foreach (var header in patch.Headers)
+                            {
+                                scenariosYaml.AppendLine($"          \"{header.Key}\": \"{header.Value}\"");
+                            }
+                        }
                         if (patch.Delay != null) scenariosYaml.AppendLine($"        delay: \"{patch.Delay}\"");
+                        if (patch.Disabled.HasValue) scenariosYaml.AppendLine($"        disabled: {patch.Disabled.Value.ToString().ToLowerInvariant()}");
                     }
                 }
             }
@@ -287,6 +354,8 @@ protocols:
         }
         throw new TimeoutException($"Mockly did not become ready within {maxWait.TotalSeconds}s");
     }
+
+    private sealed record CountResponse([property: JsonPropertyName("count")] int Count);
 }
 
 public record MocklyServerOptions(

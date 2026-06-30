@@ -8,16 +8,19 @@ import java.util.List;
 public class Scenario {
     private final String id;
     private final String name;
+    private final String description;
     private final List<ScenarioPatch> patches;
 
     private Scenario(Builder builder) {
         this.id = builder.id;
         this.name = builder.name;
+        this.description = builder.description;
         this.patches = Collections.unmodifiableList(new ArrayList<>(builder.patches));
     }
 
     public String getId() { return id; }
     public String getName() { return name; }
+    public String getDescription() { return description; }
     public List<ScenarioPatch> getPatches() { return patches; }
 
     public static Builder builder(String id, String name) {
@@ -27,11 +30,17 @@ public class Scenario {
     public static class Builder {
         private final String id;
         private final String name;
+        private String description;
         private final List<ScenarioPatch> patches = new ArrayList<>();
 
         private Builder(String id, String name) {
             this.id = id;
             this.name = name;
+        }
+
+        public Builder description(String description) {
+            this.description = description;
+            return this;
         }
 
         public Builder patch(ScenarioPatch patch) {

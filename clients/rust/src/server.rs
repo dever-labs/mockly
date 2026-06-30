@@ -1,6 +1,10 @@
 use crate::install::install;
-use crate::types::{FaultConfig, InstallOptions, Mock, Scenario, ServerOptions};
+use crate::types::{
+    ActiveScenariosResponse, CallEntry, CallSummary, FaultConfig, InstallOptions, Mock,
+    MockResponsePatch, Scenario, ServerOptions,
+};
 use crate::utils::{get_free_port, is_port_conflict};
+use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Child, Command, Stdio};
 use tempfile::NamedTempFile;
@@ -46,12 +50,154 @@ impl MocklyServer {
         check_status(resp, 201, "add_mock")
     }
 
+    pub fn list_mocks(&self) -> Result<Vec<Mock>, Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .get(format!("{}/api/mocks/http", self.api_base))
+            .send()?;
+        expect_json(resp, 200, "list_mocks")
+    }
+
+    pub fn update_mock(
+        &self,
+        id: &str,
+        mock: &Mock,
+    ) -> Result<Mock, Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .put(format!("{}/api/mocks/http/{}", self.api_base, id))
+            .json(mock)
+            .send()?;
+        expect_json(resp, 200, "update_mock")
+    }
+
+    pub fn patch_mock(
+        &self,
+        id: &str,
+        patch: &MockResponsePatch,
+    ) -> Result<Mock, Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .patch(format!("{}/api/mocks/http/{}", self.api_base, id))
+            .json(patch)
+            .send()?;
+        expect_json(resp, 200, "patch_mock")
+    }
+
     pub fn delete_mock(&self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
         let resp = self
             .client
             .delete(format!("{}/api/mocks/http/{}", self.api_base, id))
             .send()?;
         check_status(resp, 204, "delete_mock")
+    }
+
+    pub fn get_state(&self) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .get(format!("{}/api/state", self.api_base))
+            .send()?;
+        expect_json(resp, 200, "get_state")
+    }
+
+    pub fn set_state(
+        &self,
+        state: &HashMap<String, String>,
+    ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .post(format!("{}/api/state", self.api_base))
+            .json(state)
+            .send()?;
+        expect_json(resp, 200, "set_state")
+    }
+
+    pub fn delete_state(&self, key: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .delete(format!("{}/api/state/{}", self.api_base, key))
+            .send()?;
+        check_status(resp, 200, "delete_state")
+    }
+
+    pub fn get_logs(
+        &self,
+        matched_id: Option<&str>,
+    ) -> Result<Vec<CallEntry>, Box<dyn std::error::Error>> {
+        let url = with_optional_matched_id(format!("{}/api/logs", self.api_base), matched_id)?;
+        let resp = self.client.get(url).send()?;
+        expect_json(resp, 200, "get_logs")
+    }
+
+    pub fn clear_logs(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .delete(format!("{}/api/logs", self.api_base))
+            .send()?;
+        check_status(resp, 200, "clear_logs")
+    }
+
+    pub fn get_logs_count(&self, matched_id: Option<&str>) -> Result<i64, Box<dyn std::error::Error>> {
+        let url = with_optional_matched_id(format!("{}/api/logs/count", self.api_base), matched_id)?;
+        let resp = self.client.get(url).send()?;
+        let count: CountResponse = expect_json(resp, 200, "get_logs_count")?;
+        Ok(count.count)
+    }
+
+    pub fn list_scenarios(&self) -> Result<Vec<Scenario>, Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .get(format!("{}/api/scenarios", self.api_base))
+            .send()?;
+        expect_json(resp, 200, "list_scenarios")
+    }
+
+    pub fn create_scenario(&self, scenario: &Scenario) -> Result<Scenario, Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .post(format!("{}/api/scenarios", self.api_base))
+            .json(scenario)
+            .send()?;
+        expect_json(resp, 201, "create_scenario")
+    }
+
+    pub fn get_scenario(&self, id: &str) -> Result<Scenario, Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .get(format!("{}/api/scenarios/{}", self.api_base, id))
+            .send()?;
+        expect_json(resp, 200, "get_scenario")
+    }
+
+    pub fn update_scenario(
+        &self,
+        id: &str,
+        scenario: &Scenario,
+    ) -> Result<Scenario, Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .put(format!("{}/api/scenarios/{}", self.api_base, id))
+            .json(scenario)
+            .send()?;
+        expect_json(resp, 200, "update_scenario")
+    }
+
+    pub fn delete_scenario(&self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .delete(format!("{}/api/scenarios/{}", self.api_base, id))
+            .send()?;
+        check_status(resp, 200, "delete_scenario")
+    }
+
+    pub fn list_active_scenarios(
+        &self,
+    ) -> Result<ActiveScenariosResponse, Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .get(format!("{}/api/scenarios/active", self.api_base))
+            .send()?;
+        expect_json(resp, 200, "list_active_scenarios")
     }
 
     pub fn reset(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -99,16 +245,12 @@ impl MocklyServer {
     }
 
     /// Returns recorded calls for the given mock ID.
-    pub fn get_calls(&self, mock_id: &str) -> Result<crate::types::CallSummary, Box<dyn std::error::Error>> {
+    pub fn get_calls(&self, mock_id: &str) -> Result<CallSummary, Box<dyn std::error::Error>> {
         let resp = self
             .client
             .get(format!("{}/api/calls/http/{}", self.api_base, mock_id))
             .send()?;
-        let status = resp.status().as_u16();
-        if status != 200 {
-            return Err(format!("get_calls failed: expected HTTP 200, got {}", status).into());
-        }
-        Ok(resp.json()?)
+        expect_json(resp, 200, "get_calls")
     }
 
     /// Clears recorded calls for the given mock ID.
@@ -136,7 +278,7 @@ impl MocklyServer {
         mock_id: &str,
         count: u32,
         timeout_secs: u64,
-    ) -> Result<crate::types::CallSummary, Box<dyn std::error::Error>> {
+    ) -> Result<CallSummary, Box<dyn std::error::Error>> {
         let body = serde_json::json!({
             "count": count,
             "timeout": format!("{}s", timeout_secs),
@@ -165,6 +307,11 @@ impl Drop for MocklyServer {
     fn drop(&mut self) {
         let _ = self.stop();
     }
+}
+
+#[derive(serde::Deserialize)]
+struct CountResponse {
+    count: i64,
 }
 
 // ── internals ────────────────────────────────────────────────────────────────
@@ -222,7 +369,6 @@ fn start(
         client,
     };
 
-    // Keep the config file alive until the server is ready, then let it drop.
     match wait_ready(&server.client, &server.api_base, 5_000) {
         Ok(()) => {
             drop(config_file);
@@ -233,7 +379,8 @@ fn start(
             let _ = server.proc.kill();
             let _ = server.proc.wait();
             Err(format!(
-                "Mockly did not become ready within timeout: {}\nstderr: {}",
+                "Mockly did not become ready within timeout: {}
+stderr: {}",
                 e, stderr
             )
             .into())
@@ -247,26 +394,63 @@ fn write_config(
     scenarios: &[Scenario],
 ) -> Result<NamedTempFile, Box<dyn std::error::Error>> {
     let mut yaml = format!(
-        "mockly:\n  api:\n    port: {}\nprotocols:\n  http:\n    enabled: true\n    port: {}\n",
+        "mockly:
+  api:
+    port: {}
+protocols:
+  http:
+    enabled: true
+    port: {}
+",
         api_port, http_port
     );
 
     if !scenarios.is_empty() {
-        yaml.push_str("scenarios:\n");
+        yaml.push_str("scenarios:
+");
         for s in scenarios {
-            yaml.push_str(&format!("  - id: {}\n    name: {}\n", yaml_str(&s.id), yaml_str(&s.name)));
+            yaml.push_str(&format!("  - id: {}
+    name: {}
+", yaml_str(&s.id), yaml_str(&s.name)));
+            if let Some(description) = &s.description {
+                yaml.push_str(&format!("    description: {}
+", yaml_str(description)));
+            }
             if !s.patches.is_empty() {
-                yaml.push_str("    patches:\n");
+                yaml.push_str("    patches:
+");
                 for p in &s.patches {
-                    yaml.push_str(&format!("      - mock_id: {}\n", yaml_str(&p.mock_id)));
+                    yaml.push_str(&format!("      - mock_id: {}
+", yaml_str(&p.mock_id)));
                     if let Some(status) = p.status {
-                        yaml.push_str(&format!("        status: {}\n", status));
+                        yaml.push_str(&format!("        status: {}
+", status));
                     }
                     if let Some(ref body) = p.body {
-                        yaml.push_str(&format!("        body: {}\n", yaml_str(body)));
+                        yaml.push_str(&format!("        body: {}
+", yaml_str(body)));
+                    }
+                    if let Some(ref headers) = p.headers {
+                        if !headers.is_empty() {
+                            yaml.push_str("        headers:
+");
+                            for (key, value) in headers {
+                                yaml.push_str(&format!(
+                                    "          {}: {}
+",
+                                    yaml_str(key),
+                                    yaml_str(value)
+                                ));
+                            }
+                        }
                     }
                     if let Some(ref delay) = p.delay {
-                        yaml.push_str(&format!("        delay: {}\n", yaml_str(delay)));
+                        yaml.push_str(&format!("        delay: {}
+", yaml_str(delay)));
+                    }
+                    if let Some(disabled) = p.disabled {
+                        yaml.push_str(&format!("        disabled: {}
+", disabled));
                     }
                 }
             }
@@ -316,6 +500,18 @@ fn collect_stderr(child: &mut Child) -> String {
         .unwrap_or_default()
 }
 
+fn expect_json<T: serde::de::DeserializeOwned>(
+    resp: reqwest::blocking::Response,
+    expected: u16,
+    op: &str,
+) -> Result<T, Box<dyn std::error::Error>> {
+    let status = resp.status().as_u16();
+    if status != expected {
+        return Err(format!("{} failed: expected HTTP {}, got {}", op, expected, status).into());
+    }
+    Ok(resp.json()?)
+}
+
 fn check_status(
     resp: reqwest::blocking::Response,
     expected: u16,
@@ -327,6 +523,17 @@ fn check_status(
     } else {
         Err(format!("{} failed: expected HTTP {}, got {}", op, expected, status).into())
     }
+}
+
+fn with_optional_matched_id(
+    base: String,
+    matched_id: Option<&str>,
+) -> Result<reqwest::Url, Box<dyn std::error::Error>> {
+    let mut url = reqwest::Url::parse(&base)?;
+    if let Some(matched_id) = matched_id {
+        url.query_pairs_mut().append_pair("matched_id", matched_id);
+    }
+    Ok(url)
 }
 
 /// Test helpers – accessible from integration tests via `mockly_driver::server::test_helpers`.

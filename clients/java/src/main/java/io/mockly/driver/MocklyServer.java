@@ -1,23 +1,26 @@
 package io.mockly.driver;
 
+import io.mockly.driver.model.ActiveScenariosResponse;
 import io.mockly.driver.model.CallEntry;
 import io.mockly.driver.model.CallSummary;
 import io.mockly.driver.model.FaultConfig;
 import io.mockly.driver.model.Mock;
 import io.mockly.driver.model.MockRequest;
 import io.mockly.driver.model.MockResponse;
+import io.mockly.driver.model.MockResponsePatch;
 import io.mockly.driver.model.Scenario;
 import io.mockly.driver.model.ScenarioPatch;
 
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -26,17 +29,6 @@ import java.util.Map;
 
 /**
  * Manages a Mockly server process lifecycle and exposes the Management REST API.
- *
- * <pre>{@code
- * try (MocklyServer server = MocklyServer.ensure(MocklyConfig.builder().build())) {
- *     server.addMock(Mock.builder("hello",
- *         MockRequest.builder("GET", "/hello").build(),
- *         MockResponse.builder(200).body("world").build()
- *     ).build());
- *
- *     // ... your tests against server.httpBase ...
- * }
- * }</pre>
  */
 public class MocklyServer implements AutoCloseable {
 
@@ -67,26 +59,11 @@ public class MocklyServer implements AutoCloseable {
     // Factory methods
     // -------------------------------------------------------------------------
 
-    /**
-     * Starts the server using an already-installed binary.
-     * Retries up to 3 times if port allocation races occur.
-     * @param config server configuration
-     * @return a running {@link MocklyServer} instance
-     * @throws IOException if the binary cannot be found or the server fails to start
-     * @throws InterruptedException if the thread is interrupted while waiting for the server to be ready
-     */
     public static MocklyServer create(MocklyConfig config) throws IOException, InterruptedException {
         String binaryPath = resolveBinaryPath(config);
         return startWithRetry(binaryPath, config, 3);
     }
 
-    /**
-     * Installs the binary if not present, then starts the server.
-     * @param config server configuration
-     * @return a running {@link MocklyServer} instance
-     * @throws IOException if installation or server startup fails
-     * @throws InterruptedException if the thread is interrupted while waiting for the server to be ready
-     */
     public static MocklyServer ensure(MocklyConfig config) throws IOException, InterruptedException {
         String binaryPath = config.getBinaryPath();
         if (binaryPath == null) {
@@ -103,10 +80,6 @@ public class MocklyServer implements AutoCloseable {
     // Lifecycle
     // -------------------------------------------------------------------------
 
-    /**
-     * Stops the server and cleans up the temporary config file.
-     * @throws InterruptedException if the thread is interrupted while waiting for the process to exit
-     */
     public void stop() throws InterruptedException {
         if (process.isAlive()) {
             process.destroy();
@@ -126,26 +99,37 @@ public class MocklyServer implements AutoCloseable {
     // Management API
     // -------------------------------------------------------------------------
 
-    /**
-     * Registers a new HTTP mock.
-     * @param mock the mock definition to register
-     * @throws IOException if the server returns an unexpected response
-     * @throws InterruptedException if the thread is interrupted during the HTTP request
-     */
     public void addMock(Mock mock) throws IOException, InterruptedException {
-        String json = toJson(mock);
-        HttpResponse<String> resp = post("/api/mocks/http", json);
+        HttpResponse<String> resp = post("/api/mocks/http", toJson(mock));
         if (resp.statusCode() != 201) {
             throw new IOException("addMock failed: HTTP " + resp.statusCode() + " — " + resp.body());
         }
     }
 
-    /**
-     * Removes a registered HTTP mock by ID.
-     * @param id the ID of the mock to delete
-     * @throws IOException if the server returns an unexpected response
-     * @throws InterruptedException if the thread is interrupted during the HTTP request
-     */
+    public List<Mock> listMocks() throws IOException, InterruptedException {
+        HttpResponse<String> resp = get("/api/mocks/http");
+        if (resp.statusCode() != 200) {
+            throw new IOException("listMocks failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseMocks(resp.body());
+    }
+
+    public Mock updateMock(String id, Mock mock) throws IOException, InterruptedException {
+        HttpResponse<String> resp = put("/api/mocks/http/" + id, toJson(mock));
+        if (resp.statusCode() != 200) {
+            throw new IOException("updateMock failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseMock(resp.body());
+    }
+
+    public Mock patchMock(String id, MockResponsePatch patch) throws IOException, InterruptedException {
+        HttpResponse<String> resp = patch("/api/mocks/http/" + id, toJson(patch));
+        if (resp.statusCode() != 200) {
+            throw new IOException("patchMock failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseMock(resp.body());
+    }
+
     public void deleteMock(String id) throws IOException, InterruptedException {
         HttpResponse<String> resp = delete("/api/mocks/http/" + id);
         if (resp.statusCode() != 204) {
@@ -153,11 +137,107 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /**
-     * Resets all mocks and state on the server.
-     * @throws IOException if the server returns an unexpected response
-     * @throws InterruptedException if the thread is interrupted during the HTTP request
-     */
+    public Map<String, String> getState() throws IOException, InterruptedException {
+        HttpResponse<String> resp = get("/api/state");
+        if (resp.statusCode() != 200) {
+            throw new IOException("getState failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseStringMapBody(resp.body());
+    }
+
+    public Map<String, String> setState(Map<String, String> kvMap) throws IOException, InterruptedException {
+        HttpResponse<String> resp = post("/api/state", jsonMap(kvMap));
+        if (resp.statusCode() != 200) {
+            throw new IOException("setState failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseStringMapBody(resp.body());
+    }
+
+    public void deleteState(String key) throws IOException, InterruptedException {
+        HttpResponse<String> resp = delete("/api/state/" + key);
+        if (resp.statusCode() != 200) {
+            throw new IOException("deleteState failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+    }
+
+    public List<CallEntry> getLogs() throws IOException, InterruptedException {
+        return getLogs(null);
+    }
+
+    public List<CallEntry> getLogs(String matchedId) throws IOException, InterruptedException {
+        HttpResponse<String> resp = get(withMatchedId("/api/logs", matchedId));
+        if (resp.statusCode() != 200) {
+            throw new IOException("getLogs failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseCallEntriesArray(resp.body());
+    }
+
+    public void clearLogs() throws IOException, InterruptedException {
+        HttpResponse<String> resp = delete("/api/logs");
+        if (resp.statusCode() != 200) {
+            throw new IOException("clearLogs failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+    }
+
+    public int getLogsCount() throws IOException, InterruptedException {
+        return getLogsCount(null);
+    }
+
+    public int getLogsCount(String matchedId) throws IOException, InterruptedException {
+        HttpResponse<String> resp = get(withMatchedId("/api/logs/count", matchedId));
+        if (resp.statusCode() != 200) {
+            throw new IOException("getLogsCount failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return (int) extractLong(resp.body(), "count");
+    }
+
+    public List<Scenario> listScenarios() throws IOException, InterruptedException {
+        HttpResponse<String> resp = get("/api/scenarios");
+        if (resp.statusCode() != 200) {
+            throw new IOException("listScenarios failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseScenarios(resp.body());
+    }
+
+    public Scenario createScenario(Scenario scenario) throws IOException, InterruptedException {
+        HttpResponse<String> resp = post("/api/scenarios", toJson(scenario));
+        if (resp.statusCode() != 201) {
+            throw new IOException("createScenario failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseScenario(resp.body());
+    }
+
+    public Scenario getScenario(String id) throws IOException, InterruptedException {
+        HttpResponse<String> resp = get("/api/scenarios/" + id);
+        if (resp.statusCode() != 200) {
+            throw new IOException("getScenario failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseScenario(resp.body());
+    }
+
+    public Scenario updateScenario(String id, Scenario scenario) throws IOException, InterruptedException {
+        HttpResponse<String> resp = put("/api/scenarios/" + id, toJson(scenario));
+        if (resp.statusCode() != 200) {
+            throw new IOException("updateScenario failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseScenario(resp.body());
+    }
+
+    public void deleteScenario(String id) throws IOException, InterruptedException {
+        HttpResponse<String> resp = delete("/api/scenarios/" + id);
+        if (resp.statusCode() != 200) {
+            throw new IOException("deleteScenario failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+    }
+
+    public ActiveScenariosResponse listActiveScenarios() throws IOException, InterruptedException {
+        HttpResponse<String> resp = get("/api/scenarios/active");
+        if (resp.statusCode() != 200) {
+            throw new IOException("listActiveScenarios failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseActiveScenariosResponse(resp.body());
+    }
+
     public void reset() throws IOException, InterruptedException {
         HttpResponse<String> resp = post("/api/reset", "");
         if (resp.statusCode() != 200) {
@@ -165,12 +245,6 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /**
-     * Activates a pre-configured scenario by ID.
-     * @param id the scenario ID to activate
-     * @throws IOException if the server returns an unexpected response
-     * @throws InterruptedException if the thread is interrupted during the HTTP request
-     */
     public void activateScenario(String id) throws IOException, InterruptedException {
         HttpResponse<String> resp = post("/api/scenarios/" + id + "/activate", "");
         if (resp.statusCode() != 200) {
@@ -178,12 +252,6 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /**
-     * Deactivates a scenario by ID.
-     * @param id the scenario ID to deactivate
-     * @throws IOException if the server returns an unexpected response
-     * @throws InterruptedException if the thread is interrupted during the HTTP request
-     */
     public void deactivateScenario(String id) throws IOException, InterruptedException {
         HttpResponse<String> resp = delete("/api/scenarios/" + id + "/activate");
         if (resp.statusCode() != 200) {
@@ -191,25 +259,13 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /**
-     * Injects a network fault.
-     * @param config the fault configuration to apply
-     * @throws IOException if the server returns an unexpected response
-     * @throws InterruptedException if the thread is interrupted during the HTTP request
-     */
     public void setFault(FaultConfig config) throws IOException, InterruptedException {
-        String json = toJson(config);
-        HttpResponse<String> resp = post("/api/fault", json);
+        HttpResponse<String> resp = post("/api/fault", toJson(config));
         if (resp.statusCode() != 200) {
             throw new IOException("setFault failed: HTTP " + resp.statusCode() + " — " + resp.body());
         }
     }
 
-    /**
-     * Clears any active fault.
-     * @throws IOException if the server returns an unexpected response
-     * @throws InterruptedException if the thread is interrupted during the HTTP request
-     */
     public void clearFault() throws IOException, InterruptedException {
         HttpResponse<String> resp = delete("/api/fault");
         if (resp.statusCode() != 200) {
@@ -217,12 +273,6 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /**
-     * Returns recorded calls for the given mock ID.
-     * @param mockId the mock ID to look up
-     * @throws IOException if the server returns an unexpected response
-     * @throws InterruptedException if the thread is interrupted during the HTTP request
-     */
     public CallSummary getCalls(String mockId) throws IOException, InterruptedException {
         HttpResponse<String> resp = get("/api/calls/http/" + mockId);
         if (resp.statusCode() != 200) {
@@ -231,12 +281,6 @@ public class MocklyServer implements AutoCloseable {
         return parseCallSummary(resp.body());
     }
 
-    /**
-     * Clears recorded calls for the given mock ID.
-     * @param mockId the mock ID to clear calls for
-     * @throws IOException if the server returns an unexpected response
-     * @throws InterruptedException if the thread is interrupted during the HTTP request
-     */
     public void clearCalls(String mockId) throws IOException, InterruptedException {
         HttpResponse<String> resp = delete("/api/calls/http/" + mockId);
         if (resp.statusCode() != 200) {
@@ -244,11 +288,6 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /**
-     * Clears all recorded HTTP calls across every mock.
-     * @throws IOException if the server returns an unexpected response
-     * @throws InterruptedException if the thread is interrupted during the HTTP request
-     */
     public void clearAllCalls() throws IOException, InterruptedException {
         HttpResponse<String> resp = delete("/api/calls/http");
         if (resp.statusCode() != 200) {
@@ -256,15 +295,6 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /**
-     * Blocks until the mock has been called at least {@code count} times, or until
-     * {@code timeout} elapses. Throws on timeout.
-     * @param mockId  the mock ID to wait on
-     * @param count   minimum number of calls to wait for
-     * @param timeout maximum time to wait
-     * @throws IOException if the server returns an unexpected response or timeout is reached
-     * @throws InterruptedException if the thread is interrupted during the HTTP request
-     */
     public CallSummary waitForCalls(String mockId, int count, Duration timeout)
             throws IOException, InterruptedException {
         String json = "{\"count\":" + count + ",\"timeout\":\"" + timeout.getSeconds() + "s\"}";
@@ -311,7 +341,6 @@ public class MocklyServer implements AutoCloseable {
                 return doStart(binaryPath, config, httpPort, apiPort);
             } catch (IOException e) {
                 lastError = e;
-                // If ports were explicitly provided, don't retry.
                 if (config.getHttpPort() > 0 || config.getApiPort() > 0) {
                     break;
                 }
@@ -336,11 +365,9 @@ public class MocklyServer implements AutoCloseable {
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(true);
-        // Inherit stdout/stderr so logs are visible in test output.
         pb.inheritIO();
 
         Process process = pb.start();
-
         MocklyServer server = new MocklyServer(process, configFile, httpPort, apiPort);
 
         try {
@@ -363,6 +390,9 @@ public class MocklyServer implements AutoCloseable {
             for (Scenario s : scenarios) {
                 yaml.append("  - id: ").append(yamlStr(s.getId())).append("\n");
                 yaml.append("    name: ").append(yamlStr(s.getName())).append("\n");
+                if (s.getDescription() != null) {
+                    yaml.append("    description: ").append(yamlStr(s.getDescription())).append("\n");
+                }
                 if (!s.getPatches().isEmpty()) {
                     yaml.append("    patches:\n");
                     for (ScenarioPatch p : s.getPatches()) {
@@ -373,8 +403,21 @@ public class MocklyServer implements AutoCloseable {
                         if (p.getBody() != null) {
                             yaml.append("        body: ").append(yamlStr(p.getBody())).append("\n");
                         }
+                        if (!p.getHeaders().isEmpty()) {
+                            yaml.append("        headers:\n");
+                            for (Map.Entry<String, String> header : p.getHeaders().entrySet()) {
+                                yaml.append("          ")
+                                        .append(yamlStr(header.getKey()))
+                                        .append(": ")
+                                        .append(yamlStr(header.getValue()))
+                                        .append("\n");
+                            }
+                        }
                         if (p.getDelay() != null) {
                             yaml.append("        delay: ").append(yamlStr(p.getDelay())).append("\n");
+                        }
+                        if (p.getDisabled() != null) {
+                            yaml.append("        disabled: ").append(p.getDisabled()).append("\n");
                         }
                     }
                 }
@@ -386,7 +429,6 @@ public class MocklyServer implements AutoCloseable {
         return tmp;
     }
 
-    /** Minimal YAML single-quote escaper. */
     private static String yamlStr(String s) {
         return "'" + s.replace("'", "''") + "'";
     }
@@ -398,11 +440,6 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
-    /**
-     * Allocates {@code n} free ports atomically by holding all sockets open
-     * simultaneously before closing them together. This prevents another process
-     * from claiming a port in the gap between sequential allocations.
-     */
     private static int[] getFreePorts(int n) throws IOException {
         ServerSocket[] sockets = new ServerSocket[n];
         try {
@@ -473,13 +510,26 @@ public class MocklyServer implements AutoCloseable {
     }
 
     private HttpResponse<String> post(String path, String jsonBody) throws IOException, InterruptedException {
+        return sendWithBody("POST", path, jsonBody);
+    }
+
+    private HttpResponse<String> put(String path, String jsonBody) throws IOException, InterruptedException {
+        return sendWithBody("PUT", path, jsonBody);
+    }
+
+    private HttpResponse<String> patch(String path, String jsonBody) throws IOException, InterruptedException {
+        return sendWithBody("PATCH", path, jsonBody);
+    }
+
+    private HttpResponse<String> sendWithBody(String method, String path, String jsonBody)
+            throws IOException, InterruptedException {
         HttpRequest.BodyPublisher publisher = jsonBody.isEmpty()
                 ? HttpRequest.BodyPublishers.noBody()
                 : HttpRequest.BodyPublishers.ofString(jsonBody);
 
         HttpRequest.Builder rb = HttpRequest.newBuilder()
                 .uri(URI.create(apiBase + path))
-                .POST(publisher)
+                .method(method, publisher)
                 .timeout(Duration.ofSeconds(10));
 
         if (!jsonBody.isEmpty()) {
@@ -511,6 +561,65 @@ public class MocklyServer implements AutoCloseable {
         return sb.toString();
     }
 
+    static String toJson(Scenario scenario) {
+        StringBuilder sb = new StringBuilder("{");
+        sb.append("\"id\":").append(jsonString(scenario.getId())).append(",");
+        sb.append("\"name\":").append(jsonString(scenario.getName()));
+        if (scenario.getDescription() != null) {
+            sb.append(",\"description\":").append(jsonString(scenario.getDescription()));
+        }
+        sb.append(",\"patches\":[");
+        boolean first = true;
+        for (ScenarioPatch patch : scenario.getPatches()) {
+            if (!first) sb.append(",");
+            sb.append(toJson(patch));
+            first = false;
+        }
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    static String toJson(FaultConfig fault) {
+        StringBuilder sb = new StringBuilder("{");
+        sb.append("\"enabled\":").append(fault.isEnabled());
+        if (fault.getDelay() != null) {
+            sb.append(",\"delay\":").append(jsonString(fault.getDelay()));
+        }
+        if (fault.getStatusOverride() != null) {
+            sb.append(",\"status_override\":").append(fault.getStatusOverride());
+        }
+        if (fault.getErrorRate() != null) {
+            sb.append(",\"error_rate\":").append(fault.getErrorRate());
+        }
+        sb.append("}");
+        return sb.toString();
+    }
+
+    static String toJson(MockResponsePatch patch) {
+        StringBuilder sb = new StringBuilder("{");
+        boolean needsComma = false;
+        if (patch.getStatus() != null) {
+            sb.append("\"status\":").append(patch.getStatus());
+            needsComma = true;
+        }
+        if (patch.getBody() != null) {
+            if (needsComma) sb.append(",");
+            sb.append("\"body\":").append(jsonString(patch.getBody()));
+            needsComma = true;
+        }
+        if (!patch.getHeaders().isEmpty()) {
+            if (needsComma) sb.append(",");
+            sb.append("\"headers\":").append(jsonMap(patch.getHeaders()));
+            needsComma = true;
+        }
+        if (patch.getDelay() != null) {
+            if (needsComma) sb.append(",");
+            sb.append("\"delay\":").append(jsonString(patch.getDelay()));
+        }
+        sb.append("}");
+        return sb.toString();
+    }
+
     private static String toJson(MockRequest req) {
         StringBuilder sb = new StringBuilder("{");
         sb.append("\"method\":").append(jsonString(req.getMethod())).append(",");
@@ -538,17 +647,23 @@ public class MocklyServer implements AutoCloseable {
         return sb.toString();
     }
 
-    static String toJson(FaultConfig fault) {
+    private static String toJson(ScenarioPatch patch) {
         StringBuilder sb = new StringBuilder("{");
-        sb.append("\"enabled\":").append(fault.isEnabled());
-        if (fault.getDelay() != null) {
-            sb.append(",\"delay\":").append(jsonString(fault.getDelay()));
+        sb.append("\"mock_id\":").append(jsonString(patch.getMockId()));
+        if (patch.getStatus() != null) {
+            sb.append(",\"status\":").append(patch.getStatus());
         }
-        if (fault.getStatusOverride() != null) {
-            sb.append(",\"status_override\":").append(fault.getStatusOverride());
+        if (patch.getBody() != null) {
+            sb.append(",\"body\":").append(jsonString(patch.getBody()));
         }
-        if (fault.getErrorRate() != null) {
-            sb.append(",\"error_rate\":").append(fault.getErrorRate());
+        if (!patch.getHeaders().isEmpty()) {
+            sb.append(",\"headers\":").append(jsonMap(patch.getHeaders()));
+        }
+        if (patch.getDelay() != null) {
+            sb.append(",\"delay\":").append(jsonString(patch.getDelay()));
+        }
+        if (patch.getDisabled() != null) {
+            sb.append(",\"disabled\":").append(patch.getDisabled());
         }
         sb.append("}");
         return sb.toString();
@@ -581,34 +696,104 @@ public class MocklyServer implements AutoCloseable {
     // JSON response parsing (minimal — no external library dependency)
     // -------------------------------------------------------------------------
 
-    /**
-     * Parses the JSON body returned by the /api/calls/http/{mockId} and
-     * /api/calls/http/{mockId}/wait endpoints into a {@link CallSummary}.
-     *
-     * This is a purposely simple implementation that handles the known schema
-     * without requiring an external JSON library. It is not a general parser.
-     */
     static CallSummary parseCallSummary(String json) {
-        String mockId  = extractString(json, "mock_id");
-        long   count   = extractLong(json, "count");
-        List<CallEntry> calls = parseCallEntries(json);
+        String mockId = extractString(json, "mock_id");
+        long count = extractLong(json, "count");
+        List<CallEntry> calls = parseCallEntries(extractArrayJson(json, "calls"));
         return new CallSummary(mockId, count, calls);
     }
 
-    private static List<CallEntry> parseCallEntries(String json) {
-        List<CallEntry> result = new ArrayList<>();
-        // Locate the "calls" array.
-        int arrStart = json.indexOf("\"calls\"");
-        if (arrStart < 0) return result;
-        int openBracket = json.indexOf('[', arrStart);
-        if (openBracket < 0) return result;
-        int closeBracket = matchingBracket(json, openBracket, '[', ']');
-        if (closeBracket < 0) return result;
+    static List<CallEntry> parseCallEntriesArray(String json) {
+        return parseCallEntries(stripOuterBrackets(json));
+    }
 
-        String arr = json.substring(openBracket + 1, closeBracket).trim();
-        // Split on top-level object boundaries.
-        List<String> objects = splitTopLevelObjects(arr);
-        for (String obj : objects) {
+    static List<Mock> parseMocks(String json) {
+        List<Mock> mocks = new ArrayList<>();
+        for (String obj : splitTopLevelObjects(stripOuterBrackets(json))) {
+            mocks.add(parseMock(obj));
+        }
+        return mocks;
+    }
+
+    static Mock parseMock(String json) {
+        String requestJson = extractObjectJson(json, "request");
+        String responseJson = extractObjectJson(json, "response");
+        MockRequest request = parseMockRequest(requestJson == null ? "{}" : requestJson);
+        MockResponse response = parseMockResponse(responseJson == null ? "{}" : responseJson);
+        return Mock.builder(extractString(json, "id"), request, response).build();
+    }
+
+    static List<Scenario> parseScenarios(String json) {
+        List<Scenario> scenarios = new ArrayList<>();
+        for (String obj : splitTopLevelObjects(stripOuterBrackets(json))) {
+            scenarios.add(parseScenario(obj));
+        }
+        return scenarios;
+    }
+
+    static Scenario parseScenario(String json) {
+        Scenario.Builder builder = Scenario.builder(
+                extractString(json, "id"),
+                extractString(json, "name")
+        );
+        String description = extractString(json, "description");
+        if (description != null) {
+            builder.description(description);
+        }
+        for (ScenarioPatch patch : parseScenarioPatches(extractArrayJson(json, "patches"))) {
+            builder.patch(patch);
+        }
+        return builder.build();
+    }
+
+    static ActiveScenariosResponse parseActiveScenariosResponse(String json) {
+        return new ActiveScenariosResponse(
+                parseStringArray(extractArrayJson(json, "active")),
+                parseScenarios(arrayBodyToJson(extractArrayJson(json, "scenarios")))
+        );
+    }
+
+    private static MockRequest parseMockRequest(String json) {
+        MockRequest.Builder builder = MockRequest.builder(
+                extractString(json, "method"),
+                extractString(json, "path")
+        );
+        builder.headers(extractStringMap(json, "headers"));
+        return builder.build();
+    }
+
+    private static MockResponse parseMockResponse(String json) {
+        MockResponse.Builder builder = MockResponse.builder((int) extractLong(json, "status"));
+        String body = extractString(json, "body");
+        if (body != null) builder.body(body);
+        builder.headers(extractStringMap(json, "headers"));
+        String delay = extractString(json, "delay");
+        if (delay != null) builder.delay(delay);
+        return builder.build();
+    }
+
+    private static List<ScenarioPatch> parseScenarioPatches(String arrayBody) {
+        List<ScenarioPatch> patches = new ArrayList<>();
+        if (arrayBody == null || arrayBody.isBlank()) return patches;
+        for (String obj : splitTopLevelObjects(arrayBody)) {
+            ScenarioPatch.Builder builder = ScenarioPatch.builder(extractString(obj, "mock_id"));
+            if (containsKey(obj, "status")) builder.status((int) extractLong(obj, "status"));
+            String body = extractString(obj, "body");
+            if (body != null) builder.body(body);
+            builder.headers(extractStringMap(obj, "headers"));
+            String delay = extractString(obj, "delay");
+            if (delay != null) builder.delay(delay);
+            Boolean disabled = extractBoolean(obj, "disabled");
+            if (disabled != null) builder.disabled(disabled);
+            patches.add(builder.build());
+        }
+        return patches;
+    }
+
+    private static List<CallEntry> parseCallEntries(String arrayBody) {
+        List<CallEntry> result = new ArrayList<>();
+        if (arrayBody == null || arrayBody.isBlank()) return result;
+        for (String obj : splitTopLevelObjects(arrayBody)) {
             result.add(parseCallEntry(obj));
         }
         return result;
@@ -630,7 +815,6 @@ public class MocklyServer implements AutoCloseable {
         );
     }
 
-    /** Extracts the first string value for the given JSON key, or null. */
     static String extractString(String json, String key) {
         String needle = "\"" + key + "\"";
         int ki = json.indexOf(needle);
@@ -641,7 +825,6 @@ public class MocklyServer implements AutoCloseable {
         while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
         if (start >= json.length()) return null;
         if (json.charAt(start) == '"') {
-            // Quoted string
             StringBuilder sb = new StringBuilder();
             int i = start + 1;
             while (i < json.length()) {
@@ -649,12 +832,12 @@ public class MocklyServer implements AutoCloseable {
                 if (c == '\\' && i + 1 < json.length()) {
                     char next = json.charAt(i + 1);
                     switch (next) {
-                        case '"':  sb.append('"'); i += 2; break;
+                        case '"': sb.append('"'); i += 2; break;
                         case '\\': sb.append('\\'); i += 2; break;
-                        case 'n':  sb.append('\n'); i += 2; break;
-                        case 'r':  sb.append('\r'); i += 2; break;
-                        case 't':  sb.append('\t'); i += 2; break;
-                        default:   sb.append(next); i += 2; break;
+                        case 'n': sb.append('\n'); i += 2; break;
+                        case 'r': sb.append('\r'); i += 2; break;
+                        case 't': sb.append('\t'); i += 2; break;
+                        default: sb.append(next); i += 2; break;
                     }
                 } else if (c == '"') {
                     break;
@@ -669,7 +852,6 @@ public class MocklyServer implements AutoCloseable {
         return null;
     }
 
-    /** Extracts a long (integer) value for the given JSON key, or 0. */
     static long extractLong(String json, String key) {
         String needle = "\"" + key + "\"";
         int ki = json.indexOf(needle);
@@ -684,64 +866,156 @@ public class MocklyServer implements AutoCloseable {
         try { return Long.parseLong(json.substring(start, end)); } catch (NumberFormatException e) { return 0; }
     }
 
-    /** Extracts a JSON object as a Map<String,String> for the given key. */
-    private static Map<String, String> extractStringMap(String json, String key) {
-        Map<String, String> result = new HashMap<>();
+    private static Boolean extractBoolean(String json, String key) {
         String needle = "\"" + key + "\"";
         int ki = json.indexOf(needle);
-        if (ki < 0) return result;
+        if (ki < 0) return null;
         int colon = json.indexOf(':', ki + needle.length());
-        if (colon < 0) return result;
+        if (colon < 0) return null;
         int start = colon + 1;
         while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
-        if (start >= json.length() || json.charAt(start) != '{') return result;
-        int end = matchingBracket(json, start, '{', '}');
-        if (end < 0) return result;
-        String inner = json.substring(start + 1, end);
-        // Parse key:value pairs
+        if (json.startsWith("true", start)) return true;
+        if (json.startsWith("false", start)) return false;
+        return null;
+    }
+
+    private static Map<String, String> extractStringMap(String json, String key) {
+        String objectJson = extractObjectJson(json, key);
+        if (objectJson == null) return new HashMap<>();
+        return parseStringMapBody(objectJson);
+    }
+
+    private static Map<String, String> parseStringMapBody(String json) {
+        Map<String, String> result = new HashMap<>();
+        String inner = stripOuterBraces(json);
         int pos = 0;
         while (pos < inner.length()) {
             while (pos < inner.length() && inner.charAt(pos) != '"') pos++;
             if (pos >= inner.length()) break;
-            int kStart = pos + 1;
-            int kEnd = inner.indexOf('"', kStart);
-            if (kEnd < 0) break;
-            String k = inner.substring(kStart, kEnd);
-            int c2 = inner.indexOf(':', kEnd);
-            if (c2 < 0) break;
-            int vStart = c2 + 1;
-            while (vStart < inner.length() && Character.isWhitespace(inner.charAt(vStart))) vStart++;
-            if (vStart >= inner.length() || inner.charAt(vStart) != '"') { pos = c2 + 1; continue; }
-            StringBuilder sb = new StringBuilder();
-            int i = vStart + 1;
+            int keyStart = pos + 1;
+            StringBuilder key = new StringBuilder();
+            int i = keyStart;
             while (i < inner.length()) {
                 char ch = inner.charAt(i);
                 if (ch == '\\' && i + 1 < inner.length()) {
-                    sb.append(inner.charAt(i + 1)); i += 2;
+                    key.append(inner.charAt(i + 1));
+                    i += 2;
                 } else if (ch == '"') {
-                    pos = i + 1; break;
+                    break;
                 } else {
-                    sb.append(ch); i++;
+                    key.append(ch);
+                    i++;
                 }
             }
-            result.put(k, sb.toString());
+            if (i >= inner.length()) break;
+            int colon = inner.indexOf(':', i);
+            if (colon < 0) break;
+            int valueStart = colon + 1;
+            while (valueStart < inner.length() && Character.isWhitespace(inner.charAt(valueStart))) valueStart++;
+            if (valueStart >= inner.length() || inner.charAt(valueStart) != '"') {
+                pos = colon + 1;
+                continue;
+            }
+            StringBuilder value = new StringBuilder();
+            i = valueStart + 1;
+            while (i < inner.length()) {
+                char ch = inner.charAt(i);
+                if (ch == '\\' && i + 1 < inner.length()) {
+                    value.append(inner.charAt(i + 1));
+                    i += 2;
+                } else if (ch == '"') {
+                    pos = i + 1;
+                    break;
+                } else {
+                    value.append(ch);
+                    i++;
+                }
+            }
+            result.put(key.toString(), value.toString());
         }
         return result;
     }
 
-    /** Finds the index of the matching closing bracket for the opening bracket at `openIdx`. */
+    private static String extractObjectJson(String json, String key) {
+        String needle = "\"" + key + "\"";
+        int ki = json.indexOf(needle);
+        if (ki < 0) return null;
+        int colon = json.indexOf(':', ki + needle.length());
+        if (colon < 0) return null;
+        int start = colon + 1;
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
+        if (start >= json.length() || json.charAt(start) != '{') return null;
+        int end = matchingBracket(json, start, '{', '}');
+        if (end < 0) return null;
+        return json.substring(start, end + 1);
+    }
+
+    private static String extractArrayJson(String json, String key) {
+        String needle = "\"" + key + "\"";
+        int ki = json.indexOf(needle);
+        if (ki < 0) return null;
+        int colon = json.indexOf(':', ki + needle.length());
+        if (colon < 0) return null;
+        int start = colon + 1;
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
+        if (start >= json.length() || json.charAt(start) != '[') return null;
+        int end = matchingBracket(json, start, '[', ']');
+        if (end < 0) return null;
+        return json.substring(start + 1, end);
+    }
+
+    private static boolean containsKey(String json, String key) {
+        return json.contains("\"" + key + "\"");
+    }
+
+    private static List<String> parseStringArray(String arrayBody) {
+        List<String> result = new ArrayList<>();
+        if (arrayBody == null || arrayBody.isBlank()) return result;
+        int i = 0;
+        while (i < arrayBody.length()) {
+            while (i < arrayBody.length() && arrayBody.charAt(i) != '"') i++;
+            if (i >= arrayBody.length()) break;
+            StringBuilder sb = new StringBuilder();
+            i++;
+            while (i < arrayBody.length()) {
+                char ch = arrayBody.charAt(i);
+                if (ch == '\\' && i + 1 < arrayBody.length()) {
+                    sb.append(arrayBody.charAt(i + 1));
+                    i += 2;
+                } else if (ch == '"') {
+                    i++;
+                    break;
+                } else {
+                    sb.append(ch);
+                    i++;
+                }
+            }
+            result.add(sb.toString());
+        }
+        return result;
+    }
+
     private static int matchingBracket(String s, int openIdx, char open, char close) {
         int depth = 0;
+        boolean inString = false;
         for (int i = openIdx; i < s.length(); i++) {
-            if (s.charAt(i) == open)  depth++;
-            else if (s.charAt(i) == close) { depth--; if (depth == 0) return i; }
+            char ch = s.charAt(i);
+            if (ch == '"' && (i == 0 || s.charAt(i - 1) != '\\')) {
+                inString = !inString;
+            }
+            if (inString) continue;
+            if (ch == open) depth++;
+            else if (ch == close) {
+                depth--;
+                if (depth == 0) return i;
+            }
         }
         return -1;
     }
 
-    /** Splits a JSON array body (without surrounding []) into individual top-level object strings. */
     private static List<String> splitTopLevelObjects(String arr) {
         List<String> objects = new ArrayList<>();
+        if (arr == null || arr.isBlank()) return objects;
         int i = 0;
         while (i < arr.length()) {
             while (i < arr.length() && arr.charAt(i) != '{') i++;
@@ -752,5 +1026,32 @@ public class MocklyServer implements AutoCloseable {
             i = end + 1;
         }
         return objects;
+    }
+
+    private static String stripOuterBrackets(String json) {
+        String trimmed = json == null ? "" : json.trim();
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+            return trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed;
+    }
+
+    private static String stripOuterBraces(String json) {
+        String trimmed = json == null ? "" : json.trim();
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            return trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed;
+    }
+
+    private static String arrayBodyToJson(String arrayBody) {
+        return arrayBody == null ? "[]" : "[" + arrayBody + "]";
+    }
+
+    private static String withMatchedId(String path, String matchedId) {
+        if (matchedId == null || matchedId.isEmpty()) {
+            return path;
+        }
+        return path + "?matched_id=" + URLEncoder.encode(matchedId, StandardCharsets.UTF_8);
     }
 }

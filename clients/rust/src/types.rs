@@ -52,6 +52,18 @@ pub struct MockResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MockResponsePatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delay: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mock {
     pub id: String,
     pub request: MockRequest,
@@ -66,14 +78,26 @@ pub struct ScenarioPatch {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub delay: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scenario {
     pub id: String,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub patches: Vec<ScenarioPatch>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ActiveScenariosResponse {
+    pub active: Vec<String>,
+    pub scenarios: Vec<Scenario>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

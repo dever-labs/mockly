@@ -4,46 +4,34 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Overrides a mock's behaviour when a scenario is active. */
-public class ScenarioPatch {
-    private final String mockId;
+/** Partial response update for an existing HTTP mock. */
+public class MockResponsePatch {
     private final Integer status;
     private final String body;
     private final Map<String, String> headers;
     private final String delay;
-    private final Boolean disabled;
 
-    private ScenarioPatch(Builder builder) {
-        this.mockId = builder.mockId;
+    private MockResponsePatch(Builder builder) {
         this.status = builder.status;
         this.body = builder.body;
         this.headers = Collections.unmodifiableMap(new HashMap<>(builder.headers));
         this.delay = builder.delay;
-        this.disabled = builder.disabled;
     }
 
-    public String getMockId() { return mockId; }
     public Integer getStatus() { return status; }
     public String getBody() { return body; }
     public Map<String, String> getHeaders() { return headers; }
     public String getDelay() { return delay; }
-    public Boolean getDisabled() { return disabled; }
 
-    public static Builder builder(String mockId) {
-        return new Builder(mockId);
+    public static Builder builder() {
+        return new Builder();
     }
 
     public static class Builder {
-        private final String mockId;
         private Integer status;
         private String body;
         private final Map<String, String> headers = new HashMap<>();
         private String delay;
-        private Boolean disabled;
-
-        private Builder(String mockId) {
-            this.mockId = mockId;
-        }
 
         public Builder status(int status) {
             this.status = status;
@@ -70,13 +58,8 @@ public class ScenarioPatch {
             return this;
         }
 
-        public Builder disabled(boolean disabled) {
-            this.disabled = disabled;
-            return this;
-        }
-
-        public ScenarioPatch build() {
-            return new ScenarioPatch(this);
+        public MockResponsePatch build() {
+            return new MockResponsePatch(this);
         }
     }
 }

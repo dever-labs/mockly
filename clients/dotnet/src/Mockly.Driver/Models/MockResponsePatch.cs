@@ -2,10 +2,8 @@ using System.Text.Json.Serialization;
 
 namespace Mockly.Driver.Models;
 
-public record ScenarioPatch(
-    [property: JsonPropertyName("mock_id")] string MockId,
+public record MockResponsePatch(
     [property: JsonPropertyName("status")] int? Status = null,
     [property: JsonPropertyName("body")] string? Body = null,
-    [property: JsonPropertyName("delay")] string? Delay = null,
     [property: JsonPropertyName("headers")] Dictionary<string, string>? Headers = null,
-    [property: JsonPropertyName("disabled")] bool? Disabled = null);
+    [property: JsonPropertyName("delay")] string? Delay = null);

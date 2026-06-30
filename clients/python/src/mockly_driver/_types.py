@@ -18,6 +18,14 @@ class MockResponse:
 
 
 @dataclass
+class MockResponsePatch:
+    status: Optional[int] = None
+    body: Optional[str] = None
+    headers: Optional[dict[str, str]] = None
+    delay: Optional[str] = None
+
+
+@dataclass
 class Mock:
     id: str
     request: MockRequest
@@ -29,7 +37,9 @@ class ScenarioPatch:
     mock_id: str
     status: Optional[int] = None
     body: Optional[str] = None
+    headers: Optional[dict[str, str]] = None
     delay: Optional[str] = None
+    disabled: Optional[bool] = None
 
 
 @dataclass
@@ -37,6 +47,13 @@ class Scenario:
     id: str
     name: str
     patches: list[ScenarioPatch]
+    description: Optional[str] = None
+
+
+@dataclass
+class ActiveScenariosResponse:
+    active: list[str] = field(default_factory=list)
+    scenarios: list[Scenario] = field(default_factory=list)
 
 
 @dataclass

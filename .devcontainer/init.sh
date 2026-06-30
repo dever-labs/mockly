@@ -11,6 +11,9 @@ sudo apt-get install -y --no-install-recommends openjdk-21-jdk-headless maven > 
 
 echo -e "${CYAN}==> Installing .NET 9 SDK...${NC}"
 curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 9.0 > /dev/null
+# Make dotnet available in all shells (interactive, non-interactive, VSCode tasks)
+echo 'export PATH="$HOME/.dotnet:$PATH"' | sudo tee /etc/profile.d/dotnet.sh > /dev/null
+sudo chmod 644 /etc/profile.d/dotnet.sh
 grep -qxF 'export PATH="$HOME/.dotnet:$PATH"' ~/.bashrc || echo 'export PATH="$HOME/.dotnet:$PATH"' >> ~/.bashrc
 export PATH="$HOME/.dotnet:$PATH"
 

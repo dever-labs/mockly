@@ -10,6 +10,10 @@
     "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
   },
 
+  "containerEnv": {
+    "DOTNET_ROOT": "/home/vscode/.dotnet"
+  },
+
   "forwardPorts": [8080, 8081, 9091, 50051],
   "portsAttributes": {
     "8080": { "label": "HTTP Mocks" },
@@ -22,9 +26,6 @@
       "version": "21",
       "installMaven": true
     },
-    "ghcr.io/devcontainers/features/dotnet:2": {
-      "version": "9.0"
-    },
     "ghcr.io/devcontainers/features/rust:1": {
       "version": "latest"
     }
@@ -36,7 +37,8 @@
         "GitHub.copilot",
         "GitHub.copilot-chat",
         "anthropics.claude-code",
-        "golang.go"
+        "golang.go",
+        "ms-dotnettools.csdevkit"
       ],
       "settings": {
         "go.toolsManagement.checkForUpdates": "off",
@@ -45,6 +47,9 @@
         "github.copilot.enable": { "*": true },
         "[go]": {
           "editor.defaultFormatter": "golang.go"
+        },
+        "[csharp]": {
+          "editor.defaultFormatter": "ms-dotnettools.csharp"
         }
       }
     }

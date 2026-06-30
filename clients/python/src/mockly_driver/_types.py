@@ -40,6 +40,28 @@ class Scenario:
 
 
 @dataclass
+class CallEntry:
+    id: str
+    timestamp: str
+    protocol: str
+    path: str
+    duration_ms: int
+    method: Optional[str] = None
+    status: Optional[int] = None
+    headers: dict[str, str] = field(default_factory=dict)
+    body: Optional[str] = None
+    matched_id: Optional[str] = None
+    path_params: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class CallSummary:
+    mock_id: str
+    count: int
+    calls: list["CallEntry"] = field(default_factory=list)
+
+
+@dataclass
 class FaultConfig:
     enabled: bool
     delay: Optional[str] = None        # e.g. "200ms"

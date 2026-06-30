@@ -1,5 +1,27 @@
 package mocklydriver
 
+// CallEntry is a single HTTP request recorded by Mockly.
+type CallEntry struct {
+	ID         string            `json:"id"`
+	Timestamp  string            `json:"timestamp"`
+	Protocol   string            `json:"protocol"`
+	Method     string            `json:"method,omitempty"`
+	Path       string            `json:"path"`
+	Status     int               `json:"status,omitempty"`
+	DurationMs int64             `json:"duration_ms"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Body       string            `json:"body,omitempty"`
+	MatchedID  string            `json:"matched_id,omitempty"`
+	PathParams map[string]string `json:"path_params,omitempty"`
+}
+
+// CallSummary holds recorded calls for a specific HTTP mock.
+type CallSummary struct {
+	MockID string      `json:"mock_id"`
+	Count  int64       `json:"count"`
+	Calls  []CallEntry `json:"calls"`
+}
+
 // MockRequest describes the conditions a request must match.
 type MockRequest struct {
 	Method  string            `json:"method"`

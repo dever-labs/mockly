@@ -151,6 +151,29 @@ public sealed class MocklyServer : IAsyncDisposable
     public Task ClearFaultAsync()
         => DeleteAsync("/api/fault");
 
+    /// <summary>Returns recorded calls for the specified mock ID.</summary>
+    public Task<CallSummary> GetCallsAsync(string mockId)
+        => GetAsync<CallSummary>($"/api/calls/http/{Uri.EscapeDataString(mockId)}");
+
+    /// <summary>Clears recorded calls for the specified mock ID.</summary>
+    public Task ClearCallsAsync(string mockId)
+        => DeleteAsync($"/api/calls/http/{Uri.EscapeDataString(mockId)}");
+
+    /// <summary>Clears all recorded HTTP calls across every mock.</summary>
+    public Task ClearAllCallsAsync()
+        => DeleteAsync("/api/calls/http");
+
+    /// <summary>
+    /// Blocks until the mock has been called at least <paramref name="count"/> times,
+    /// or until <paramref name="timeout"/> elapses. Throws on timeout.
+    /// </summary>
+    public Task<CallSummary> WaitForCallsAsync(string mockId, int count = 1, TimeSpan? timeout = null)
+    {
+        var t = timeout ?? TimeSpan.FromSeconds(10);
+        var body = new { count, timeout = $"{(int)t.TotalSeconds}s" };
+        return PostAndReadAsync<CallSummary>($"/api/calls/http/{Uri.EscapeDataString(mockId)}/wait", body);
+    }
+
     private async Task PostAsync(string path, object? body)
     {
         using HttpContent content = body != null
@@ -163,6 +186,34 @@ public sealed class MocklyServer : IAsyncDisposable
             var msg = await response.Content.ReadAsStringAsync();
             throw new HttpRequestException($"Mockly API {path} failed ({(int)response.StatusCode}): {msg}");
         }
+    }
+
+    private async Task<T> PostAndReadAsync<T>(string path, object? body)
+    {
+        using HttpContent content = body != null
+            ? new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json")
+            : new StringContent(string.Empty, Encoding.UTF8, "application/json");
+
+        var response = await _http.PostAsync(path, content);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await response.Content.ReadAsStringAsync();
+            throw new HttpRequestException($"Mockly API {path} failed ({(int)response.StatusCode}): {msg}");
+        }
+        var json = await response.Content.ReadAsStringAsync();
+        return JsonSerializer.Deserialize<T>(json, JsonOpts)!;
+    }
+
+    private async Task<T> GetAsync<T>(string path)
+    {
+        var response = await _http.GetAsync(path);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await response.Content.ReadAsStringAsync();
+            throw new HttpRequestException($"Mockly API GET {path} failed ({(int)response.StatusCode}): {msg}");
+        }
+        var json = await response.Content.ReadAsStringAsync();
+        return JsonSerializer.Deserialize<T>(json, JsonOpts)!;
     }
 
     private async Task DeleteAsync(string path)

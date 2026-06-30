@@ -9,7 +9,7 @@ import time
 import urllib.error
 import urllib.request
 from ._install import get_binary_path, install
-from ._types import FaultConfig, Mock, Scenario
+from ._types import FaultConfig, Mock, Scenario, CallSummary, CallEntry
 
 
 def _get_free_port() -> int:
@@ -237,6 +237,33 @@ class MocklyServer:
     def clear_fault(self) -> None:
         self._request("DELETE", "/api/fault", expected=(200,))
 
+    def get_calls(self, mock_id: str) -> CallSummary:
+        """Return recorded calls for the given mock ID."""
+        data = json.loads(self._request("GET", f"/api/calls/http/{mock_id}", expected=(200,)))
+        return _parse_call_summary(data)
+
+    def clear_calls(self, mock_id: str) -> None:
+        """Clear recorded calls for the given mock ID."""
+        self._request("DELETE", f"/api/calls/http/{mock_id}", expected=(200,))
+
+    def clear_all_calls(self) -> None:
+        """Clear all recorded HTTP calls."""
+        self._request("DELETE", "/api/calls/http", expected=(200,))
+
+    def wait_for_calls(self, mock_id: str, count: int = 1, timeout_seconds: int = 10) -> CallSummary:
+        """Block until mock_id has been called at least count times, or timeout expires.
+
+        Raises RuntimeError if the timeout is reached before count calls are recorded.
+        """
+        body = {"count": count, "timeout": f"{timeout_seconds}s"}
+        data = json.loads(self._request("POST", f"/api/calls/http/{mock_id}/wait", body, expected=(200, 408)))
+        if data.get("error"):
+            raise RuntimeError(
+                f"wait_for_calls: timeout waiting for {count} call(s) on '{mock_id}': "
+                f"got {data.get('got', 0)}"
+            )
+        return _parse_call_summary(data)
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -278,3 +305,27 @@ class MocklyServer:
             raise RuntimeError(
                 f"HTTP {exc.code} for {method} {path}: {exc.read().decode(errors='replace')}"
             ) from exc
+
+
+def _parse_call_summary(data: dict) -> "CallSummary":
+    calls = [
+        CallEntry(
+            id=c.get("id", ""),
+            timestamp=c.get("timestamp", ""),
+            protocol=c.get("protocol", ""),
+            path=c.get("path", ""),
+            duration_ms=c.get("duration_ms", 0),
+            method=c.get("method"),
+            status=c.get("status"),
+            headers=c.get("headers") or {},
+            body=c.get("body"),
+            matched_id=c.get("matched_id"),
+            path_params=c.get("path_params") or {},
+        )
+        for c in (data.get("calls") or [])
+    ]
+    return CallSummary(
+        mock_id=data.get("mock_id", ""),
+        count=data.get("count", 0),
+        calls=calls,
+    )

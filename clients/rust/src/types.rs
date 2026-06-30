@@ -1,6 +1,36 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// A single recorded HTTP request captured by the Mockly server.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CallEntry {
+    pub id: String,
+    pub timestamp: String,
+    pub protocol: String,
+    #[serde(default)]
+    pub method: Option<String>,
+    pub path: String,
+    #[serde(default)]
+    pub status: Option<u16>,
+    pub duration_ms: i64,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub matched_id: Option<String>,
+    #[serde(default)]
+    pub path_params: HashMap<String, String>,
+}
+
+/// Summary of recorded calls for a specific HTTP mock.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CallSummary {
+    pub mock_id: String,
+    pub count: i64,
+    pub calls: Vec<CallEntry>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MockRequest {
     pub method: String,

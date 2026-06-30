@@ -190,6 +190,79 @@ func (s *Server) ClearFault() error {
 	return nil
 }
 
+// GetCalls returns recorded calls for the given mock ID.
+func (s *Server) GetCalls(mockID string) (*CallSummary, error) {
+	resp, err := s.get("/api/calls/http/" + mockID)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("GetCalls: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var summary CallSummary
+	if err := json.NewDecoder(resp.Body).Decode(&summary); err != nil {
+		return nil, fmt.Errorf("GetCalls: decoding response: %w", err)
+	}
+	return &summary, nil
+}
+
+// ClearCalls clears recorded calls for the given mock ID.
+func (s *Server) ClearCalls(mockID string) error {
+	resp, err := s.delete("/api/calls/http/" + mockID)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("ClearCalls: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	return nil
+}
+
+// ClearAllCalls clears recorded calls for all mocks.
+func (s *Server) ClearAllCalls() error {
+	resp, err := s.delete("/api/calls/http")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("ClearAllCalls: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	return nil
+}
+
+// WaitForCalls blocks until mockID has been called at least count times,
+// or until timeout expires. Returns the recorded calls on success.
+func (s *Server) WaitForCalls(mockID string, count int, timeout time.Duration) (*CallSummary, error) {
+	payload := map[string]interface{}{
+		"count":   count,
+		"timeout": timeout.String(),
+	}
+	resp, err := s.post("/api/calls/http/"+mockID+"/wait", payload)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode == http.StatusRequestTimeout {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("WaitForCalls: timeout waiting for %d call(s) on %q: %s", count, mockID, body)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("WaitForCalls: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	var summary CallSummary
+	if err := json.NewDecoder(resp.Body).Decode(&summary); err != nil {
+		return nil, fmt.Errorf("WaitForCalls: decoding response: %w", err)
+	}
+	return &summary, nil
+}
+
 // start writes a config file, spawns the process, and waits for readiness.
 func (s *Server) start(binPath string, scenarios []Scenario) error {
 	configPath, err := s.writeConfig(scenarios)
@@ -294,6 +367,15 @@ func (s *Server) waitReady(maxDuration time.Duration) error {
 		sleep(50 * time.Millisecond)
 	}
 	return fmt.Errorf("timeout waiting for mockly to be ready after %s", maxDuration)
+}
+
+// get sends a GET request to the management API.
+func (s *Server) get(path string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodGet, s.APIBase+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	return http.DefaultClient.Do(req)
 }
 
 // post sends a POST request to the management API.

@@ -9,5 +9,7 @@ export type {
   ScenarioPatch,
   FaultConfig,
   MocklyServerOptions,
+  CallEntry,
+  CallSummary,
 } from './types.js'
 export type { InstallOptions } from './install.js'

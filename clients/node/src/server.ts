@@ -3,7 +3,7 @@ import { writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import yaml from 'js-yaml'
-import type { HttpMock, Scenario, FaultConfig, MocklyServerOptions } from './types.js'
+import type { HttpMock, Scenario, FaultConfig, MocklyServerOptions, CallSummary } from './types.js'
 import type { InstallOptions } from './install.js'
 import { install, getBinaryPath } from './install.js'
 import { getFreePorts, sleep } from './utils.js'
@@ -146,6 +146,45 @@ export class MocklyServer {
   /** Disables all active fault injection. */
   async clearFault(): Promise<void> {
     await fetch(`${this.apiBase}/api/fault`, { method: 'DELETE' })
+  }
+
+  /**
+   * Returns the recorded calls for a specific HTTP mock.
+   * @param mockId the mock ID to look up
+   */
+  async getCalls(mockId: string): Promise<CallSummary> {
+    const res = await fetch(`${this.apiBase}/api/calls/http/${encodeURIComponent(mockId)}`)
+    if (!res.ok) throw new Error(`getCalls(${mockId}) failed: HTTP ${res.status}`)
+    return res.json() as Promise<CallSummary>
+  }
+
+  /**
+   * Clears recorded calls for a specific HTTP mock.
+   * @param mockId the mock ID to clear calls for
+   */
+  async clearCalls(mockId: string): Promise<void> {
+    const res = await fetch(`${this.apiBase}/api/calls/http/${encodeURIComponent(mockId)}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`clearCalls(${mockId}) failed: HTTP ${res.status}`)
+  }
+
+  /** Clears all recorded HTTP calls across every mock. */
+  async clearAllCalls(): Promise<void> {
+    const res = await fetch(`${this.apiBase}/api/calls/http`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`clearAllCalls() failed: HTTP ${res.status}`)
+  }
+
+  /**
+   * Blocks until a mock has been called at least `count` times, or until
+   * `timeout` expires. Throws if the timeout is reached first.
+   *
+   * @param mockId  the mock ID to wait on
+   * @param count   minimum number of calls to wait for (default: 1)
+   * @param timeout Go-style duration string, e.g. `'5s'`, `'500ms'` (default: `'10s'`)
+   */
+  async waitForCalls(mockId: string, count = 1, timeout = '10s'): Promise<CallSummary> {
+    const res = await this._post(`/api/calls/http/${encodeURIComponent(mockId)}/wait`, { count, timeout })
+    if (!res.ok) throw new Error(`waitForCalls(${mockId}, ${count}) timed out: HTTP ${res.status}`)
+    return res.json() as Promise<CallSummary>
   }
 
   /**

@@ -48,6 +48,28 @@ export interface FaultConfig {
   error_rate?: number
 }
 
+/** A single recorded HTTP request captured by the Mockly server. */
+export interface CallEntry {
+  id: string
+  timestamp: string
+  protocol: string
+  method?: string
+  path: string
+  status?: number
+  duration_ms: number
+  headers?: Record<string, string>
+  body?: string
+  matched_id?: string
+  path_params?: Record<string, string>
+}
+
+/** Summary of recorded calls for a specific HTTP mock. */
+export interface CallSummary {
+  mock_id: string
+  count: number
+  calls: CallEntry[]
+}
+
 /** Options accepted by `MocklyServer.create()`. */
 export interface MocklyServerOptions {
   /**

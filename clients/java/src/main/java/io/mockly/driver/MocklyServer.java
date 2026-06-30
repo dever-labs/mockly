@@ -1,5 +1,7 @@
 package io.mockly.driver;
 
+import io.mockly.driver.model.CallEntry;
+import io.mockly.driver.model.CallSummary;
 import io.mockly.driver.model.FaultConfig;
 import io.mockly.driver.model.Mock;
 import io.mockly.driver.model.MockRequest;
@@ -16,7 +18,9 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -213,6 +217,68 @@ public class MocklyServer implements AutoCloseable {
         }
     }
 
+    /**
+     * Returns recorded calls for the given mock ID.
+     * @param mockId the mock ID to look up
+     * @throws IOException if the server returns an unexpected response
+     * @throws InterruptedException if the thread is interrupted during the HTTP request
+     */
+    public CallSummary getCalls(String mockId) throws IOException, InterruptedException {
+        HttpResponse<String> resp = get("/api/calls/http/" + mockId);
+        if (resp.statusCode() != 200) {
+            throw new IOException("getCalls failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseCallSummary(resp.body());
+    }
+
+    /**
+     * Clears recorded calls for the given mock ID.
+     * @param mockId the mock ID to clear calls for
+     * @throws IOException if the server returns an unexpected response
+     * @throws InterruptedException if the thread is interrupted during the HTTP request
+     */
+    public void clearCalls(String mockId) throws IOException, InterruptedException {
+        HttpResponse<String> resp = delete("/api/calls/http/" + mockId);
+        if (resp.statusCode() != 200) {
+            throw new IOException("clearCalls failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+    }
+
+    /**
+     * Clears all recorded HTTP calls across every mock.
+     * @throws IOException if the server returns an unexpected response
+     * @throws InterruptedException if the thread is interrupted during the HTTP request
+     */
+    public void clearAllCalls() throws IOException, InterruptedException {
+        HttpResponse<String> resp = delete("/api/calls/http");
+        if (resp.statusCode() != 200) {
+            throw new IOException("clearAllCalls failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+    }
+
+    /**
+     * Blocks until the mock has been called at least {@code count} times, or until
+     * {@code timeout} elapses. Throws on timeout.
+     * @param mockId  the mock ID to wait on
+     * @param count   minimum number of calls to wait for
+     * @param timeout maximum time to wait
+     * @throws IOException if the server returns an unexpected response or timeout is reached
+     * @throws InterruptedException if the thread is interrupted during the HTTP request
+     */
+    public CallSummary waitForCalls(String mockId, int count, Duration timeout)
+            throws IOException, InterruptedException {
+        String json = "{\"count\":" + count + ",\"timeout\":\"" + timeout.getSeconds() + "s\"}";
+        HttpResponse<String> resp = post("/api/calls/http/" + mockId + "/wait", json);
+        if (resp.statusCode() == 408) {
+            throw new IOException("waitForCalls: timeout waiting for " + count
+                    + " call(s) on '" + mockId + "'");
+        }
+        if (resp.statusCode() != 200) {
+            throw new IOException("waitForCalls failed: HTTP " + resp.statusCode() + " — " + resp.body());
+        }
+        return parseCallSummary(resp.body());
+    }
+
     // -------------------------------------------------------------------------
     // Internal helpers — startup
     // -------------------------------------------------------------------------
@@ -397,6 +463,15 @@ public class MocklyServer implements AutoCloseable {
     // Internal helpers — HTTP
     // -------------------------------------------------------------------------
 
+    private HttpResponse<String> get(String path) throws IOException, InterruptedException {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + path))
+                .GET()
+                .timeout(Duration.ofSeconds(30))
+                .build();
+        return httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
     private HttpResponse<String> post(String path, String jsonBody) throws IOException, InterruptedException {
         HttpRequest.BodyPublisher publisher = jsonBody.isEmpty()
                 ? HttpRequest.BodyPublishers.noBody()
@@ -500,5 +575,182 @@ public class MocklyServer implements AutoCloseable {
         }
         sb.append("}");
         return sb.toString();
+    }
+
+    // -------------------------------------------------------------------------
+    // JSON response parsing (minimal — no external library dependency)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Parses the JSON body returned by the /api/calls/http/{mockId} and
+     * /api/calls/http/{mockId}/wait endpoints into a {@link CallSummary}.
+     *
+     * This is a purposely simple implementation that handles the known schema
+     * without requiring an external JSON library. It is not a general parser.
+     */
+    static CallSummary parseCallSummary(String json) {
+        String mockId  = extractString(json, "mock_id");
+        long   count   = extractLong(json, "count");
+        List<CallEntry> calls = parseCallEntries(json);
+        return new CallSummary(mockId, count, calls);
+    }
+
+    private static List<CallEntry> parseCallEntries(String json) {
+        List<CallEntry> result = new ArrayList<>();
+        // Locate the "calls" array.
+        int arrStart = json.indexOf("\"calls\"");
+        if (arrStart < 0) return result;
+        int openBracket = json.indexOf('[', arrStart);
+        if (openBracket < 0) return result;
+        int closeBracket = matchingBracket(json, openBracket, '[', ']');
+        if (closeBracket < 0) return result;
+
+        String arr = json.substring(openBracket + 1, closeBracket).trim();
+        // Split on top-level object boundaries.
+        List<String> objects = splitTopLevelObjects(arr);
+        for (String obj : objects) {
+            result.add(parseCallEntry(obj));
+        }
+        return result;
+    }
+
+    private static CallEntry parseCallEntry(String obj) {
+        return new CallEntry(
+                extractString(obj, "id"),
+                extractString(obj, "timestamp"),
+                extractString(obj, "protocol"),
+                extractString(obj, "method"),
+                extractString(obj, "path"),
+                (int) extractLong(obj, "status"),
+                extractLong(obj, "duration_ms"),
+                extractStringMap(obj, "headers"),
+                extractString(obj, "body"),
+                extractString(obj, "matched_id"),
+                extractStringMap(obj, "path_params")
+        );
+    }
+
+    /** Extracts the first string value for the given JSON key, or null. */
+    static String extractString(String json, String key) {
+        String needle = "\"" + key + "\"";
+        int ki = json.indexOf(needle);
+        if (ki < 0) return null;
+        int colon = json.indexOf(':', ki + needle.length());
+        if (colon < 0) return null;
+        int start = colon + 1;
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
+        if (start >= json.length()) return null;
+        if (json.charAt(start) == '"') {
+            // Quoted string
+            StringBuilder sb = new StringBuilder();
+            int i = start + 1;
+            while (i < json.length()) {
+                char c = json.charAt(i);
+                if (c == '\\' && i + 1 < json.length()) {
+                    char next = json.charAt(i + 1);
+                    switch (next) {
+                        case '"':  sb.append('"'); i += 2; break;
+                        case '\\': sb.append('\\'); i += 2; break;
+                        case 'n':  sb.append('\n'); i += 2; break;
+                        case 'r':  sb.append('\r'); i += 2; break;
+                        case 't':  sb.append('\t'); i += 2; break;
+                        default:   sb.append(next); i += 2; break;
+                    }
+                } else if (c == '"') {
+                    break;
+                } else {
+                    sb.append(c);
+                    i++;
+                }
+            }
+            return sb.toString();
+        }
+        if (json.startsWith("null", start)) return null;
+        return null;
+    }
+
+    /** Extracts a long (integer) value for the given JSON key, or 0. */
+    static long extractLong(String json, String key) {
+        String needle = "\"" + key + "\"";
+        int ki = json.indexOf(needle);
+        if (ki < 0) return 0;
+        int colon = json.indexOf(':', ki + needle.length());
+        if (colon < 0) return 0;
+        int start = colon + 1;
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
+        int end = start;
+        while (end < json.length() && (Character.isDigit(json.charAt(end)) || json.charAt(end) == '-')) end++;
+        if (end == start) return 0;
+        try { return Long.parseLong(json.substring(start, end)); } catch (NumberFormatException e) { return 0; }
+    }
+
+    /** Extracts a JSON object as a Map<String,String> for the given key. */
+    private static Map<String, String> extractStringMap(String json, String key) {
+        Map<String, String> result = new HashMap<>();
+        String needle = "\"" + key + "\"";
+        int ki = json.indexOf(needle);
+        if (ki < 0) return result;
+        int colon = json.indexOf(':', ki + needle.length());
+        if (colon < 0) return result;
+        int start = colon + 1;
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
+        if (start >= json.length() || json.charAt(start) != '{') return result;
+        int end = matchingBracket(json, start, '{', '}');
+        if (end < 0) return result;
+        String inner = json.substring(start + 1, end);
+        // Parse key:value pairs
+        int pos = 0;
+        while (pos < inner.length()) {
+            while (pos < inner.length() && inner.charAt(pos) != '"') pos++;
+            if (pos >= inner.length()) break;
+            int kStart = pos + 1;
+            int kEnd = inner.indexOf('"', kStart);
+            if (kEnd < 0) break;
+            String k = inner.substring(kStart, kEnd);
+            int c2 = inner.indexOf(':', kEnd);
+            if (c2 < 0) break;
+            int vStart = c2 + 1;
+            while (vStart < inner.length() && Character.isWhitespace(inner.charAt(vStart))) vStart++;
+            if (vStart >= inner.length() || inner.charAt(vStart) != '"') { pos = c2 + 1; continue; }
+            StringBuilder sb = new StringBuilder();
+            int i = vStart + 1;
+            while (i < inner.length()) {
+                char ch = inner.charAt(i);
+                if (ch == '\\' && i + 1 < inner.length()) {
+                    sb.append(inner.charAt(i + 1)); i += 2;
+                } else if (ch == '"') {
+                    pos = i + 1; break;
+                } else {
+                    sb.append(ch); i++;
+                }
+            }
+            result.put(k, sb.toString());
+        }
+        return result;
+    }
+
+    /** Finds the index of the matching closing bracket for the opening bracket at `openIdx`. */
+    private static int matchingBracket(String s, int openIdx, char open, char close) {
+        int depth = 0;
+        for (int i = openIdx; i < s.length(); i++) {
+            if (s.charAt(i) == open)  depth++;
+            else if (s.charAt(i) == close) { depth--; if (depth == 0) return i; }
+        }
+        return -1;
+    }
+
+    /** Splits a JSON array body (without surrounding []) into individual top-level object strings. */
+    private static List<String> splitTopLevelObjects(String arr) {
+        List<String> objects = new ArrayList<>();
+        int i = 0;
+        while (i < arr.length()) {
+            while (i < arr.length() && arr.charAt(i) != '{') i++;
+            if (i >= arr.length()) break;
+            int end = matchingBracket(arr, i, '{', '}');
+            if (end < 0) break;
+            objects.add(arr.substring(i, end + 1));
+            i = end + 1;
+        }
+        return objects;
     }
 }

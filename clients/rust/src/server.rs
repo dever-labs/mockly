@@ -97,6 +97,68 @@ impl MocklyServer {
             .send()?;
         check_status(resp, 200, "clear_fault")
     }
+
+    /// Returns recorded calls for the given mock ID.
+    pub fn get_calls(&self, mock_id: &str) -> Result<crate::types::CallSummary, Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .get(format!("{}/api/calls/http/{}", self.api_base, mock_id))
+            .send()?;
+        let status = resp.status().as_u16();
+        if status != 200 {
+            return Err(format!("get_calls failed: expected HTTP 200, got {}", status).into());
+        }
+        Ok(resp.json()?)
+    }
+
+    /// Clears recorded calls for the given mock ID.
+    pub fn clear_calls(&self, mock_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .delete(format!("{}/api/calls/http/{}", self.api_base, mock_id))
+            .send()?;
+        check_status(resp, 200, "clear_calls")
+    }
+
+    /// Clears all recorded HTTP calls across every mock.
+    pub fn clear_all_calls(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let resp = self
+            .client
+            .delete(format!("{}/api/calls/http", self.api_base))
+            .send()?;
+        check_status(resp, 200, "clear_all_calls")
+    }
+
+    /// Blocks until mock_id has been called at least `count` times, or until
+    /// `timeout_secs` seconds elapse. Returns the recorded calls on success.
+    pub fn wait_for_calls(
+        &self,
+        mock_id: &str,
+        count: u32,
+        timeout_secs: u64,
+    ) -> Result<crate::types::CallSummary, Box<dyn std::error::Error>> {
+        let body = serde_json::json!({
+            "count": count,
+            "timeout": format!("{}s", timeout_secs),
+        });
+        let resp = self
+            .client
+            .post(format!("{}/api/calls/http/{}/wait", self.api_base, mock_id))
+            .json(&body)
+            .send()?;
+        let status = resp.status().as_u16();
+        if status == 408 {
+            return Err(format!(
+                "wait_for_calls: timeout waiting for {} call(s) on '{}'",
+                count, mock_id
+            )
+            .into());
+        }
+        if status != 200 {
+            return Err(format!("wait_for_calls failed: expected HTTP 200, got {}", status).into());
+        }
+        Ok(resp.json()?)
+    }
 }
 
 impl Drop for MocklyServer {

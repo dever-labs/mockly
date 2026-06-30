@@ -3,6 +3,8 @@
 from ._install import get_binary_path, install
 from ._server import MocklyServer
 from ._types import (
+    CallEntry,
+    CallSummary,
     FaultConfig,
     Mock,
     MockRequest,
@@ -21,4 +23,6 @@ __all__ = [
     "Scenario",
     "ScenarioPatch",
     "FaultConfig",
+    "CallEntry",
+    "CallSummary",
 ]

@@ -232,7 +232,7 @@ describe('deleteMock', () => {
     const fake = await startFakeServer((method, url) => {
       capturedMethod = method
       capturedUrl = url
-      return { status: 204 }
+      return { status: 200 }
     })
 
     const server = await makeServerStub(fake.url)
@@ -340,5 +340,552 @@ describe('clearFault', () => {
     expect(capturedUrl).toBe('/api/fault')
 
     await fake.close()
+  })
+})
+
+
+const sampleMock = {
+  id: 'm1',
+  request: { method: 'GET', path: '/ping' },
+  response: { status: 200, body: 'ok' },
+}
+
+const sampleScenario = {
+  id: 's1',
+  name: 'Test',
+  patches: [],
+}
+
+const sampleCallEntry = {
+  id: 'c1',
+  timestamp: '2026-01-01T00:00:00Z',
+  protocol: 'http',
+  method: 'GET',
+  path: '/ping',
+  status: 200,
+  duration_ms: 5,
+  matched_id: 'm1',
+}
+
+const sampleCallSummary = {
+  mock_id: 'm1',
+  count: 2,
+  calls: [sampleCallEntry],
+}
+
+describe('listMocks', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('GET')
+      expect(url).toBe('/api/mocks/http')
+      return { status: 200, body: JSON.stringify([sampleMock]) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.listMocks()
+      expect(result[0]?.id).toBe('m1')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.listMocks()).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('updateMock', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url, body) => {
+      expect(method).toBe('PUT')
+      expect(url).toBe('/api/mocks/http/m1')
+      expect(JSON.parse(body).id).toBe('m1')
+      return { status: 200, body: JSON.stringify({ ...sampleMock, response: { status: 201, body: 'updated' } }) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.updateMock('m1', sampleMock)
+      expect(result.response.status).toBe(201)
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.updateMock('m1', sampleMock)).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('patchMock', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url, body) => {
+      expect(method).toBe('PATCH')
+      expect(url).toBe('/api/mocks/http/m1')
+      expect(JSON.parse(body).status).toBe(201)
+      return { status: 200, body: JSON.stringify({ ...sampleMock, response: { status: 201, body: 'patched' } }) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.patchMock('m1', { status: 201, body: 'patched' })
+      expect(result.response.body).toBe('patched')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.patchMock('m1', { status: 201 })).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('getState', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('GET')
+      expect(url).toBe('/api/state')
+      return { status: 200, body: JSON.stringify({ key1: 'val1' }) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.getState()
+      expect(result.key1).toBe('val1')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.getState()).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('setState', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url, body) => {
+      expect(method).toBe('POST')
+      expect(url).toBe('/api/state')
+      expect(JSON.parse(body).key1).toBe('val1')
+      return { status: 200, body: JSON.stringify({ key1: 'val1' }) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.setState({ key1: 'val1' })
+      expect(result.key1).toBe('val1')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.setState({ key1: 'val1' })).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('deleteState', () => {
+  it('sends correct HTTP method and path', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('DELETE')
+      expect(url).toBe('/api/state/key1')
+      return { status: 200 }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.deleteState('key1')).resolves.toBeUndefined()
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.deleteState('key1')).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('getLogs', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('GET')
+      expect(url).toBe('/api/logs?matched_id=m1')
+      return { status: 200, body: JSON.stringify([sampleCallEntry]) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.getLogs('m1')
+      expect(result[0]?.matched_id).toBe('m1')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.getLogs()).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('clearLogs', () => {
+  it('sends correct HTTP method and path', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('DELETE')
+      expect(url).toBe('/api/logs')
+      return { status: 200 }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.clearLogs()).resolves.toBeUndefined()
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.clearLogs()).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('getLogsCount', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('GET')
+      expect(url).toBe('/api/logs/count?matched_id=m1')
+      return { status: 200, body: JSON.stringify({ count: 5 }) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.getLogsCount('m1')
+      expect(result).toBe(5)
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.getLogsCount()).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('listScenarios', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('GET')
+      expect(url).toBe('/api/scenarios')
+      return { status: 200, body: JSON.stringify([sampleScenario]) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.listScenarios()
+      expect(result[0]?.id).toBe('s1')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.listScenarios()).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('createScenario', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url, body) => {
+      expect(method).toBe('POST')
+      expect(url).toBe('/api/scenarios')
+      expect(JSON.parse(body).id).toBe('s1')
+      return { status: 201, body: JSON.stringify(sampleScenario) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.createScenario(sampleScenario)
+      expect(result.id).toBe('s1')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.createScenario(sampleScenario)).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('getScenario', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('GET')
+      expect(url).toBe('/api/scenarios/s1')
+      return { status: 200, body: JSON.stringify(sampleScenario) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.getScenario('s1')
+      expect(result.name).toBe('Test')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.getScenario('s1')).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('updateScenario', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url, body) => {
+      expect(method).toBe('PUT')
+      expect(url).toBe('/api/scenarios/s1')
+      expect(JSON.parse(body).name).toBe('Updated')
+      return { status: 200, body: JSON.stringify({ ...sampleScenario, name: 'Updated' }) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.updateScenario('s1', { ...sampleScenario, name: 'Updated' })
+      expect(result.name).toBe('Updated')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.updateScenario('s1', sampleScenario)).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('deleteScenario', () => {
+  it('sends correct HTTP method and path', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('DELETE')
+      expect(url).toBe('/api/scenarios/s1')
+      return { status: 200 }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.deleteScenario('s1')).resolves.toBeUndefined()
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.deleteScenario('s1')).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('listActiveScenarios', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('GET')
+      expect(url).toBe('/api/scenarios/active')
+      return { status: 200, body: JSON.stringify({ active: ['s1'], scenarios: [sampleScenario] }) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.listActiveScenarios()
+      expect(result.active[0]).toBe('s1')
+      expect(result.scenarios[0]?.id).toBe('s1')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.listActiveScenarios()).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('getCalls', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('GET')
+      expect(url).toBe('/api/calls/http/m1')
+      return { status: 200, body: JSON.stringify(sampleCallSummary) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.getCalls('m1')
+      expect(result.count).toBe(2)
+      expect(result.calls[0]?.id).toBe('c1')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.getCalls('m1')).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('clearCalls', () => {
+  it('sends correct HTTP method and path', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('DELETE')
+      expect(url).toBe('/api/calls/http/m1')
+      return { status: 200 }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.clearCalls('m1')).resolves.toBeUndefined()
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.clearCalls('m1')).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('clearAllCalls', () => {
+  it('sends correct HTTP method and path', async () => {
+    const fake = await startFakeServer((method, url) => {
+      expect(method).toBe('DELETE')
+      expect(url).toBe('/api/calls/http')
+      return { status: 200 }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.clearAllCalls()).resolves.toBeUndefined()
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 500, body: '{"error":"boom"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.clearAllCalls()).rejects.toThrow(/500/)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('waitForCalls', () => {
+  it('sends correct HTTP method and path and parses the response', async () => {
+    const fake = await startFakeServer((method, url, body) => {
+      expect(method).toBe('POST')
+      expect(url).toBe('/api/calls/http/m1/wait')
+      expect(JSON.parse(body)).toEqual({ count: 2, timeout: '5s' })
+      return { status: 200, body: JSON.stringify(sampleCallSummary) }
+    })
+    try {
+      const server = await makeServerStub(fake.url)
+      const result = await server.waitForCalls('m1', 2, '5s')
+      expect(result.count).toBe(2)
+      expect(result.calls[0]?.id).toBe('c1')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('throws on non-2xx responses', async () => {
+    const fake = await startFakeServer(() => ({ status: 408, body: '{"error":"timeout"}' }))
+    try {
+      const server = await makeServerStub(fake.url)
+      await expect(server.waitForCalls('m1', 2, '5s')).rejects.toThrow(/408/)
+    } finally {
+      await fake.close()
+    }
   })
 })

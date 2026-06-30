@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using Mockly.Driver;
 using Mockly.Driver.Models;
@@ -262,6 +263,7 @@ public class MocklyDriverTests
     {
         public List<(string Method, string PathAndQuery, string? Body)> Requests { get; } = new();
         public HttpStatusCode NextStatusCode { get; set; } = HttpStatusCode.OK;
+        public string ResponseBody { get; set; } = string.Empty;
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
@@ -270,9 +272,62 @@ public class MocklyDriverTests
                 ? await request.Content.ReadAsStringAsync(cancellationToken)
                 : null;
             Requests.Add((request.Method.Method, request.RequestUri!.PathAndQuery, body));
-            return new HttpResponseMessage(NextStatusCode);
+            return new HttpResponseMessage(NextStatusCode)
+            {
+                Content = new StringContent(ResponseBody, Encoding.UTF8, "application/json")
+            };
         }
     }
+
+
+
+    private static Mock SampleMock(string id = "m1")
+        => new(id, new MockRequest("GET", "/ping"), new MockResponse(200, "ok"));
+
+    private static Scenario SampleScenario(string name = "Test")
+        => new("s1", name, Array.Empty<ScenarioPatch>());
+
+    private static string MockJson(string id = "m1", int status = 200, string body = "ok")
+        => JsonSerializer.Serialize(new
+        {
+            id,
+            request = new { method = "GET", path = "/ping" },
+            response = new { status, body }
+        });
+
+    private static string ScenarioJson(string name = "Test")
+        => JsonSerializer.Serialize(new { id = "s1", name, patches = Array.Empty<object>() });
+
+    private static string CallEntryJson()
+        => JsonSerializer.Serialize(new
+        {
+            id = "c1",
+            timestamp = "2026-01-01T00:00:00Z",
+            protocol = "http",
+            method = "GET",
+            path = "/ping",
+            status = 200,
+            duration_ms = 5,
+            matched_id = "m1"
+        });
+
+    private static string CallSummaryJson()
+        => JsonSerializer.Serialize(new
+        {
+            mock_id = "m1",
+            count = 2,
+            calls = new[] { new
+            {
+                id = "c1",
+                timestamp = "2026-01-01T00:00:00Z",
+                protocol = "http",
+                method = "GET",
+                path = "/ping",
+                status = 200,
+                duration_ms = 5,
+                matched_id = "m1"
+            } }
+        });
 
     private static MocklyServer CreateTestServer(FakeHttpHandler handler, int apiPort = 9999)
     {
@@ -312,7 +367,7 @@ public class MocklyDriverTests
     [Fact]
     public async Task DeleteMockAsync_DeletesCorrectEndpoint()
     {
-        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.NoContent };
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.OK };
         await using var server = CreateTestServer(handler);
 
         await server.DeleteMockAsync("test-id");
@@ -441,4 +496,427 @@ public class MocklyDriverTests
         Assert.Contains("\"patches\"", json);
         Assert.Contains("\"mock_id\":\"m1\"", json);
     }
+
+    [Fact]
+    public async Task ListMocksAsync_GetsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = "[" + MockJson() + "]" };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.ListMocksAsync();
+
+        Assert.Equal("GET", handler.Requests[0].Method);
+        Assert.Equal("/api/mocks/http", handler.Requests[0].PathAndQuery);
+        Assert.Equal("m1", result[0].Id);
+    }
+
+    [Fact]
+    public async Task ListMocksAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.ListMocksAsync());
+    }
+
+    [Fact]
+    public async Task UpdateMockAsync_PutsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = MockJson(status: 201, body: "updated") };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.UpdateMockAsync("m1", SampleMock());
+
+        Assert.Equal("PUT", handler.Requests[0].Method);
+        Assert.Equal("/api/mocks/http/m1", handler.Requests[0].PathAndQuery);
+        Assert.Contains("\"id\":\"m1\"", handler.Requests[0].Body!);
+        Assert.Equal(201, result.Response.Status);
+    }
+
+    [Fact]
+    public async Task UpdateMockAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.UpdateMockAsync("m1", SampleMock()));
+    }
+
+    [Fact]
+    public async Task PatchMockAsync_PatchesCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = MockJson(status: 201, body: "patched") };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.PatchMockAsync("m1", new MockResponsePatch(201, "patched"));
+
+        Assert.Equal("PATCH", handler.Requests[0].Method);
+        Assert.Equal("/api/mocks/http/m1", handler.Requests[0].PathAndQuery);
+        Assert.Contains("\"status\":201", handler.Requests[0].Body!);
+        Assert.Equal("patched", result.Response.Body);
+    }
+
+    [Fact]
+    public async Task PatchMockAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.PatchMockAsync("m1", new MockResponsePatch(201)));
+    }
+
+    [Fact]
+    public async Task GetStateAsync_GetsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = JsonSerializer.Serialize(new { key1 = "val1" }) };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.GetStateAsync();
+
+        Assert.Equal("GET", handler.Requests[0].Method);
+        Assert.Equal("/api/state", handler.Requests[0].PathAndQuery);
+        Assert.Equal("val1", result["key1"]);
+    }
+
+    [Fact]
+    public async Task GetStateAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.GetStateAsync());
+    }
+
+    [Fact]
+    public async Task SetStateAsync_PostsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = JsonSerializer.Serialize(new { key1 = "val1" }) };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.SetStateAsync(new Dictionary<string, string> { ["key1"] = "val1" });
+
+        Assert.Equal("POST", handler.Requests[0].Method);
+        Assert.Equal("/api/state", handler.Requests[0].PathAndQuery);
+        Assert.Contains("key1", handler.Requests[0].Body!);
+        Assert.Equal("val1", result["key1"]);
+    }
+
+    [Fact]
+    public async Task SetStateAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.SetStateAsync(new Dictionary<string, string> { ["key1"] = "val1" }));
+    }
+
+    [Fact]
+    public async Task DeleteStateAsync_DeletesCorrectEndpoint()
+    {
+        var handler = new FakeHttpHandler();
+        await using var server = CreateTestServer(handler);
+
+        await server.DeleteStateAsync("key1");
+
+        Assert.Equal("DELETE", handler.Requests[0].Method);
+        Assert.Equal("/api/state/key1", handler.Requests[0].PathAndQuery);
+    }
+
+    [Fact]
+    public async Task DeleteStateAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.DeleteStateAsync("key1"));
+    }
+
+    [Fact]
+    public async Task GetLogsAsync_GetsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = "[" + CallEntryJson() + "]" };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.GetLogsAsync("m1");
+
+        Assert.Equal("GET", handler.Requests[0].Method);
+        Assert.Equal("/api/logs?matched_id=m1", handler.Requests[0].PathAndQuery);
+        Assert.Equal("m1", result[0].MatchedId);
+    }
+
+    [Fact]
+    public async Task GetLogsAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.GetLogsAsync());
+    }
+
+    [Fact]
+    public async Task ClearLogsAsync_DeletesCorrectEndpoint()
+    {
+        var handler = new FakeHttpHandler();
+        await using var server = CreateTestServer(handler);
+
+        await server.ClearLogsAsync();
+
+        Assert.Equal("DELETE", handler.Requests[0].Method);
+        Assert.Equal("/api/logs", handler.Requests[0].PathAndQuery);
+    }
+
+    [Fact]
+    public async Task ClearLogsAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.ClearLogsAsync());
+    }
+
+    [Fact]
+    public async Task GetLogsCountAsync_GetsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = JsonSerializer.Serialize(new { count = 5 }) };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.GetLogsCountAsync("m1");
+
+        Assert.Equal("GET", handler.Requests[0].Method);
+        Assert.Equal("/api/logs/count?matched_id=m1", handler.Requests[0].PathAndQuery);
+        Assert.Equal(5, result);
+    }
+
+    [Fact]
+    public async Task GetLogsCountAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.GetLogsCountAsync());
+    }
+
+    [Fact]
+    public async Task ListScenariosAsync_GetsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = "[" + ScenarioJson() + "]" };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.ListScenariosAsync();
+
+        Assert.Equal("GET", handler.Requests[0].Method);
+        Assert.Equal("/api/scenarios", handler.Requests[0].PathAndQuery);
+        Assert.Equal("s1", result[0].Id);
+    }
+
+    [Fact]
+    public async Task ListScenariosAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.ListScenariosAsync());
+    }
+
+    [Fact]
+    public async Task CreateScenarioAsync_PostsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.Created, ResponseBody = ScenarioJson() };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.CreateScenarioAsync(SampleScenario());
+
+        Assert.Equal("POST", handler.Requests[0].Method);
+        Assert.Equal("/api/scenarios", handler.Requests[0].PathAndQuery);
+        Assert.Contains("\"id\":\"s1\"", handler.Requests[0].Body!);
+        Assert.Equal("Test", result.Name);
+    }
+
+    [Fact]
+    public async Task CreateScenarioAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.CreateScenarioAsync(SampleScenario()));
+    }
+
+    [Fact]
+    public async Task GetScenarioAsync_GetsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = ScenarioJson() };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.GetScenarioAsync("s1");
+
+        Assert.Equal("GET", handler.Requests[0].Method);
+        Assert.Equal("/api/scenarios/s1", handler.Requests[0].PathAndQuery);
+        Assert.Equal("s1", result.Id);
+    }
+
+    [Fact]
+    public async Task GetScenarioAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.GetScenarioAsync("s1"));
+    }
+
+    [Fact]
+    public async Task UpdateScenarioAsync_PutsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = ScenarioJson("Updated") };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.UpdateScenarioAsync("s1", SampleScenario("Updated"));
+
+        Assert.Equal("PUT", handler.Requests[0].Method);
+        Assert.Equal("/api/scenarios/s1", handler.Requests[0].PathAndQuery);
+        Assert.Contains("Updated", handler.Requests[0].Body!);
+        Assert.Equal("Updated", result.Name);
+    }
+
+    [Fact]
+    public async Task UpdateScenarioAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.UpdateScenarioAsync("s1", SampleScenario("Updated")));
+    }
+
+    [Fact]
+    public async Task DeleteScenarioAsync_DeletesCorrectEndpoint()
+    {
+        var handler = new FakeHttpHandler();
+        await using var server = CreateTestServer(handler);
+
+        await server.DeleteScenarioAsync("s1");
+
+        Assert.Equal("DELETE", handler.Requests[0].Method);
+        Assert.Equal("/api/scenarios/s1", handler.Requests[0].PathAndQuery);
+    }
+
+    [Fact]
+    public async Task DeleteScenarioAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.DeleteScenarioAsync("s1"));
+    }
+
+    [Fact]
+    public async Task ListActiveScenariosAsync_GetsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = JsonSerializer.Serialize(new { active = new[] { "s1" }, scenarios = new[] { new { id = "s1", name = "Test", patches = Array.Empty<object>() } } }) };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.ListActiveScenariosAsync();
+
+        Assert.Equal("GET", handler.Requests[0].Method);
+        Assert.Equal("/api/scenarios/active", handler.Requests[0].PathAndQuery);
+        Assert.Equal("s1", result.Active[0]);
+        Assert.Equal("s1", result.Scenarios[0].Id);
+    }
+
+    [Fact]
+    public async Task ListActiveScenariosAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.ListActiveScenariosAsync());
+    }
+
+    [Fact]
+    public async Task GetCallsAsync_GetsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = CallSummaryJson() };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.GetCallsAsync("m1");
+
+        Assert.Equal("GET", handler.Requests[0].Method);
+        Assert.Equal("/api/calls/http/m1", handler.Requests[0].PathAndQuery);
+        Assert.Equal(2, result.Count);
+        Assert.Equal("c1", result.Calls[0].Id);
+    }
+
+    [Fact]
+    public async Task GetCallsAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.GetCallsAsync("m1"));
+    }
+
+    [Fact]
+    public async Task ClearCallsAsync_DeletesCorrectEndpoint()
+    {
+        var handler = new FakeHttpHandler();
+        await using var server = CreateTestServer(handler);
+
+        await server.ClearCallsAsync("m1");
+
+        Assert.Equal("DELETE", handler.Requests[0].Method);
+        Assert.Equal("/api/calls/http/m1", handler.Requests[0].PathAndQuery);
+    }
+
+    [Fact]
+    public async Task ClearCallsAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.ClearCallsAsync("m1"));
+    }
+
+    [Fact]
+    public async Task ClearAllCallsAsync_DeletesCorrectEndpoint()
+    {
+        var handler = new FakeHttpHandler();
+        await using var server = CreateTestServer(handler);
+
+        await server.ClearAllCallsAsync();
+
+        Assert.Equal("DELETE", handler.Requests[0].Method);
+        Assert.Equal("/api/calls/http", handler.Requests[0].PathAndQuery);
+    }
+
+    [Fact]
+    public async Task ClearAllCallsAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.InternalServerError, ResponseBody = JsonSerializer.Serialize(new { error = "boom" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.ClearAllCallsAsync());
+    }
+
+    [Fact]
+    public async Task WaitForCallsAsync_PostsCorrectEndpointAndParsesResponse()
+    {
+        var handler = new FakeHttpHandler { ResponseBody = CallSummaryJson() };
+        await using var server = CreateTestServer(handler);
+
+        var result = await server.WaitForCallsAsync("m1", 2, TimeSpan.FromSeconds(5));
+
+        Assert.Equal("POST", handler.Requests[0].Method);
+        Assert.Equal("/api/calls/http/m1/wait", handler.Requests[0].PathAndQuery);
+        Assert.Contains("5000ms", handler.Requests[0].Body!);
+        Assert.Equal(2, result.Count);
+        Assert.Equal("c1", result.Calls[0].Id);
+    }
+
+    [Fact]
+    public async Task WaitForCallsAsync_ThrowsOnErrorStatus()
+    {
+        var handler = new FakeHttpHandler { NextStatusCode = HttpStatusCode.RequestTimeout, ResponseBody = JsonSerializer.Serialize(new { error = "timeout" }) };
+        await using var server = CreateTestServer(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => server.WaitForCallsAsync("m1", 2, TimeSpan.FromSeconds(5)));
+    }
+
 }

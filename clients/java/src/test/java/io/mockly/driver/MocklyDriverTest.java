@@ -5,6 +5,7 @@ import io.mockly.driver.model.FaultConfig;
 import io.mockly.driver.model.Mock;
 import io.mockly.driver.model.MockRequest;
 import io.mockly.driver.model.MockResponse;
+import io.mockly.driver.model.MockResponsePatch;
 import io.mockly.driver.model.Scenario;
 import io.mockly.driver.model.ScenarioPatch;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,8 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -389,14 +392,117 @@ class MocklyDriverTest {
         server.createContext("/", exchange -> {
             capturedPaths.add(exchange.getRequestURI().getPath());
             capturedMethods.add(exchange.getRequestMethod());
-            // Drain the request body before responding to avoid connection-reset errors
-            // when the client is still sending a body (e.g. JSON for setFault/addMock).
             exchange.getRequestBody().readAllBytes();
             exchange.sendResponseHeaders(status, -1);
             exchange.close();
         });
         server.start();
         return server;
+    }
+
+    private static final class FakeServerResponse {
+        private final int status;
+        private final String body;
+
+        private FakeServerResponse(int status, String body) {
+            this.status = status;
+            this.body = body;
+        }
+    }
+
+    private static HttpServer startFakeJsonServer(FakeServerResponse response,
+                                                  List<Map<String, String>> captured) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/", exchange -> {
+            String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String rawPath = exchange.getRequestURI().getRawPath();
+            String rawQuery = exchange.getRequestURI().getRawQuery();
+            Map<String, String> request = new HashMap<>();
+            request.put("method", exchange.getRequestMethod());
+            request.put("path", exchange.getRequestURI().getPath());
+            request.put("pathAndQuery", rawQuery == null ? rawPath : rawPath + "?" + rawQuery);
+            request.put("body", requestBody);
+            captured.add(request);
+            byte[] bodyBytes = response.body.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(response.status, bodyBytes.length);
+            exchange.getResponseBody().write(bodyBytes);
+            exchange.close();
+        });
+        server.start();
+        return server;
+    }
+
+    private static final String Q = "\"";
+
+    private static String js(String key, String value) {
+        return Q + key + Q + ":" + Q + value + Q;
+    }
+
+    private static String jn(String key, long value) {
+        return Q + key + Q + ":" + value;
+    }
+
+    private static String jb(String key, boolean value) {
+        return Q + key + Q + ":" + value;
+    }
+
+    private static String jo(String key, String value) {
+        return Q + key + Q + ":" + value;
+    }
+
+    private static String obj(String... fields) {
+        return "{" + String.join(",", fields) + "}";
+    }
+
+    private static String arr(String... values) {
+        return "[" + String.join(",", values) + "]";
+    }
+
+    private static Mock sampleMock() {
+        return Mock.builder("m1", MockRequest.builder("GET", "/ping").build(), MockResponse.builder(200).body("ok").build()).build();
+    }
+
+    private static Scenario sampleScenario(String name) {
+        return Scenario.builder("s1", name).build();
+    }
+
+    private static String errorJson(String message) {
+        return obj(js("error", message));
+    }
+
+    private static String sampleCallEntryJson() {
+        return obj(
+                js("id", "c1"),
+                js("timestamp", "2026-01-01T00:00:00Z"),
+                js("protocol", "http"),
+                js("method", "GET"),
+                js("path", "/ping"),
+                jn("status", 200),
+                jn("duration_ms", 5),
+                js("matched_id", "m1")
+        );
+    }
+
+    private static String mockJson(String id, int status, String body) {
+        String response = body == null ? obj(jn("status", status)) : obj(jn("status", status), js("body", body));
+        return obj(
+                js("id", id),
+                jo("request", obj(js("method", "GET"), js("path", "/ping"))),
+                jo("response", response)
+        );
+    }
+
+    private static String scenarioJson(String name) {
+        return obj(js("id", "s1"), js("name", name), jo("patches", arr()));
+    }
+
+    private static String activeScenariosJson() {
+        return obj(jo("active", arr(Q + "s1" + Q)), jo("scenarios", arr(scenarioJson("Test"))));
+    }
+
+    private static String callSummaryJson() {
+        return obj(js("mock_id", "m1"), jn("count", 2), jo("calls", arr(sampleCallEntryJson())));
     }
 
     @Test
@@ -437,7 +543,7 @@ class MocklyDriverTest {
     void deleteMockSendsDeleteToCorrectEndpoint() throws Exception {
         List<String> paths = new ArrayList<>();
         List<String> methods = new ArrayList<>();
-        HttpServer fakeServer = startFakeServer(204, paths, methods);
+        HttpServer fakeServer = startFakeServer(200, paths, methods);
         try {
             MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
             server.deleteMock("my-id");
@@ -523,4 +629,572 @@ class MocklyDriverTest {
             fakeServer.stop(0);
         }
     }
+
+    @Test
+    void listMocksSendsGetAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, arr(mockJson("m1", 200, "ok"))), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            List<Mock> mocks = server.listMocks();
+            assertEquals("GET", captured.get(0).get("method"));
+            assertEquals("/api/mocks/http", captured.get(0).get("path"));
+            assertEquals("m1", mocks.get(0).getId());
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void listMocksThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, server::listMocks);
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void updateMockSendsPutAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, mockJson("m1", 201, "updated")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            Mock result = server.updateMock("m1", sampleMock());
+            assertEquals("PUT", captured.get(0).get("method"));
+            assertEquals("/api/mocks/http/m1", captured.get(0).get("path"));
+            assertTrue(captured.get(0).get("body").contains("\"id\":\"m1\""));
+            assertEquals(201, result.getResponse().getStatus());
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void updateMockThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, () -> server.updateMock("m1", sampleMock()));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void patchMockSendsPatchAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, mockJson("m1", 201, "patched")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            Mock result = server.patchMock("m1", MockResponsePatch.builder().status(201).body("patched").build());
+            assertEquals("PATCH", captured.get(0).get("method"));
+            assertEquals("/api/mocks/http/m1", captured.get(0).get("path"));
+            assertTrue(captured.get(0).get("body").contains("\"status\":201"));
+            assertEquals("patched", result.getResponse().getBody());
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void patchMockThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, () -> server.patchMock("m1", MockResponsePatch.builder().status(201).build()));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void getStateSendsGetAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, obj(js("key1", "val1"))), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            Map<String, String> state = server.getState();
+            assertEquals("GET", captured.get(0).get("method"));
+            assertEquals("/api/state", captured.get(0).get("path"));
+            assertEquals("val1", state.get("key1"));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void getStateThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, server::getState);
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void setStateSendsPostAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, obj(js("key1", "val1"))), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            Map<String, String> state = server.setState(Map.of("key1", "val1"));
+            assertEquals("POST", captured.get(0).get("method"));
+            assertEquals("/api/state", captured.get(0).get("path"));
+            assertTrue(captured.get(0).get("body").contains("key1"));
+            assertEquals("val1", state.get("key1"));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void setStateThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, () -> server.setState(Map.of("key1", "val1")));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void deleteStateSendsDelete() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, ""), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            server.deleteState("key1");
+            assertEquals("DELETE", captured.get(0).get("method"));
+            assertEquals("/api/state/key1", captured.get(0).get("path"));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void deleteStateThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, () -> server.deleteState("key1"));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void getLogsSendsGetAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, arr(sampleCallEntryJson())), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            List<io.mockly.driver.model.CallEntry> logs = server.getLogs("m1");
+            assertEquals("GET", captured.get(0).get("method"));
+            assertEquals("/api/logs?matched_id=m1", captured.get(0).get("pathAndQuery"));
+            assertEquals("m1", logs.get(0).getMatchedId());
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void getLogsThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, server::getLogs);
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void clearLogsSendsDelete() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, ""), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            server.clearLogs();
+            assertEquals("DELETE", captured.get(0).get("method"));
+            assertEquals("/api/logs", captured.get(0).get("path"));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void clearLogsThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, server::clearLogs);
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void getLogsCountSendsGetAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, obj(jn("count", 5))), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            int count = server.getLogsCount("m1");
+            assertEquals("GET", captured.get(0).get("method"));
+            assertEquals("/api/logs/count?matched_id=m1", captured.get(0).get("pathAndQuery"));
+            assertEquals(5, count);
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void getLogsCountThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, server::getLogsCount);
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void listScenariosSendsGetAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, arr(scenarioJson("Test"))), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            List<Scenario> scenarios = server.listScenarios();
+            assertEquals("GET", captured.get(0).get("method"));
+            assertEquals("/api/scenarios", captured.get(0).get("path"));
+            assertEquals("s1", scenarios.get(0).getId());
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void listScenariosThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, server::listScenarios);
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void createScenarioSendsPostAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(201, scenarioJson("Test")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            Scenario scenario = server.createScenario(sampleScenario("Test"));
+            assertEquals("POST", captured.get(0).get("method"));
+            assertEquals("/api/scenarios", captured.get(0).get("path"));
+            assertTrue(captured.get(0).get("body").contains("\"id\":\"s1\""));
+            assertEquals("Test", scenario.getName());
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void createScenarioThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, () -> server.createScenario(sampleScenario("Test")));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void getScenarioSendsGetAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, scenarioJson("Test")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            Scenario scenario = server.getScenario("s1");
+            assertEquals("GET", captured.get(0).get("method"));
+            assertEquals("/api/scenarios/s1", captured.get(0).get("path"));
+            assertEquals("s1", scenario.getId());
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void getScenarioThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, () -> server.getScenario("s1"));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void updateScenarioSendsPutAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, scenarioJson("Updated")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            Scenario scenario = server.updateScenario("s1", sampleScenario("Updated"));
+            assertEquals("PUT", captured.get(0).get("method"));
+            assertEquals("/api/scenarios/s1", captured.get(0).get("path"));
+            assertTrue(captured.get(0).get("body").contains("Updated"));
+            assertEquals("Updated", scenario.getName());
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void updateScenarioThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, () -> server.updateScenario("s1", sampleScenario("Updated")));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void deleteScenarioSendsDelete() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, ""), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            server.deleteScenario("s1");
+            assertEquals("DELETE", captured.get(0).get("method"));
+            assertEquals("/api/scenarios/s1", captured.get(0).get("path"));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void deleteScenarioThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, () -> server.deleteScenario("s1"));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void listActiveScenariosSendsGetAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, activeScenariosJson()), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            io.mockly.driver.model.ActiveScenariosResponse response = server.listActiveScenarios();
+            assertEquals("GET", captured.get(0).get("method"));
+            assertEquals("/api/scenarios/active", captured.get(0).get("path"));
+            assertEquals("s1", response.getActive().get(0));
+            assertEquals("s1", response.getScenarios().get(0).getId());
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void listActiveScenariosThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, server::listActiveScenarios);
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void getCallsSendsGetAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, callSummaryJson()), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            io.mockly.driver.model.CallSummary summary = server.getCalls("m1");
+            assertEquals("GET", captured.get(0).get("method"));
+            assertEquals("/api/calls/http/m1", captured.get(0).get("path"));
+            assertEquals(2, summary.getCount());
+            assertEquals("c1", summary.getCalls().get(0).getId());
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void getCallsThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, () -> server.getCalls("m1"));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void clearCallsSendsDelete() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, ""), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            server.clearCalls("m1");
+            assertEquals("DELETE", captured.get(0).get("method"));
+            assertEquals("/api/calls/http/m1", captured.get(0).get("path"));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void clearCallsThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, () -> server.clearCalls("m1"));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void clearAllCallsSendsDelete() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, ""), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            server.clearAllCalls();
+            assertEquals("DELETE", captured.get(0).get("method"));
+            assertEquals("/api/calls/http", captured.get(0).get("path"));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void clearAllCallsThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(500, errorJson("boom")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, server::clearAllCalls);
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void waitForCallsSendsPostAndParsesResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(200, callSummaryJson()), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            io.mockly.driver.model.CallSummary summary = server.waitForCalls("m1", 2, Duration.ofSeconds(5));
+            assertEquals("POST", captured.get(0).get("method"));
+            assertEquals("/api/calls/http/m1/wait", captured.get(0).get("path"));
+            assertTrue(captured.get(0).get("body").contains("5000ms"));
+            assertEquals(2, summary.getCount());
+            assertEquals("c1", summary.getCalls().get(0).getId());
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void waitForCallsThrowsOnErrorResponse() throws Exception {
+        List<Map<String, String>> captured = new ArrayList<>();
+        HttpServer fakeServer = startFakeJsonServer(new FakeServerResponse(408, errorJson("timeout")), captured);
+        try {
+            MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
+            assertThrows(IOException.class, () -> server.waitForCalls("m1", 2, Duration.ofSeconds(5)));
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    void extractStringHandlesPresentMissingAndNullValues() {
+        assertEquals("value", MocklyServer.extractString(obj(js("key", "value")), "key"));
+        assertNull(MocklyServer.extractString(obj(), "missing"));
+        assertNull(MocklyServer.extractString(obj(jo("key", "null")), "key"));
+    }
+
+    @Test
+    void extractLongHandlesNormalMissingAndNegativeValues() {
+        assertEquals(5L, MocklyServer.extractLong(obj(jn("count", 5)), "count"));
+        assertEquals(0L, MocklyServer.extractLong(obj(), "count"));
+        assertEquals(-2L, MocklyServer.extractLong(obj(jn("count", -2)), "count"));
+    }
+
+    @Test
+    void parseCallSummaryHandlesCallsArrayAndEmptyCalls() {
+        io.mockly.driver.model.CallSummary summary = MocklyServer.parseCallSummary(callSummaryJson());
+        assertEquals("m1", summary.getMockId());
+        assertEquals(2, summary.getCount());
+        assertEquals("c1", summary.getCalls().get(0).getId());
+
+        io.mockly.driver.model.CallSummary empty = MocklyServer.parseCallSummary(obj(js("mock_id", "m1"), jn("count", 0), jo("calls", arr())));
+        assertTrue(empty.getCalls().isEmpty());
+    }
+
+    @Test
+    void parseCallSummaryHandlesEscapedBackslashBeforeClosingQuote() {
+        String body = "C\\";
+        String encodedBody = body.replace("\\", "\\\\");
+        String json = obj(
+                js("mock_id", "m1"),
+                jn("count", 1),
+                jo("calls", arr(obj(
+                        js("id", "c1"),
+                        js("timestamp", "2026-01-01T00:00:00Z"),
+                        js("protocol", "http"),
+                        js("method", "GET"),
+                        js("path", "/ping"),
+                        jn("status", 200),
+                        jn("duration_ms", 5),
+                        jo("headers", obj()),
+                        jo("body", Q + encodedBody + Q),
+                        js("matched_id", "m1"),
+                        jo("path_params", obj())
+                )))
+        );
+        io.mockly.driver.model.CallSummary summary = MocklyServer.parseCallSummary(json);
+        assertEquals(body, summary.getCalls().get(0).getBody());
+    }
+
 }

@@ -30,3 +30,4 @@ packages = ["src/mockly_driver"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

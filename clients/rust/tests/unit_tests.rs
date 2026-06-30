@@ -184,7 +184,9 @@ mod tests {
             mock_id: "m1".to_string(),
             status: None,
             body: None,
+            headers: None,
             delay: None,
+            disabled: None,
         };
         let json = serde_json::to_string(&patch).unwrap();
         assert!(json.contains("\"mock_id\":\"m1\""), "json: {}", json);
@@ -226,6 +228,7 @@ mod tests {
         let scenario = Scenario {
             id: "s1".to_string(),
             name: "My Scenario".to_string(),
+            description: None,
             patches: vec![],
         };
         let file = server_helpers::write_config_for_test(8080, 8081, &[scenario]).unwrap();
@@ -272,6 +275,73 @@ mod tests {
         (port, handle)
     }
 
+
+
+    fn start_fake_server_with_body(response_code: u16, body: &'static str) -> (u16, std::thread::JoinHandle<String>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let handle = std::thread::spawn(move || {
+            let mut first_line = String::new();
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 8192];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]);
+                if let Some(line) = req.lines().next() {
+                    first_line = line.to_string();
+                }
+                let reason = match response_code {
+                    200 => "OK", 201 => "Created", 204 => "No Content", 408 => "Request Timeout", _ => "Error",
+                };
+                let response = format!(
+                    "HTTP/1.1 {} {}
+Content-Type: application/json
+Content-Length: {}
+
+{}",
+                    response_code, reason, body.len(), body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+            first_line
+        });
+
+        (port, handle)
+    }
+
+    fn sample_mock(id: &str) -> Mock {
+        Mock {
+            id: id.to_string(),
+            request: MockRequest {
+                method: "GET".to_string(),
+                path: "/ping".to_string(),
+                headers: HashMap::new(),
+            },
+            response: MockResponse {
+                status: 200,
+                body: Some("ok".to_string()),
+                headers: HashMap::new(),
+                delay: None,
+            },
+        }
+    }
+
+    fn sample_scenario(name: &str) -> Scenario {
+        Scenario {
+            id: "s1".to_string(),
+            name: name.to_string(),
+            description: None,
+            patches: vec![],
+        }
+    }
+
+    fn sample_call_entry_json() -> &'static str {
+        r#"{"id":"c1","timestamp":"2026-01-01T00:00:00Z","protocol":"http","method":"GET","path":"/ping","status":200,"duration_ms":5,"matched_id":"m1"}"#
+    }
+
     #[test]
     fn add_mock_posts_to_correct_endpoint() {
         let (api_port, handle) = start_fake_server(201);
@@ -302,7 +372,7 @@ mod tests {
 
     #[test]
     fn delete_mock_sends_delete_to_correct_endpoint() {
-        let (api_port, handle) = start_fake_server(204);
+        let (api_port, handle) = start_fake_server(200);
         let server = server_helpers::new_server_for_test(0, api_port);
         assert!(server.delete_mock("abc123").is_ok());
         let first_line = handle.join().unwrap();
@@ -398,4 +468,361 @@ mod tests {
         assert!(result.is_err(), "reset should fail when server returns 500");
         let _ = handle.join();
     }
+
+    #[test]
+    fn list_mocks_gets_correct_endpoint_and_parses_response() {
+        let body = r#"[{"id":"m1","request":{"method":"GET","path":"/ping"},"response":{"status":200,"body":"ok"}}]"#;
+        let (api_port, handle) = start_fake_server_with_body(200, body);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let mocks = server.list_mocks().expect("list_mocks");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "GET /api/mocks/http HTTP/1.1");
+        assert_eq!(mocks[0].id, "m1");
+    }
+
+    #[test]
+    fn list_mocks_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.list_mocks().is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn update_mock_puts_to_correct_endpoint_and_parses_response() {
+        let body = r#"{"id":"m1","request":{"method":"GET","path":"/ping"},"response":{"status":201,"body":"updated"}}"#;
+        let (api_port, handle) = start_fake_server_with_body(200, body);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let mock = server.update_mock("m1", &sample_mock("m1")).expect("update_mock");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "PUT /api/mocks/http/m1 HTTP/1.1");
+        assert_eq!(mock.response.status, 201);
+    }
+
+    #[test]
+    fn update_mock_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.update_mock("m1", &sample_mock("m1")).is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn patch_mock_patches_correct_endpoint_and_parses_response() {
+        let body = r#"{"id":"m1","request":{"method":"GET","path":"/ping"},"response":{"status":201,"body":"patched"}}"#;
+        let (api_port, handle) = start_fake_server_with_body(200, body);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let patch = MockResponsePatch { status: Some(201), body: Some("patched".to_string()), headers: None, delay: None };
+        let mock = server.patch_mock("m1", &patch).expect("patch_mock");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "PATCH /api/mocks/http/m1 HTTP/1.1");
+        assert_eq!(mock.response.body.as_deref(), Some("patched"));
+    }
+
+    #[test]
+    fn patch_mock_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let patch = MockResponsePatch { status: Some(201), body: None, headers: None, delay: None };
+        assert!(server.patch_mock("m1", &patch).is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn get_state_gets_correct_endpoint_and_parses_response() {
+        let (api_port, handle) = start_fake_server_with_body(200, r#"{"key1":"val1"}"#);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let state = server.get_state().expect("get_state");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "GET /api/state HTTP/1.1");
+        assert_eq!(state.get("key1").map(String::as_str), Some("val1"));
+    }
+
+    #[test]
+    fn get_state_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.get_state().is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn set_state_posts_to_correct_endpoint_and_parses_response() {
+        let (api_port, handle) = start_fake_server_with_body(200, r#"{"key1":"val1"}"#);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let mut state = HashMap::new();
+        state.insert("key1".to_string(), "val1".to_string());
+        let updated = server.set_state(&state).expect("set_state");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "POST /api/state HTTP/1.1");
+        assert_eq!(updated.get("key1").map(String::as_str), Some("val1"));
+    }
+
+    #[test]
+    fn set_state_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let mut state = HashMap::new();
+        state.insert("key1".to_string(), "val1".to_string());
+        assert!(server.set_state(&state).is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn delete_state_deletes_correct_endpoint() {
+        let (api_port, handle) = start_fake_server(200);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.delete_state("key1").is_ok());
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "DELETE /api/state/key1 HTTP/1.1");
+    }
+
+    #[test]
+    fn delete_state_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.delete_state("key1").is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn get_logs_gets_correct_endpoint_and_parses_response() {
+        let body = format!("[{}]", sample_call_entry_json());
+        let leaked: &'static str = Box::leak(body.into_boxed_str());
+        let (api_port, handle) = start_fake_server_with_body(200, leaked);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let logs = server.get_logs(Some("m1")).expect("get_logs");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "GET /api/logs?matched_id=m1 HTTP/1.1");
+        assert_eq!(logs[0].matched_id.as_deref(), Some("m1"));
+    }
+
+    #[test]
+    fn get_logs_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.get_logs(None).is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn clear_logs_deletes_correct_endpoint() {
+        let (api_port, handle) = start_fake_server(200);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.clear_logs().is_ok());
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "DELETE /api/logs HTTP/1.1");
+    }
+
+    #[test]
+    fn clear_logs_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.clear_logs().is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn get_logs_count_gets_correct_endpoint_and_parses_response() {
+        let (api_port, handle) = start_fake_server_with_body(200, r#"{"count":5}"#);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let count = server.get_logs_count(Some("m1")).expect("get_logs_count");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "GET /api/logs/count?matched_id=m1 HTTP/1.1");
+        assert_eq!(count, 5);
+    }
+
+    #[test]
+    fn get_logs_count_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.get_logs_count(None).is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn list_scenarios_gets_correct_endpoint_and_parses_response() {
+        let (api_port, handle) = start_fake_server_with_body(200, r#"[{"id":"s1","name":"Test","patches":[]}]"#);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let scenarios = server.list_scenarios().expect("list_scenarios");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "GET /api/scenarios HTTP/1.1");
+        assert_eq!(scenarios[0].id, "s1");
+    }
+
+    #[test]
+    fn list_scenarios_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.list_scenarios().is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn create_scenario_posts_to_correct_endpoint_and_parses_response() {
+        let (api_port, handle) = start_fake_server_with_body(201, r#"{"id":"s1","name":"Test","patches":[]}"#);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let scenario = server.create_scenario(&sample_scenario("Test")).expect("create_scenario");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "POST /api/scenarios HTTP/1.1");
+        assert_eq!(scenario.name, "Test");
+    }
+
+    #[test]
+    fn create_scenario_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.create_scenario(&sample_scenario("Test")).is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn get_scenario_gets_correct_endpoint_and_parses_response() {
+        let (api_port, handle) = start_fake_server_with_body(200, r#"{"id":"s1","name":"Test","patches":[]}"#);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let scenario = server.get_scenario("s1").expect("get_scenario");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "GET /api/scenarios/s1 HTTP/1.1");
+        assert_eq!(scenario.id, "s1");
+    }
+
+    #[test]
+    fn get_scenario_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.get_scenario("s1").is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn update_scenario_puts_to_correct_endpoint_and_parses_response() {
+        let (api_port, handle) = start_fake_server_with_body(200, r#"{"id":"s1","name":"Updated","patches":[]}"#);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let scenario = server.update_scenario("s1", &sample_scenario("Updated")).expect("update_scenario");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "PUT /api/scenarios/s1 HTTP/1.1");
+        assert_eq!(scenario.name, "Updated");
+    }
+
+    #[test]
+    fn update_scenario_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.update_scenario("s1", &sample_scenario("Updated")).is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn delete_scenario_deletes_correct_endpoint() {
+        let (api_port, handle) = start_fake_server(200);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.delete_scenario("s1").is_ok());
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "DELETE /api/scenarios/s1 HTTP/1.1");
+    }
+
+    #[test]
+    fn delete_scenario_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.delete_scenario("s1").is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn list_active_scenarios_gets_correct_endpoint_and_parses_response() {
+        let body = r#"{"active":["s1"],"scenarios":[{"id":"s1","name":"Test","patches":[]}]}"#;
+        let (api_port, handle) = start_fake_server_with_body(200, body);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let active = server.list_active_scenarios().expect("list_active_scenarios");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "GET /api/scenarios/active HTTP/1.1");
+        assert_eq!(active.active[0], "s1");
+        assert_eq!(active.scenarios[0].id, "s1");
+    }
+
+    #[test]
+    fn list_active_scenarios_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.list_active_scenarios().is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn get_calls_gets_correct_endpoint_and_parses_response() {
+        let body = format!(r#"{{"mock_id":"m1","count":2,"calls":[{}]}}"#, sample_call_entry_json());
+        let leaked: &'static str = Box::leak(body.into_boxed_str());
+        let (api_port, handle) = start_fake_server_with_body(200, leaked);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let summary = server.get_calls("m1").expect("get_calls");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "GET /api/calls/http/m1 HTTP/1.1");
+        assert_eq!(summary.count, 2);
+        assert_eq!(summary.calls[0].id, "c1");
+    }
+
+    #[test]
+    fn get_calls_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.get_calls("m1").is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn clear_calls_deletes_correct_endpoint() {
+        let (api_port, handle) = start_fake_server(200);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.clear_calls("m1").is_ok());
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "DELETE /api/calls/http/m1 HTTP/1.1");
+    }
+
+    #[test]
+    fn clear_calls_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.clear_calls("m1").is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn clear_all_calls_deletes_correct_endpoint() {
+        let (api_port, handle) = start_fake_server(200);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.clear_all_calls().is_ok());
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "DELETE /api/calls/http HTTP/1.1");
+    }
+
+    #[test]
+    fn clear_all_calls_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server(500);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.clear_all_calls().is_err());
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn wait_for_calls_posts_to_correct_endpoint_and_parses_response() {
+        let body = format!(r#"{{"mock_id":"m1","count":2,"calls":[{}]}}"#, sample_call_entry_json());
+        let leaked: &'static str = Box::leak(body.into_boxed_str());
+        let (api_port, handle) = start_fake_server_with_body(200, leaked);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        let summary = server.wait_for_calls("m1", 2, 5).expect("wait_for_calls");
+        let first_line = handle.join().unwrap();
+        assert_eq!(first_line, "POST /api/calls/http/m1/wait HTTP/1.1");
+        assert_eq!(summary.count, 2);
+        assert_eq!(summary.calls[0].id, "c1");
+    }
+
+    #[test]
+    fn wait_for_calls_errors_on_unexpected_status() {
+        let (api_port, handle) = start_fake_server_with_body(408, r#"{"error":"timeout"}"#);
+        let server = server_helpers::new_server_for_test(0, api_port);
+        assert!(server.wait_for_calls("m1", 2, 5).is_err());
+        let _ = handle.join();
+    }
+
 }

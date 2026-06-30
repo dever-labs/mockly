@@ -1574,3 +1574,52 @@ func buildNTLMType3Token() string {
 	msg[8] = 0x03 // MessageType = 3
 	return base64.StdEncoding.EncodeToString(msg)
 }
+
+func TestHTTPServer_NTLMDoesNotHijackBearerRequests(t *testing.T) {
+	// An NTLM mock and a Bearer mock on the same path must not interfere.
+	// A request with a valid Bearer token must reach the Bearer mock, not get
+	// hijacked by the NTLM pre-flight handler.
+	mocks := []config.HTTPMock{
+		{
+			ID: "ntlm-mock",
+			Request: config.HTTPRequest{
+				Method: "GET",
+				Path:   "/api/resource",
+				Auth:   &config.HTTPAuth{Type: "ntlm"},
+			},
+			Response: config.HTTPResponse{Status: 200, Body: `{"auth":"ntlm"}`},
+		},
+		{
+			ID: "bearer-mock",
+			Request: config.HTTPRequest{
+				Method: "GET",
+				Path:   "/api/resource",
+				Auth:   &config.HTTPAuth{Type: "bearer", Token: "mytoken"},
+			},
+			Response: config.HTTPResponse{Status: 200, Body: `{"auth":"bearer"}`},
+		},
+		{
+			ID:       "unauth-mock",
+			Request:  config.HTTPRequest{Method: "GET", Path: "/api/resource"},
+			Response: config.HTTPResponse{Status: 401, Body: `{"error":"unauthorized"}`},
+		},
+	}
+	base := startTestServer(t, mocks, nil)
+	client := &http.Client{}
+
+	// Bearer request must reach the bearer mock, not get an NTLM 401.
+	req, _ := http.NewRequest("GET", base+"/api/resource", nil)
+	req.Header.Set("Authorization", "Bearer mytoken")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 for bearer request, got %d (body: %s)", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"bearer"`) {
+		t.Errorf("expected bearer mock response, got: %s", body)
+	}
+}

@@ -414,7 +414,7 @@ func matchBearerAuth(wantToken string, headers map[string]string) bool {
 	if wantToken == "" || wantToken == "*" {
 		return token != ""
 	}
-	return matchPattern(wantToken, token)
+	return matchAuthValue(wantToken, token)
 }
 
 // matchBasicAuth decodes the Basic Authorization header and compares the
@@ -460,7 +460,22 @@ func matchAPIKey(headerName, queryName, wantValue string, headers map[string]str
 	if wantValue == "" || wantValue == "*" {
 		return got != ""
 	}
-	return matchPattern(wantValue, got)
+	return matchAuthValue(wantValue, got)
+}
+
+// matchAuthValue matches a token/key value against a configured pattern.
+// Unlike matchPattern, plain strings are compared with exact equality — not as
+// substrings — so a configured value of "secret" only matches the literal string
+// "secret", not "my-secret-token". Regex ("re:…") patterns are still supported.
+func matchAuthValue(pattern, value string) bool {
+	if strings.HasPrefix(pattern, "re:") {
+		re, err := compiledRegex(strings.TrimPrefix(pattern, "re:"))
+		if err != nil {
+			return false
+		}
+		return re.MatchString(value)
+	}
+	return pattern == value
 }
 
 // authorizationHeader returns the Authorization header value from the request

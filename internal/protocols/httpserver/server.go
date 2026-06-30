@@ -398,6 +398,14 @@ func (s *Server) handleNTLM(w http.ResponseWriter, r *http.Request, mocks []conf
 		authHdr = hdrs["authorization"]
 	}
 
+	// Only intercept when the client is performing NTLM (no auth, or an NTLM
+	// token). If the client sends a different scheme (Bearer, Basic, API key),
+	// return false so the normal mock-matching pipeline can handle it — the
+	// NTLM mock will simply not match via matchAuth.
+	if authHdr != "" && !strings.HasPrefix(authHdr, "NTLM ") {
+		return false
+	}
+
 	tokenType := NTLMTokenType(authHdr)
 	switch tokenType {
 	case 1:

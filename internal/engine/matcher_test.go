@@ -1107,3 +1107,52 @@ func TestHTTPMatch_AuthFallback(t *testing.T) {
 		t.Fatalf("expected 401 fallback, got ok=%v status=%d", ok, result.Status)
 	}
 }
+
+func TestHTTPMatch_BearerAuth_ExactNotSubstring(t *testing.T) {
+	// "secret" must NOT match a token that merely contains "secret" as a substring.
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/secure",
+			Auth:   &config.HTTPAuth{Type: "bearer", Token: "secret"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	superstring := map[string]string{"Authorization": "Bearer notsecrettoken"}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/secure", nil, superstring, "", nil)
+	if ok {
+		t.Fatal("bearer match must be exact, not substring")
+	}
+
+	exact := map[string]string{"Authorization": "Bearer secret"}
+	_, ok = engine.HTTPMatch(mocks, "GET", "/secure", nil, exact, "", nil)
+	if !ok {
+		t.Fatal("exact bearer token should match")
+	}
+}
+
+func TestHTTPMatch_APIKey_ExactNotSubstring(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "m",
+		Request: config.HTTPRequest{
+			Method: "GET",
+			Path:   "/data",
+			Auth:   &config.HTTPAuth{Type: "api_key", Header: "X-API-Key", Value: "key-abc"},
+		},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	superstring := map[string]string{"X-API-Key": "bad-key-abc-extra"}
+	_, ok := engine.HTTPMatch(mocks, "GET", "/data", nil, superstring, "", nil)
+	if ok {
+		t.Fatal("api_key match must be exact, not substring")
+	}
+
+	exact := map[string]string{"X-API-Key": "key-abc"}
+	_, ok = engine.HTTPMatch(mocks, "GET", "/data", nil, exact, "", nil)
+	if !ok {
+		t.Fatal("exact api key should match")
+	}
+}

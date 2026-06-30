@@ -82,7 +82,7 @@ fn test_get_users() {
 | `server.reset()` | `POST /api/reset` |
 | `server.activate_scenario(id)` | `POST /api/scenarios/{id}/activate` |
 | `server.deactivate_scenario(id)` | `POST /api/scenarios/{id}/deactivate` |
-| `server.set_fault(&config)` | `POST /api/fault` |
+| `server.set_fault(&config)` | `POST /api/fault/http` |
 | `server.clear_fault()` | `DELETE /api/fault` |
 
 `MocklyServer` also implements `Drop`, so the process is killed automatically when it goes out of scope.

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- `set_fault` now correctly calls `POST /api/fault/http` (protocol-scoped endpoint); the old `/api/fault` path does not accept POST.
+- `clear_fault` correctly handles the server's `204 No Content` response.
+
 ## [v0.12.0] - 2026-06-30
 
 ### Added

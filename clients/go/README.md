@@ -85,8 +85,8 @@ Or download it manually from the [releases page](https://github.com/dever-labs/m
 | `Reset() error` | `POST /api/reset` — remove all dynamic mocks, deactivate scenarios, clear faults (200). |
 | `ActivateScenario(id string) error` | `POST /api/scenarios/{id}/activate` (200). |
 | `DeactivateScenario(id string) error` | `POST /api/scenarios/{id}/deactivate` (200). |
-| `SetFault(cfg FaultConfig) error` | `POST /api/fault` — enable fault injection (200). |
-| `ClearFault() error` | `DELETE /api/fault` — disable fault injection (200). |
+| `SetFault(cfg FaultConfig) error` | `POST /api/fault/http` — enable fault injection (200). |
+| `ClearFault() error` | `DELETE /api/fault` — disable fault injection (204). |
 
 ### `Server` fields
 

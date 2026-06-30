@@ -110,7 +110,7 @@ MocklyConfig config = MocklyConfig.builder()
 | `server.reset()` | Reset all mocks (`POST /api/reset`). |
 | `server.activateScenario(id)` | Activate a scenario (`POST /api/scenarios/{id}/activate`). |
 | `server.deactivateScenario(id)` | Deactivate a scenario. |
-| `server.setFault(config)` | Inject a network fault (`POST /api/fault`). |
+| `server.setFault(config)` | Inject a network fault (`POST /api/fault/http`). |
 | `server.clearFault()` | Clear the active fault (`DELETE /api/fault`). |
 
 Public fields on the server instance:

@@ -4,6 +4,13 @@ All notable changes to `mockly-driver` will be documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `set_fault` now correctly calls `POST /api/fault/http` (protocol-scoped endpoint); the old `/api/fault` path does not accept POST.
+- `clear_fault` correctly handles the server's `204 No Content` response.
+
 ## [v0.12.0] - 2026-06-30
 
 ### Added

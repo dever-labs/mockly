@@ -67,7 +67,7 @@ await server.AddMockAsync(new Mock("ping", new MockRequest("GET", "/ping"), new 
 | `server.ResetAsync()` | Clear all mocks and state (`POST /api/reset`) |
 | `server.ActivateScenarioAsync(id)` | Activate a scenario (`POST /api/scenarios/{id}/activate`) |
 | `server.DeactivateScenarioAsync(id)` | Deactivate a scenario |
-| `server.SetFaultAsync(config)` | Inject faults (`POST /api/fault`) |
+| `server.SetFaultAsync(config)` | Inject faults (`POST /api/fault/http`) |
 | `server.ClearFaultAsync()` | Remove fault config (`DELETE /api/fault`) |
 | `server.StopAsync()` | Stop and clean up |
 

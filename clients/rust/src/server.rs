@@ -89,7 +89,7 @@ impl MocklyServer {
             .client
             .delete(format!("{}/api/mocks/http/{}", self.api_base, id))
             .send()?;
-        check_status(resp, 204, "delete_mock")
+        check_status(resp, 200, "delete_mock")
     }
 
     pub fn get_state(&self) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {

@@ -213,7 +213,7 @@ class MocklyServer:
         return _parse_mock(data)
 
     def delete_mock(self, mock_id: str) -> None:
-        self._request("DELETE", f"/api/mocks/http/{mock_id}", expected=(204,))
+        self._request("DELETE", f"/api/mocks/http/{urllib.parse.quote(mock_id, safe='')}", expected=(200,))
 
     def get_state(self) -> dict[str, str]:
         return json.loads(self._request("GET", "/api/state", expected=(200,)))
@@ -290,24 +290,31 @@ class MocklyServer:
         self._request("DELETE", "/api/fault", expected=(200,))
 
     def get_calls(self, mock_id: str) -> CallSummary:
-        data = json.loads(self._request("GET", f"/api/calls/http/{mock_id}", expected=(200,)))
+        data = json.loads(self._request("GET", f"/api/calls/http/{urllib.parse.quote(mock_id, safe='')}", expected=(200,)))
         return _parse_call_summary(data)
 
     def clear_calls(self, mock_id: str) -> None:
-        self._request("DELETE", f"/api/calls/http/{mock_id}", expected=(200,))
+        self._request("DELETE", f"/api/calls/http/{urllib.parse.quote(mock_id, safe='')}", expected=(200,))
 
     def clear_all_calls(self) -> None:
         self._request("DELETE", "/api/calls/http", expected=(200,))
 
     def wait_for_calls(self, mock_id: str, count: int = 1, timeout_seconds: int = 10) -> CallSummary:
         body = {"count": count, "timeout": f"{timeout_seconds}s"}
-        data = json.loads(self._request("POST", f"/api/calls/http/{mock_id}/wait", body, expected=(200, 408)))
-        if data.get("error"):
-            raise RuntimeError(
-                f"wait_for_calls: timeout waiting for {count} call(s) on '{mock_id}': "
-                f"got {data.get('got', 0)}"
+        try:
+            raw = self._request(
+                "POST",
+                f"/api/calls/http/{urllib.parse.quote(mock_id, safe='')}/wait",
+                body,
+                expected=(200,),
             )
-        return _parse_call_summary(data)
+        except RuntimeError as exc:
+            if "408" in str(exc):
+                raise RuntimeError(
+                    f"wait_for_calls: timeout waiting for {count} call(s) on '{mock_id}'"
+                ) from exc
+            raise
+        return _parse_call_summary(json.loads(raw))
 
     def _wait_ready(self, max_ms: int = 10000) -> None:
         url = f"{self.api_base}/api/protocols"

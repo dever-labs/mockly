@@ -203,7 +203,7 @@ public sealed class MocklyServer : IAsyncDisposable
     public Task<CallSummary> WaitForCallsAsync(string mockId, int count = 1, TimeSpan? timeout = null)
     {
         var t = timeout ?? TimeSpan.FromSeconds(10);
-        var body = new { count, timeout = $"{(int)t.TotalSeconds}s" };
+        var body = new { count, timeout = $"{(long)t.TotalMilliseconds}ms" };
         return PostAndReadAsync<CallSummary>($"/api/calls/http/{Uri.EscapeDataString(mockId)}/wait", body);
     }
 

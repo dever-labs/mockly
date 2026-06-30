@@ -158,7 +158,7 @@ func (s *Server) DeleteMock(id string) error {
 		return err
 	}
 	defer resp.Body.Close() //nolint:errcheck
-	if resp.StatusCode != http.StatusNoContent {
+	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("DeleteMock: unexpected status %d: %s", resp.StatusCode, body)
 	}

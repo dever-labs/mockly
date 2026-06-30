@@ -132,7 +132,7 @@ public class MocklyServer implements AutoCloseable {
 
     public void deleteMock(String id) throws IOException, InterruptedException {
         HttpResponse<String> resp = delete("/api/mocks/http/" + id);
-        if (resp.statusCode() != 204) {
+        if (resp.statusCode() != 200) {
             throw new IOException("deleteMock failed: HTTP " + resp.statusCode() + " — " + resp.body());
         }
     }
@@ -297,7 +297,7 @@ public class MocklyServer implements AutoCloseable {
 
     public CallSummary waitForCalls(String mockId, int count, Duration timeout)
             throws IOException, InterruptedException {
-        String json = "{\"count\":" + count + ",\"timeout\":\"" + timeout.getSeconds() + "s\"}";
+        String json = "{\"count\":" + count + ",\"timeout\":\"" + timeout.toMillis() + "ms\"}";
         HttpResponse<String> resp = post("/api/calls/http/" + mockId + "/wait", json);
         if (resp.statusCode() == 408) {
             throw new IOException("waitForCalls: timeout waiting for " + count
@@ -1000,8 +1000,15 @@ public class MocklyServer implements AutoCloseable {
         boolean inString = false;
         for (int i = openIdx; i < s.length(); i++) {
             char ch = s.charAt(i);
-            if (ch == '"' && (i == 0 || s.charAt(i - 1) != '\\')) {
-                inString = !inString;
+            if (ch == '"') {
+                // Count consecutive preceding backslashes; an even count means the
+                // quote is not escaped (the backslashes escape each other).
+                int backslashes = 0;
+                int j = i - 1;
+                while (j >= openIdx && s.charAt(j) == '\\') { backslashes++; j--; }
+                if (backslashes % 2 == 0) {
+                    inString = !inString;
+                }
             }
             if (inString) continue;
             if (ch == open) depth++;

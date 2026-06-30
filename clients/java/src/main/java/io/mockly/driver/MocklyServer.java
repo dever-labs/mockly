@@ -585,8 +585,8 @@ public class MocklyServer implements AutoCloseable {
         if (fault.getDelay() != null) {
             sb.append(",\"delay\":").append(jsonString(fault.getDelay()));
         }
-        if (fault.getStatusOverride() != null) {
-            sb.append(",\"status_override\":").append(fault.getStatusOverride());
+        if (fault.getStatus() != null) {
+            sb.append(",\"status\":").append(fault.getStatus());
         }
         if (fault.getErrorRate() != null) {
             sb.append(",\"error_rate\":").append(fault.getErrorRate());

@@ -80,7 +80,7 @@ type ActiveScenariosResponse struct {
 type FaultConfig struct {
 	Enabled        bool    `json:"enabled"`
 	Delay          string  `json:"delay,omitempty"`
-	StatusOverride *int    `json:"status_override,omitempty"`
+	Status    *int    `json:"status,omitempty"`
 	ErrorRate      float64 `json:"error_rate,omitempty"` // 0.0–1.0
 }
 

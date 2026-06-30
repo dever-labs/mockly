@@ -431,8 +431,8 @@ func (s *Server) SetFault(cfg FaultConfig) error {
 	if cfg.Delay != "" {
 		payload["delay"] = cfg.Delay
 	}
-	if cfg.StatusOverride != nil {
-		payload["status"] = *cfg.StatusOverride
+	if cfg.Status != nil {
+		payload["status"] = *cfg.Status
 	}
 	if cfg.ErrorRate != 0 {
 		payload["error_rate"] = cfg.ErrorRate

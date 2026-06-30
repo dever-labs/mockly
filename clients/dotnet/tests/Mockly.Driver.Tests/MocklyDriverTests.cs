@@ -164,7 +164,7 @@ public class MocklyDriverTests
 
         Assert.Contains("\"enabled\":true", json);
         Assert.Contains("\"delay\":\"200ms\"", json);
-        Assert.Contains("\"status_override\":503", json);
+        Assert.Contains("\"status\":503", json);
         Assert.Contains("\"error_rate\":0.5", json);
     }
 

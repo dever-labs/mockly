@@ -222,7 +222,7 @@ use mockly_driver::FaultConfig;
 server.set_fault(&FaultConfig {
     enabled: true,
     delay: Some("500ms".into()),
-    status_override: Some(503),
+    status: Some(503),
     error_rate: Some(0.5), // 50% of requests
 }).unwrap();
 

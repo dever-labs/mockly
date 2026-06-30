@@ -86,7 +86,7 @@ server.deactivate_scenario("slow-api")
 ```python
 from mockly_driver import FaultConfig
 
-server.set_fault(FaultConfig(enabled=True, status_override=503, error_rate=0.5))
+server.set_fault(FaultConfig(enabled=True, status=503, error_rate=0.5))
 # ... run fault-tolerance tests ...
 server.clear_fault()
 ```
@@ -148,7 +148,7 @@ Enables a fault injection policy.
 FaultConfig(
     enabled=True,
     delay="200ms",        # add latency to all responses
-    status_override=503,  # force every response to 503
+    status=503,  # force every response to 503
     error_rate=0.3,       # randomly fail 30% of requests
 )
 ```

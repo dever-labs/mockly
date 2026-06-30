@@ -192,7 +192,7 @@ from mockly_driver import FaultConfig
 server.set_fault(FaultConfig(
     enabled=True,
     delay="500ms",
-    status_override=503,
+    status=503,
     error_rate=0.5,  # 50% of requests
 ))
 

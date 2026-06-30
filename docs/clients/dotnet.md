@@ -214,7 +214,7 @@ await server.SetFaultAsync(new FaultConfig
 {
     Enabled = true,
     Delay = "500ms",
-    StatusOverride = 503,
+    Status = 503,
     ErrorRate = 0.5f, // 50% of requests
 });
 

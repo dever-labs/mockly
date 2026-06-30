@@ -283,7 +283,7 @@ err = server.ClearLogs()
 server.SetFault(mocklydriver.FaultConfig{
     Enabled:        true,
     Delay:          "500ms",
-    StatusOverride: 503,
+    Status: 503,
     ErrorRate:      0.5, // 50% of requests
 })
 

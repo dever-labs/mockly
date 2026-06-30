@@ -194,7 +194,7 @@ await server.clearLogs()
 await server.setFault({
   enabled: true,
   delay: '500ms',
-  status_override: 503,
+  status: 503,
   error_rate: 0.5, // 50% of requests
 })
 

@@ -168,13 +168,13 @@ mod tests {
         let config = FaultConfig {
             enabled: true,
             delay: Some("100ms".to_string()),
-            status_override: Some(503),
+            status: Some(503),
             error_rate: Some(0.5),
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains("\"enabled\":true"), "json: {}", json);
         assert!(json.contains("\"delay\":\"100ms\""), "json: {}", json);
-        assert!(json.contains("\"status_override\":503"), "json: {}", json);
+        assert!(json.contains("\"status\":503"), "json: {}", json);
         assert!(json.contains("\"error_rate\":0.5"), "json: {}", json);
     }
 
@@ -433,7 +433,7 @@ Content-Length: {}
         let config = FaultConfig {
             enabled: true,
             delay: None,
-            status_override: None,
+            status: None,
             error_rate: None,
         };
         assert!(server.set_fault(&config).is_ok());

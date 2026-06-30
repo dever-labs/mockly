@@ -4,13 +4,13 @@ package io.mockly.driver.model;
 public class FaultConfig {
     private final boolean enabled;
     private final String delay;
-    private final Integer statusOverride;
+    private final Integer status;
     private final Double errorRate;
 
     private FaultConfig(Builder builder) {
         this.enabled = builder.enabled;
         this.delay = builder.delay;
-        this.statusOverride = builder.statusOverride;
+        this.status = builder.status;
         this.errorRate = builder.errorRate;
     }
 
@@ -20,9 +20,9 @@ public class FaultConfig {
      */
     public String getDelay() { return delay; }
     /** HTTP status code to return instead of the matched mock's status. May be null.
-     * @return status override, or {@code null}
+     * @return status, or {@code null}
      */
-    public Integer getStatusOverride() { return statusOverride; }
+    public Integer getStatus() { return status; }
     /** Probability (0.0–1.0) that the fault fires; 0 means always. May be null.
      * @return error rate, or {@code null}
      */
@@ -35,7 +35,7 @@ public class FaultConfig {
     public static class Builder {
         private final boolean enabled;
         private String delay;
-        private Integer statusOverride;
+        private Integer status;
         private Double errorRate;
 
         private Builder(boolean enabled) {
@@ -47,8 +47,8 @@ public class FaultConfig {
             return this;
         }
 
-        public Builder statusOverride(int statusOverride) {
-            this.statusOverride = statusOverride;
+        public Builder status(int status) {
+            this.status = status;
             return this;
         }
 

@@ -208,14 +208,14 @@ class MocklyDriverTest {
     void toJsonFaultConfig() {
         FaultConfig fault = FaultConfig.builder(true)
                 .delay("200ms")
-                .statusOverride(503)
+                .status(503)
                 .errorRate(0.5)
                 .build();
 
         String json = MocklyServer.toJson(fault);
         assertTrue(json.contains("\"enabled\":true"), "JSON should contain enabled:true");
         assertTrue(json.contains("\"delay\":\"200ms\""), "JSON should contain delay");
-        assertTrue(json.contains("\"status_override\":503"), "JSON should contain status_override");
+        assertTrue(json.contains("\"status\":503"), "JSON should contain status");
         assertTrue(json.contains("\"error_rate\":0.5"), "JSON should contain error_rate");
     }
 

@@ -61,7 +61,7 @@ export interface FaultConfig {
   /** Artificial delay added to every request — e.g. `'200ms'` */
   delay?: string
   /** Override the HTTP status of every matched response */
-  status_override?: number
+  status?: number
   /** Probability (0–1) that the override fires; 0 means always */
   error_rate?: number
 }

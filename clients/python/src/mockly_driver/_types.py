@@ -82,5 +82,5 @@ class CallSummary:
 class FaultConfig:
     enabled: bool
     delay: Optional[str] = None        # e.g. "200ms"
-    status_override: Optional[int] = None
+    status: Optional[int] = None
     error_rate: Optional[float] = None  # 0.0–1.0

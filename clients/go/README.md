@@ -122,7 +122,7 @@ type MockResponse struct {
 type FaultConfig struct {
     Enabled        bool
     Delay          string
-    StatusOverride *int
+    Status *int
     ErrorRate      float64 // 0.0–1.0
 }
 

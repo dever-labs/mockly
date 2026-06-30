@@ -153,10 +153,10 @@ await server.deactivateScenario('auth-down')
 await server.setFault({ enabled: true, delay: '200ms' })
 
 // Override all responses with 503
-await server.setFault({ enabled: true, status_override: 503 })
+await server.setFault({ enabled: true, status: 503 })
 
 // Randomly fail 30% of requests
-await server.setFault({ enabled: true, status_override: 503, error_rate: 0.3 })
+await server.setFault({ enabled: true, status: 503, error_rate: 0.3 })
 
 await server.clearFault()
 ```

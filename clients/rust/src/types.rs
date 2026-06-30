@@ -106,7 +106,7 @@ pub struct FaultConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delay: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status_override: Option<u16>,
+    pub status: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_rate: Option<f64>,
 }

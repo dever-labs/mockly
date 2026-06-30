@@ -280,8 +280,8 @@ class MocklyServer:
         body: dict = {"enabled": config.enabled}
         if config.delay is not None:
             body["delay"] = config.delay
-        if config.status_override is not None:
-            body["status_override"] = config.status_override
+        if config.status is not None:
+            body["status"] = config.status
         if config.error_rate is not None:
             body["error_rate"] = config.error_rate
         self._request("POST", "/api/fault/http", body, expected=(200,))

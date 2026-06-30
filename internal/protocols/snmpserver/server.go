@@ -133,11 +133,13 @@ func (s *Server) Start(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			current.Shutdown()
+			<-errCh // wait for ServeForever to exit before returning
 			return nil
 		case <-restartCh:
 			// SetMocks triggered a rebuild. Shut down the running server so
 			// it releases the UDP port before buildAndListen re-binds it.
 			current.Shutdown()
+			<-errCh // wait for ServeForever to exit before re-binding the port
 			continue
 		case err := <-errCh:
 			// If a restart was requested at the same time ServeForever returned,

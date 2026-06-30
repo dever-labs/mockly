@@ -36,7 +36,7 @@
 | Feature | Details |
 |---|---|
 | **Protocols** | HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, SIP |
-| **Request matching** | Method + path (exact / wildcard / named params / regex), headers, query params, JSON body fields |
+| **Request matching** | Method + path (exact / wildcard / named params / regex), headers (with `re:` pattern support), query params, JSON body fields, authentication |
 | **Response sequences** | Return a different response on each successive call — loop, hold last, or 404 when exhausted |
 | **Response control** | Status code, headers, body, artificial delay |
 | **Template responses** | Go template syntax in response bodies and headers (`{{now}}`, `{{.request.params.id}}`, `{{.request.body.foo}}`, etc.) |
@@ -47,7 +47,7 @@
 | **Call verification** | Track how many times each mock was hit; block until an expected count is reached |
 | **Log filtering** | Filter logs and log counts by matched mock ID via `/api/logs` and `/api/logs/count` |
 | **PATCH mocks** | Change only specific response fields at runtime without replacing the whole mock |
-| **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid |
+| **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid, NTLM |
 | **Web UI** | Served from the binary itself — no separate install |
 | **Management API** | 40+ REST endpoints covering all protocols, scenarios, fault, state, logs, and call counts |
 | **Live request log** | SSE-streamed in real time to the UI |
@@ -314,7 +314,7 @@ response:
 
 ### HTTP
 
-Full HTTP mock server. Matching on method + path (exact/wildcard/named params/regex), optional query params, header match, JSON body field match, and state condition.
+Full HTTP mock server. Matching on method + path (exact/wildcard/named params/regex), optional query params, header match (with `re:` / `*` pattern support), JSON body field match, authentication, and state condition.
 
 ```yaml
 protocols:
@@ -413,6 +413,99 @@ Every HTTP mock can have its own `fault:` block — independently of protocol-le
         response:
           status: 200
           body: '[]'
+```
+
+#### Authentication matching
+
+Use the `auth:` block to require valid credentials before a mock is considered a match. When auth fails the mock is skipped — add a fallback mock (without `auth`) to return your preferred 401 response.
+
+Header values everywhere also support `re:` regex patterns and `*` wildcard, making it easy to match any bearer token without an `auth:` block if you prefer.
+
+**Bearer token**
+
+```yaml
+      - id: secure-endpoint
+        request:
+          method: GET
+          path: /api/data
+          auth:
+            type: bearer
+            token: "my-secret-token"  # exact | "re:^ey[A-Za-z0-9]" regex | "*" (any token)
+        response:
+          status: 200
+          body: '{"data":"sensitive"}'
+
+      - id: secure-endpoint-unauth        # fallback for missing/wrong token
+        request:
+          method: GET
+          path: /api/data
+        response:
+          status: 401
+          headers:
+            WWW-Authenticate: 'Bearer realm="api"'
+          body: '{"error":"unauthorized"}'
+```
+
+**Basic auth**
+
+```yaml
+      - id: admin-page
+        request:
+          method: GET
+          path: /admin
+          auth:
+            type: basic
+            username: admin
+            password: s3cret     # Mockly decodes the Base64 header internally
+        response:
+          status: 200
+```
+
+**API key** (header or query parameter)
+
+```yaml
+      - id: weather
+        request:
+          method: GET
+          path: /weather
+          auth:
+            type: api_key
+            header: X-API-Key    # or: query: api_key
+            value: "key-abc123"  # exact | "re:…" | "*"
+        response:
+          status: 200
+```
+
+**NTLM** (Windows-integrated auth)
+
+Mockly drives the full 3-step NTLM challenge/response handshake automatically. Any well-formed token sequence is accepted — no credential validation.
+
+```yaml
+      - id: windows-endpoint
+        request:
+          method: GET
+          path: /api/windows
+          auth:
+            type: ntlm
+        response:
+          status: 200
+          body: '{"authenticated":true}'
+```
+
+The handshake sequence:
+1. No `Authorization` header → `401 Unauthorized` + `WWW-Authenticate: NTLM`
+2. `Authorization: NTLM <type-1 Negotiate>` → `401 Unauthorized` + `WWW-Authenticate: NTLM <type-2 Challenge>`
+3. `Authorization: NTLM <type-3 Authenticate>` → mock's configured response
+
+See `configs/presets/ntlm.yaml` for a complete working example.
+
+**Digest**
+
+Requires an `Authorization: Digest …` header to be present (no nonce validation):
+
+```yaml
+          auth:
+            type: digest
 ```
 
 ### WebSocket
@@ -1131,6 +1224,7 @@ Mockly ships with pre-built YAML configs for common services:
 | `keycloak` | Token endpoint, JWKS, userinfo, introspection |
 | `authelia` | Auth verify, session endpoints |
 | `oauth2` | Generic OAuth2 flows (authorize, token, revoke) |
+| `ntlm` | Windows NTLM authentication — full 3-step handshake example |
 | `github` | REST API: repos, issues, pull requests |
 | `stripe` | Charges, refunds, customers, payment intents |
 | `openai` | Chat completions, embeddings, models |

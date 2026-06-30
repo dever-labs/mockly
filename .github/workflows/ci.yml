@@ -430,7 +430,7 @@ jobs:
           MAVEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: mvn -B deploy -Prelease -f clients/java/pom.xml -DskipTests -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}"
+        run: mvn -B deploy -Prelease -f clients/java/pom.xml -DskipTests
 
       - name: Set testcontainers version
         run: |
@@ -444,7 +444,7 @@ jobs:
           MAVEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: mvn -B deploy -Prelease -f clients/java/testcontainers/pom.xml -DskipTests -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}"
+        run: mvn -B deploy -Prelease -f clients/java/testcontainers/pom.xml -DskipTests
 
   rust-publish:
     name: Publish crates.io

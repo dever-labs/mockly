@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.12.0] - 2026-06-30
+
+### Added
+
+- `list_mocks()`, `update_mock(mock_id, mock)`, and `patch_mock(mock_id, patch)` for listing and updating HTTP mocks.
+- `get_calls(mock_id)`, `clear_calls(mock_id)`, `clear_all_calls()`, and `wait_for_calls(mock_id, count, timeout_seconds)` for recorded-call inspection and polling.
+- `get_state()`, `set_state(kv_map)`, and `delete_state(key)` for server state management.
+- `get_logs(matched_id=None)`, `clear_logs()`, and `get_logs_count(matched_id=None)` for log retrieval and cleanup.
+- `list_scenarios()`, `create_scenario(scenario)`, `get_scenario(scenario_id)`, `update_scenario(scenario_id, scenario)`, `delete_scenario(scenario_id)`, and `list_active_scenarios()` for scenario CRUD and active-scenario inspection.
+- New dataclasses: `CallEntry`, `CallSummary`, `MockResponsePatch`, and `ActiveScenariosResponse`.
+
+### Fixed
+
+- `delete_mock(mock_id)` now correctly handles the management API's HTTP 200 response.
+
 ## [0.1.0] - 2024-01-01
 
 ### Added

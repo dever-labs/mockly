@@ -83,37 +83,134 @@ let mut server = MocklyServer::ensure(
 ### Mocks
 
 ```rust
-use mockly_driver::{Mock, Request, Response};
+use mockly_driver::{Mock, MockRequest, MockResponse, MockResponsePatch};
 use std::collections::HashMap;
 
 // Add a mock
 server.add_mock(&Mock {
     id: "get-orders".into(),
-    request: Request {
+    request: MockRequest {
         method: "GET".into(),
         path: "/orders".into(),
-        headers: [("Authorization".into(), "Bearer *".into())].into(),
+        headers: HashMap::from([("Authorization".into(), "Bearer *".into())]),
     },
-    response: Response {
+    response: MockResponse {
         status: 200,
         body: Some(r#"[{"id":1}]"#.into()),
-        headers: [("Content-Type".into(), "application/json".into())].into(),
+        headers: HashMap::from([("Content-Type".into(), "application/json".into())]),
         delay: Some("100ms".into()),
     },
-}).unwrap();
+})?;
+
+// Inspect the currently registered mocks
+let mocks = server.list_mocks()?;
+
+// Replace a mock definition
+let updated = server.update_mock("get-orders", &Mock {
+    id: "get-orders".into(),
+    request: MockRequest {
+        method: "GET".into(),
+        path: "/orders".into(),
+        headers: HashMap::new(),
+    },
+    response: MockResponse {
+        status: 200,
+        body: Some(r#"[{"id":1},{"id":2}]"#.into()),
+        headers: HashMap::from([("Content-Type".into(), "application/json".into())]),
+        delay: None,
+    },
+})?;
+
+// Patch only the response fields you want to change
+let patched = server.patch_mock("get-orders", &MockResponsePatch {
+    status: Some(201),
+    body: Some("[]".into()),
+    headers: Some(HashMap::from([("X-Mock-Version".into(), "v2".into())])),
+    delay: Some("250ms".into()),
+})?;
 
 // Remove a mock
-server.delete_mock("get-orders").unwrap();
+server.delete_mock("get-orders")?;
 ```
 
 ### Scenarios
 
 ```rust
-// Activate a pre-configured scenario
-server.activate_scenario("payment-fail").unwrap();
+use mockly_driver::{Scenario, ScenarioPatch};
 
-// Deactivate it
-server.deactivate_scenario("payment-fail").unwrap();
+let created_scenario = server.create_scenario(&Scenario {
+    id: "slow-checkout".into(),
+    name: "Slow checkout".into(),
+    description: Some("Used for retry-path tests".into()),
+    patches: vec![ScenarioPatch {
+        mock_id: "charge".into(),
+        status: Some(503),
+        body: None,
+        headers: None,
+        delay: Some("750ms".into()),
+        disabled: None,
+    }],
+})?;
+
+let scenarios = server.list_scenarios()?;
+let loaded_scenario = server.get_scenario("slow-checkout")?;
+
+let updated_scenario = server.update_scenario("slow-checkout", &Scenario {
+    name: "Slow checkout v2".into(),
+    ..loaded_scenario.clone()
+})?;
+
+// Activate a scenario before exercising your service
+server.activate_scenario("slow-checkout")?;
+let active_scenarios = server.list_active_scenarios()?;
+println!("{:?}", active_scenarios.active);
+
+// Deactivate or delete it when you're done
+server.deactivate_scenario("slow-checkout")?;
+server.delete_scenario("slow-checkout")?;
+```
+
+### Call verification
+
+```rust
+let summary = server.wait_for_calls("get-orders", 2, 5)?;
+assert_eq!(summary.count, 2);
+
+let latest_calls = server.get_calls("get-orders")?;
+println!("{}", latest_calls.calls[0].path);
+
+server.clear_calls("get-orders")?;
+server.clear_all_calls()?;
+```
+
+### State
+
+```rust
+let state = server.get_state()?;
+println!("{:?}", state.get("order-status"));
+
+let updated_state = server.set_state(&HashMap::from([
+    ("order-status".into(), "pending".into()),
+    ("retry-count".into(), "1".into()),
+]))?;
+println!("{:?}", updated_state.get("retry-count"));
+
+server.delete_state("retry-count")?;
+```
+
+### Logs
+
+```rust
+let all_logs = server.get_logs(None)?;
+let matched_logs = server.get_logs(Some("get-orders"))?;
+
+let total_logs = server.get_logs_count(None)?;
+let matched_count = server.get_logs_count(Some("get-orders"))?;
+println!("{} {}", total_logs, matched_count);
+println!("{:?}", all_logs.first().map(|entry| &entry.path));
+println!("{:?}", matched_logs.first().and_then(|entry| entry.matched_id.as_deref()));
+
+server.clear_logs()?;
 ```
 
 ### Fault injection

@@ -76,6 +76,10 @@ MocklyServer server = MocklyServer.ensure(config);
 ### Mocks
 
 ```java
+import io.mockly.driver.model.*;
+import java.util.List;
+import java.util.Map;
+
 // Add a mock
 server.addMock(Mock.builder("get-orders",
     MockRequest.builder("GET", "/orders")
@@ -88,6 +92,26 @@ server.addMock(Mock.builder("get-orders",
         .build()
 ).build());
 
+// Inspect the currently registered mocks
+List<Mock> mocks = server.listMocks();
+
+// Replace a mock definition
+Mock updated = server.updateMock("get-orders", Mock.builder("get-orders",
+    MockRequest.builder("GET", "/orders").build(),
+    MockResponse.builder(200)
+        .body("[{\"id\":1},{\"id\":2}]")
+        .header("Content-Type", "application/json")
+        .build()
+).build());
+
+// Patch only the response fields you want to change
+Mock patched = server.patchMock("get-orders", MockResponsePatch.builder()
+    .status(201)
+    .body("[]")
+    .header("X-Mock-Version", "v2")
+    .delay("250ms")
+    .build());
+
 // Remove a mock
 server.deleteMock("get-orders");
 ```
@@ -95,11 +119,82 @@ server.deleteMock("get-orders");
 ### Scenarios
 
 ```java
-// Activate a pre-configured scenario
-server.activateScenario("payment-fail");
+import io.mockly.driver.model.*;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 
-// Deactivate it
-server.deactivateScenario("payment-fail");
+Scenario createdScenario = server.createScenario(Scenario.builder("slow-checkout", "Slow checkout")
+    .description("Used for retry-path tests")
+    .patch(ScenarioPatch.builder("charge")
+        .status(503)
+        .delay("750ms")
+        .build())
+    .build());
+
+List<Scenario> scenarios = server.listScenarios();
+Scenario loadedScenario = server.getScenario("slow-checkout");
+
+Scenario updatedScenario = server.updateScenario("slow-checkout", Scenario.builder(
+        loadedScenario.getId(),
+        "Slow checkout v2")
+    .description(loadedScenario.getDescription())
+    .patches(loadedScenario.getPatches())
+    .build());
+
+// Activate a scenario before exercising your service
+server.activateScenario("slow-checkout");
+ActiveScenariosResponse activeScenarios = server.listActiveScenarios();
+System.out.println(activeScenarios.getActive());
+
+// Deactivate or delete it when you're done
+server.deactivateScenario("slow-checkout");
+server.deleteScenario("slow-checkout");
+```
+
+### Call verification
+
+```java
+CallSummary summary = server.waitForCalls("get-orders", 2, Duration.ofSeconds(5));
+if (summary.getCount() != 2) {
+    throw new IllegalStateException("Expected 2 calls, got " + summary.getCount());
+}
+
+CallSummary latestCalls = server.getCalls("get-orders");
+System.out.println(latestCalls.getCalls().get(0).getPath());
+
+server.clearCalls("get-orders");
+server.clearAllCalls();
+```
+
+### State
+
+```java
+Map<String, String> state = server.getState();
+System.out.println(state.get("order-status"));
+
+Map<String, String> updatedState = server.setState(Map.of(
+    "order-status", "pending",
+    "retry-count", "1"
+));
+System.out.println(updatedState.get("retry-count"));
+
+server.deleteState("retry-count");
+```
+
+### Logs
+
+```java
+List<CallEntry> allLogs = server.getLogs();
+List<CallEntry> matchedLogs = server.getLogs("get-orders");
+
+int totalLogs = server.getLogsCount();
+int matchedCount = server.getLogsCount("get-orders");
+System.out.println(totalLogs + " total / " + matchedCount + " matched");
+System.out.println(allLogs.isEmpty() ? null : allLogs.get(0).getPath());
+System.out.println(matchedLogs.isEmpty() ? null : matchedLogs.get(0).getMatchedId());
+
+server.clearLogs();
 ```
 
 ### Fault injection

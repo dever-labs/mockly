@@ -4,6 +4,21 @@ All notable changes to the Mockly Go client will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.12.0] — 2026-06-30
+
+### Added
+
+- `Server.ListMocks()`, `Server.UpdateMock(id, mock)`, and `Server.PatchMock(id, patch)` for listing and updating HTTP mocks.
+- `Server.GetCalls(mockID)`, `Server.ClearCalls(mockID)`, `Server.ClearAllCalls()`, and `Server.WaitForCalls(mockID, count, timeoutSeconds)` for recorded-call inspection and polling.
+- `Server.GetState()`, `Server.SetState(state)`, and `Server.DeleteState(key)` for server state management.
+- `Server.GetLogs(matchedID)`, `Server.ClearLogs()`, and `Server.GetLogsCount(matchedID)` for log retrieval and cleanup.
+- `Server.ListScenarios()`, `Server.CreateScenario(scenario)`, `Server.GetScenario(id)`, `Server.UpdateScenario(id, scenario)`, `Server.DeleteScenario(id)`, and `Server.ListActiveScenarios()` for scenario CRUD and active-scenario inspection.
+- New model types: `CallEntry`, `CallSummary`, `MockResponsePatch`, and `ActiveScenariosResponse`.
+
+### Fixed
+
+- `Server.DeleteMock(id)` now correctly handles the management API's HTTP 200 response.
+
 ## [v0.1.0] — 2025-01-01
 
 ### Added

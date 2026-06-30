@@ -82,15 +82,19 @@ server, err := mocklydriver.Ensure(
 ### Mocks
 
 ```go
+statusCreated := 201
+emptyBody := `[]`
+retryDelay := "250ms"
+
 // Add a mock
-server.AddMock(mocklydriver.Mock{
+err = server.AddMock(mocklydriver.Mock{
     ID: "get-orders",
-    Request: mocklydriver.Request{
-        Method: "GET",
-        Path:   "/orders",
+    Request: mocklydriver.MockRequest{
+        Method:  "GET",
+        Path:    "/orders",
         Headers: map[string]string{"Authorization": "Bearer *"},
     },
-    Response: mocklydriver.Response{
+    Response: mocklydriver.MockResponse{
         Status:  200,
         Body:    `[{"id":1}]`,
         Headers: map[string]string{"Content-Type": "application/json"},
@@ -98,18 +102,178 @@ server.AddMock(mocklydriver.Mock{
     },
 })
 
+// Inspect the currently registered mocks
+mocks, err := server.ListMocks()
+if err != nil {
+    t.Fatalf("list mocks: %v", err)
+}
+_ = mocks
+
+// Replace a mock definition
+updated, err := server.UpdateMock("get-orders", mocklydriver.Mock{
+    ID: "get-orders",
+    Request: mocklydriver.MockRequest{Method: "GET", Path: "/orders"},
+    Response: mocklydriver.MockResponse{
+        Status:  200,
+        Body:    `[{"id":1},{"id":2}]`,
+        Headers: map[string]string{"Content-Type": "application/json"},
+    },
+})
+if err != nil {
+    t.Fatalf("update mock: %v", err)
+}
+_ = updated
+
+// Patch only the response fields you want to change
+patched, err := server.PatchMock("get-orders", mocklydriver.MockResponsePatch{
+    Status: &statusCreated,
+    Body:   &emptyBody,
+    Headers: map[string]string{
+        "X-Mock-Version": "v2",
+    },
+    Delay: &retryDelay,
+})
+if err != nil {
+    t.Fatalf("patch mock: %v", err)
+}
+_ = patched
+
 // Remove a mock
-server.DeleteMock("get-orders")
+err = server.DeleteMock("get-orders")
 ```
 
 ### Scenarios
 
 ```go
-// Activate a pre-configured scenario
-server.ActivateScenario("payment-fail")
+scenarioStatus := 503
+scenarioDelay := "750ms"
 
-// Deactivate it
-server.DeactivateScenario("payment-fail")
+createdScenario, err := server.CreateScenario(mocklydriver.Scenario{
+    ID:          "slow-checkout",
+    Name:        "Slow checkout",
+    Description: "Used for retry-path tests",
+    Patches: []mocklydriver.ScenarioPatch{
+        {
+            MockID: "charge",
+            Status: &scenarioStatus,
+            Delay:  &scenarioDelay,
+        },
+    },
+})
+if err != nil {
+    t.Fatalf("create scenario: %v", err)
+}
+_ = createdScenario
+
+scenarios, err := server.ListScenarios()
+if err != nil {
+    t.Fatalf("list scenarios: %v", err)
+}
+_ = scenarios
+
+loadedScenario, err := server.GetScenario("slow-checkout")
+if err != nil {
+    t.Fatalf("get scenario: %v", err)
+}
+
+loadedScenario.Name = "Slow checkout v2"
+updatedScenario, err := server.UpdateScenario("slow-checkout", *loadedScenario)
+if err != nil {
+    t.Fatalf("update scenario: %v", err)
+}
+_ = updatedScenario
+
+// Activate a scenario before exercising your service
+err = server.ActivateScenario("slow-checkout")
+if err != nil {
+    t.Fatalf("activate scenario: %v", err)
+}
+
+activeScenarios, err := server.ListActiveScenarios()
+if err != nil {
+    t.Fatalf("list active scenarios: %v", err)
+}
+_ = activeScenarios.Active
+
+// Deactivate or delete it when you're done
+err = server.DeactivateScenario("slow-checkout")
+if err != nil {
+    t.Fatalf("deactivate scenario: %v", err)
+}
+err = server.DeleteScenario("slow-checkout")
+```
+
+### Call verification
+
+```go
+summary, err := server.WaitForCalls("get-orders", 2, 5)
+if err != nil {
+    t.Fatalf("wait for calls: %v", err)
+}
+if summary.Count != 2 {
+    t.Fatalf("expected 2 calls, got %d", summary.Count)
+}
+
+latestCalls, err := server.GetCalls("get-orders")
+if err != nil {
+    t.Fatalf("get calls: %v", err)
+}
+_ = latestCalls.Calls
+
+err = server.ClearCalls("get-orders")
+if err != nil {
+    t.Fatalf("clear calls: %v", err)
+}
+err = server.ClearAllCalls()
+```
+
+### State
+
+```go
+state, err := server.GetState()
+if err != nil {
+    t.Fatalf("get state: %v", err)
+}
+_ = state["order-status"]
+
+updatedState, err := server.SetState(map[string]string{
+    "order-status": "pending",
+    "retry-count":  "1",
+})
+if err != nil {
+    t.Fatalf("set state: %v", err)
+}
+_ = updatedState["retry-count"]
+
+err = server.DeleteState("retry-count")
+```
+
+### Logs
+
+```go
+allLogs, err := server.GetLogs("")
+if err != nil {
+    t.Fatalf("get logs: %v", err)
+}
+matchedLogs, err := server.GetLogs("get-orders")
+if err != nil {
+    t.Fatalf("get filtered logs: %v", err)
+}
+_ = allLogs
+_ = matchedLogs
+
+totalLogs, err := server.GetLogsCount("")
+if err != nil {
+    t.Fatalf("count logs: %v", err)
+}
+matchedCount, err := server.GetLogsCount("get-orders")
+if err != nil {
+    t.Fatalf("count filtered logs: %v", err)
+}
+_ = totalLogs
+_ = matchedCount
+
+err = server.ClearLogs()
 ```
 
 ### Fault injection

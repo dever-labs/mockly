@@ -75,24 +75,41 @@ var server = await MocklyServer.CreateAsync(new MocklyServerOptions
 ### Mocks
 
 ```csharp
+using System.Collections.Generic;
+using Mockly.Driver.Models;
+
 // Add a mock
-await server.AddMockAsync(new Mock
-{
-    Id = "get-orders",
-    Request = new MockRequest
+await server.AddMockAsync(new Mock(
+    "get-orders",
+    new MockRequest(
+        "GET",
+        "/orders",
+        new Dictionary<string, string> { ["Authorization"] = "Bearer *" }),
+    new MockResponse(
+        200,
+        """[{"id":1}]""",
+        new Dictionary<string, string> { ["Content-Type"] = "application/json" },
+        "100ms")));
+
+// Inspect the currently registered mocks
+var mocks = await server.ListMocksAsync();
+
+// Replace a mock definition
+var updated = await server.UpdateMockAsync("get-orders", new Mock(
+    "get-orders",
+    new MockRequest("GET", "/orders"),
+    new MockResponse(
+        200,
+        """[{"id":1},{"id":2}]""",
+        new Dictionary<string, string> { ["Content-Type"] = "application/json" })));
+
+// Patch only the response fields you want to change
+var patched = await server.PatchMockAsync(
+    "get-orders",
+    new MockResponsePatch(Status: 201, Body: "[]", Headers: new Dictionary<string, string>
     {
-        Method = "GET",
-        Path = "/orders",
-        Headers = new() { ["Authorization"] = "Bearer *" },
-    },
-    Response = new MockResponse
-    {
-        Status = 200,
-        Body = """[{"id":1}]""",
-        Headers = new() { ["Content-Type"] = "application/json" },
-        Delay = "100ms",
-    },
-});
+        ["X-Mock-Version"] = "v2",
+    }, Delay: "250ms"));
 
 // Remove a mock
 await server.DeleteMockAsync("get-orders");
@@ -101,11 +118,92 @@ await server.DeleteMockAsync("get-orders");
 ### Scenarios
 
 ```csharp
-// Activate a pre-configured scenario
-await server.ActivateScenarioAsync("payment-fail");
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Mockly.Driver.Models;
 
-// Deactivate it
-await server.DeactivateScenarioAsync("payment-fail");
+var createdScenario = await server.CreateScenarioAsync(new Scenario(
+    "slow-checkout",
+    "Slow checkout",
+    new[]
+    {
+        new ScenarioPatch("charge", Status: 503, Delay: "750ms"),
+    },
+    "Used for retry-path tests"));
+
+var scenarios = await server.ListScenariosAsync();
+var loadedScenario = await server.GetScenarioAsync("slow-checkout");
+
+var updatedScenario = await server.UpdateScenarioAsync(
+    "slow-checkout",
+    loadedScenario with { Name = "Slow checkout v2" });
+
+// Activate a scenario before exercising your service
+await server.ActivateScenarioAsync("slow-checkout");
+var activeScenarios = await server.ListActiveScenariosAsync();
+Console.WriteLine(string.Join(", ", activeScenarios.Active));
+
+// Deactivate or delete it when you're done
+await server.DeactivateScenarioAsync("slow-checkout");
+await server.DeleteScenarioAsync("slow-checkout");
+```
+
+### Call verification
+
+```csharp
+using System;
+
+var summary = await server.WaitForCallsAsync(
+    "get-orders",
+    count: 2,
+    timeout: TimeSpan.FromSeconds(5));
+
+if (summary.Count != 2)
+{
+    throw new InvalidOperationException($"Expected 2 calls, got {summary.Count}");
+}
+
+var latestCalls = await server.GetCallsAsync("get-orders");
+Console.WriteLine(latestCalls.Calls[0].Path);
+
+await server.ClearCallsAsync("get-orders");
+await server.ClearAllCallsAsync();
+```
+
+### State
+
+```csharp
+using System.Collections.Generic;
+
+var state = await server.GetStateAsync();
+Console.WriteLine(state.GetValueOrDefault("order-status"));
+
+var updatedState = await server.SetStateAsync(new Dictionary<string, string>
+{
+    ["order-status"] = "pending",
+    ["retry-count"] = "1",
+});
+Console.WriteLine(updatedState["retry-count"]);
+
+await server.DeleteStateAsync("retry-count");
+```
+
+### Logs
+
+```csharp
+using System.Linq;
+
+var allLogs = await server.GetLogsAsync();
+var matchedLogs = await server.GetLogsAsync("get-orders");
+
+var totalLogs = await server.GetLogsCountAsync();
+var matchedCount = await server.GetLogsCountAsync("get-orders");
+Console.WriteLine($"{totalLogs} total / {matchedCount} matched");
+Console.WriteLine(allLogs.FirstOrDefault()?.Path);
+Console.WriteLine(matchedLogs.FirstOrDefault()?.MatchedId);
+
+await server.ClearLogsAsync();
 ```
 
 ### Fault injection

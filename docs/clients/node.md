@@ -88,6 +88,28 @@ await server.addMock({
   },
 })
 
+// Inspect the currently registered mocks
+const mocks = await server.listMocks()
+
+// Replace a mock definition
+const updated = await server.updateMock('get-orders', {
+  id: 'get-orders',
+  request: { method: 'GET', path: '/orders' },
+  response: {
+    status: 200,
+    body: '[{"id":1},{"id":2}]',
+    headers: { 'Content-Type': 'application/json' },
+  },
+})
+
+// Patch only the response fields you want to change
+const patched = await server.patchMock('get-orders', {
+  status: 201,
+  body: '[]',
+  headers: { 'X-Mock-Version': 'v2' },
+  delay: '250ms',
+})
+
 // Remove a mock
 await server.deleteMock('get-orders')
 ```
@@ -95,11 +117,74 @@ await server.deleteMock('get-orders')
 ### Scenarios
 
 ```ts
-// Activate a pre-configured scenario
-await server.activateScenario('payment-fail')
+const createdScenario = await server.createScenario({
+  id: 'slow-checkout',
+  name: 'Slow checkout',
+  description: 'Used for retry-path tests',
+  patches: [
+    { mock_id: 'charge', status: 503, delay: '750ms' },
+  ],
+})
 
-// Deactivate it
-await server.deactivateScenario('payment-fail')
+const scenarios = await server.listScenarios()
+const loadedScenario = await server.getScenario('slow-checkout')
+
+const updatedScenario = await server.updateScenario('slow-checkout', {
+  ...loadedScenario,
+  name: 'Slow checkout v2',
+})
+
+// Activate a scenario before exercising your service
+await server.activateScenario('slow-checkout')
+const activeScenarios = await server.listActiveScenarios()
+console.log(activeScenarios.active)
+
+// Deactivate or delete it when you're done
+await server.deactivateScenario('slow-checkout')
+await server.deleteScenario('slow-checkout')
+```
+
+### Call verification
+
+```ts
+const summary = await server.waitForCalls('get-orders', 2, '5s')
+if (summary.count !== 2) {
+  throw new Error(`expected 2 calls, got ${summary.count}`)
+}
+
+const latestCalls = await server.getCalls('get-orders')
+console.log(latestCalls.calls[0]?.path)
+
+await server.clearCalls('get-orders')
+await server.clearAllCalls()
+```
+
+### State
+
+```ts
+const state = await server.getState()
+console.log(state['order-status'])
+
+const updatedState = await server.setState({
+  'order-status': 'pending',
+  'retry-count': '1',
+})
+console.log(updatedState['retry-count'])
+
+await server.deleteState('retry-count')
+```
+
+### Logs
+
+```ts
+const allLogs = await server.getLogs()
+const matchedLogs = await server.getLogs('get-orders')
+
+const totalLogs = await server.getLogsCount()
+const matchedCount = await server.getLogsCount('get-orders')
+console.log({ totalLogs, matchedCount, firstPath: allLogs[0]?.path, firstMatch: matchedLogs[0]?.matched_id })
+
+await server.clearLogs()
 ```
 
 ### Fault injection

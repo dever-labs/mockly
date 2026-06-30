@@ -63,7 +63,7 @@ server = MocklyServer.ensure(
 ### Mocks
 
 ```python
-from mockly_driver import Mock, MockRequest, MockResponse
+from mockly_driver import Mock, MockRequest, MockResponse, MockResponsePatch
 
 # Add a mock
 server.add_mock(Mock(
@@ -81,6 +81,28 @@ server.add_mock(Mock(
     ),
 ))
 
+# Inspect the currently registered mocks
+mocks = server.list_mocks()
+
+# Replace a mock definition
+updated = server.update_mock("get-orders", Mock(
+    id="get-orders",
+    request=MockRequest(method="GET", path="/orders"),
+    response=MockResponse(
+        status=200,
+        body='[{"id":1},{"id":2}]',
+        headers={"Content-Type": "application/json"},
+    ),
+))
+
+# Patch only the response fields you want to change
+patched = server.patch_mock("get-orders", MockResponsePatch(
+    status=201,
+    body='[]',
+    headers={"X-Mock-Version": "v2"},
+    delay="250ms",
+))
+
 # Remove a mock
 server.delete_mock("get-orders")
 ```
@@ -88,11 +110,77 @@ server.delete_mock("get-orders")
 ### Scenarios
 
 ```python
-# Activate a pre-configured scenario
-server.activate_scenario("payment-fail")
+from mockly_driver import Scenario, ScenarioPatch
 
-# Deactivate it
-server.deactivate_scenario("payment-fail")
+created_scenario = server.create_scenario(Scenario(
+    id="slow-checkout",
+    name="Slow checkout",
+    description="Used for retry-path tests",
+    patches=[
+        ScenarioPatch(mock_id="charge", status=503, delay="750ms"),
+    ],
+))
+
+scenarios = server.list_scenarios()
+loaded_scenario = server.get_scenario("slow-checkout")
+
+updated_scenario = server.update_scenario("slow-checkout", Scenario(
+    id=loaded_scenario.id,
+    name="Slow checkout v2",
+    description=loaded_scenario.description,
+    patches=loaded_scenario.patches,
+))
+
+# Activate a scenario before exercising your service
+server.activate_scenario("slow-checkout")
+active_scenarios = server.list_active_scenarios()
+print(active_scenarios.active)
+
+# Deactivate or delete it when you're done
+server.deactivate_scenario("slow-checkout")
+server.delete_scenario("slow-checkout")
+```
+
+### Call verification
+
+```python
+summary = server.wait_for_calls("get-orders", count=2, timeout_seconds=5)
+assert summary.count == 2
+
+latest_calls = server.get_calls("get-orders")
+print(latest_calls.calls[0].path)
+
+server.clear_calls("get-orders")
+server.clear_all_calls()
+```
+
+### State
+
+```python
+state = server.get_state()
+print(state.get("order-status"))
+
+updated_state = server.set_state({
+    "order-status": "pending",
+    "retry-count": "1",
+})
+print(updated_state["retry-count"])
+
+server.delete_state("retry-count")
+```
+
+### Logs
+
+```python
+all_logs = server.get_logs()
+matched_logs = server.get_logs("get-orders")
+
+print(server.get_logs_count())
+print(server.get_logs_count("get-orders"))
+print(all_logs[0].path if all_logs else None)
+print(matched_logs[0].matched_id if matched_logs else None)
+
+server.clear_logs()
 ```
 
 ### Fault injection

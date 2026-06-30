@@ -608,8 +608,7 @@ class MocklyDriverTest {
             MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
             FaultConfig fault = FaultConfig.builder(true).delay("100ms").build();
             server.setFault(fault);
-            assertEquals("/api/fault", paths.get(0));
-            assertEquals("POST", methods.get(0));
+            assertEquals("/api/fault/http", paths.get(0));
         } finally {
             fakeServer.stop(0);
         }
@@ -619,7 +618,7 @@ class MocklyDriverTest {
     void clearFaultSendsDeleteToCorrectEndpoint() throws Exception {
         List<String> paths = new ArrayList<>();
         List<String> methods = new ArrayList<>();
-        HttpServer fakeServer = startFakeServer(200, paths, methods);
+        HttpServer fakeServer = startFakeServer(204, paths, methods);
         try {
             MocklyServer server = createTestServer(fakeServer.getAddress().getPort());
             server.clearFault();

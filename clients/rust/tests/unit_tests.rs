@@ -440,15 +440,15 @@ Content-Length: {}
         let first_line = handle.join().unwrap();
         assert!(first_line.contains("POST"), "expected POST, got: {}", first_line);
         assert!(
-            first_line.contains("/api/fault"),
-            "expected /api/fault, got: {}",
+            first_line.contains("/api/fault/http"),
+            "expected /api/fault/http, got: {}",
             first_line
         );
     }
 
     #[test]
     fn clear_fault_sends_delete_to_api_fault() {
-        let (api_port, handle) = start_fake_server(200);
+        let (api_port, handle) = start_fake_server(204);
         let server = server_helpers::new_server_for_test(0, api_port);
         assert!(server.clear_fault().is_ok());
         let first_line = handle.join().unwrap();

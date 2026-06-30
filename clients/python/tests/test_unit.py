@@ -416,11 +416,11 @@ def test_set_fault_sends_post(fake_http_server):
     fake_http_server.set_status(200)
     srv = _make_mockly_server(fake_http_server.base_url)
     srv.set_fault(FaultConfig(enabled=True, delay="100ms"))
-    assert ("POST", "/api/fault") in fake_http_server.requests
+    assert ("POST", "/api/fault/http") in fake_http_server.requests
 
 
 def test_clear_fault_sends_delete(fake_http_server):
-    fake_http_server.set_status(200)
+    fake_http_server.set_status(204)
     srv = _make_mockly_server(fake_http_server.base_url)
     srv.clear_fault()
     assert ("DELETE", "/api/fault") in fake_http_server.requests

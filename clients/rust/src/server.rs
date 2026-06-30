@@ -230,7 +230,7 @@ impl MocklyServer {
     pub fn set_fault(&self, config: &FaultConfig) -> Result<(), Box<dyn std::error::Error>> {
         let resp = self
             .client
-            .post(format!("{}/api/fault", self.api_base))
+            .post(format!("{}/api/fault/http", self.api_base))
             .json(config)
             .send()?;
         check_status(resp, 200, "set_fault")
@@ -241,7 +241,12 @@ impl MocklyServer {
             .client
             .delete(format!("{}/api/fault", self.api_base))
             .send()?;
-        check_status(resp, 200, "clear_fault")
+        let status = resp.status().as_u16();
+        if status == 200 || status == 204 {
+            Ok(())
+        } else {
+            Err(format!("clear_fault failed: expected HTTP 200/204, got {}", status).into())
+        }
     }
 
     /// Returns recorded calls for the given mock ID.

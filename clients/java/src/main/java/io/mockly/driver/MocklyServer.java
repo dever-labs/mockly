@@ -260,7 +260,7 @@ public class MocklyServer implements AutoCloseable {
     }
 
     public void setFault(FaultConfig config) throws IOException, InterruptedException {
-        HttpResponse<String> resp = post("/api/fault", toJson(config));
+        HttpResponse<String> resp = post("/api/fault/http", toJson(config));
         if (resp.statusCode() != 200) {
             throw new IOException("setFault failed: HTTP " + resp.statusCode() + " — " + resp.body());
         }
@@ -268,7 +268,7 @@ public class MocklyServer implements AutoCloseable {
 
     public void clearFault() throws IOException, InterruptedException {
         HttpResponse<String> resp = delete("/api/fault");
-        if (resp.statusCode() != 200) {
+        if (resp.statusCode() != 200 && resp.statusCode() != 204) {
             throw new IOException("clearFault failed: HTTP " + resp.statusCode() + " — " + resp.body());
         }
     }

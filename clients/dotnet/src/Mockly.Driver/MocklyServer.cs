@@ -186,7 +186,7 @@ public sealed class MocklyServer : IAsyncDisposable
         => PostAsync($"/api/scenarios/{Uri.EscapeDataString(scenarioId)}/deactivate", null);
 
     public Task SetFaultAsync(FaultConfig config)
-        => PostAsync("/api/fault", config);
+        => PostAsync("/api/fault/http", config);
 
     public Task ClearFaultAsync()
         => DeleteAsync("/api/fault");

@@ -284,10 +284,10 @@ class MocklyServer:
             body["status_override"] = config.status_override
         if config.error_rate is not None:
             body["error_rate"] = config.error_rate
-        self._request("POST", "/api/fault", body, expected=(200,))
+        self._request("POST", "/api/fault/http", body, expected=(200,))
 
     def clear_fault(self) -> None:
-        self._request("DELETE", "/api/fault", expected=(200,))
+        self._request("DELETE", "/api/fault", expected=(200, 204))
 
     def get_calls(self, mock_id: str) -> CallSummary:
         data = json.loads(self._request("GET", f"/api/calls/http/{urllib.parse.quote(mock_id, safe='')}", expected=(200,)))

@@ -237,7 +237,7 @@ export class MocklyServer {
    * Faults apply to every request regardless of mock matching.
    */
   async setFault(config: FaultConfig): Promise<void> {
-    const res = await this._post('/api/fault', config)
+    const res = await this._post('/api/fault/http', config)
     if (!res.ok) throw new Error(`setFault failed: HTTP ${res.status}`)
   }
 

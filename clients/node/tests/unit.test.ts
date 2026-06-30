@@ -305,7 +305,7 @@ describe('deactivateScenario', () => {
 })
 
 describe('setFault', () => {
-  it('sends POST to /api/fault with the fault config', async () => {
+  it('sends POST to /api/fault/http with the fault config', async () => {
     let capturedBody = ''
 
     const fake = await startFakeServer((_method, _url, body) => {

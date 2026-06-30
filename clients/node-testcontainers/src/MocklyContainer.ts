@@ -94,7 +94,7 @@ export class StartedMocklyContainer {
   }
 
   async setFault(config: FaultConfig): Promise<void> {
-    const res = await this.post('/api/fault', config)
+    const res = await this.post('/api/fault/http', config)
     this.assertOk(res, 'setFault')
   }
 

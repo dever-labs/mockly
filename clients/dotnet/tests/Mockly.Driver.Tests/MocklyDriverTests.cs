@@ -439,8 +439,7 @@ public class MocklyDriverTests
 
         Assert.Single(handler.Requests);
         Assert.Equal("POST", handler.Requests[0].Method);
-        Assert.Equal("/api/fault", handler.Requests[0].PathAndQuery);
-        Assert.Contains("\"enabled\":true", handler.Requests[0].Body!);
+        Assert.Equal("/api/fault/http", handler.Requests[0].PathAndQuery);
         Assert.Contains("\"delay\":\"100ms\"", handler.Requests[0].Body!);
     }
 

@@ -211,16 +211,12 @@ jobs:
 
       - name: Pack
         run: |
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"
           dotnet pack clients/dotnet/src/Mockly.Driver/Mockly.Driver.csproj \
             -c Release \
-            -o dist/nuget \
-            /p:Version="$VERSION"
+            -o dist/nuget
           dotnet pack clients/dotnet/src/Testcontainers.Mockly/Testcontainers.Mockly.csproj \
             -c Release \
-            -o dist/nuget \
-            /p:Version="$VERSION"
+            -o dist/nuget
 
       - name: Push to NuGet.org
         run: |
@@ -263,29 +259,6 @@ jobs:
           cp dist/mockly-windows-amd64.exe $PKG/mockly-driver-win32-x64/bin/mockly.exe
           chmod +x $PKG/mockly-driver-linux-*/bin/mockly $PKG/mockly-driver-darwin-*/bin/mockly
 
-      - name: Set version in all packages
-        run: |
-          VERSION=${{ github.ref_name }}
-          for pkg in clients/node/packages/*/; do
-            node -e "
-              const fs = require('fs');
-              const p = '$pkg/package.json';
-              const j = JSON.parse(fs.readFileSync(p));
-              j.version = process.argv[1];
-              fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
-            " "$VERSION"
-          done
-          node -e "
-            const fs = require('fs');
-            const p = 'clients/node/package.json';
-            const j = JSON.parse(fs.readFileSync(p));
-            j.version = process.argv[1];
-            for (const k of Object.keys(j.optionalDependencies ?? {})) {
-              j.optionalDependencies[k] = process.argv[1];
-            }
-            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
-          " "$VERSION"
-
       - name: Publish platform sub-packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -302,17 +275,6 @@ jobs:
           npm install
           npm run build
           npm publish --access public --provenance
-
-      - name: Set version in testcontainers package
-        run: |
-          VERSION="${{ github.ref_name }}"
-          node -e "
-            const fs = require('fs');
-            const p = 'clients/node-testcontainers/package.json';
-            const j = JSON.parse(fs.readFileSync(p));
-            j.version = process.argv[1].replace(/^v/, '');
-            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
-          " "$VERSION"
 
       - name: Build and publish testcontainers package
         env:
@@ -358,12 +320,6 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout@v7.0.0
 
-      - name: Set version
-        run: |
-          VERSION="${{ github.ref_name }}"
-          SEMVER="${VERSION#v}"
-          sed -i "s/^version = \".*\"/version = \"${SEMVER}\"/" clients/python/pyproject.toml
-
       - name: Build wheel and sdist
         run: |
           pip install hatch
@@ -376,12 +332,6 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-
-      - name: Set version in testcontainers package
-        run: |
-          VERSION="${{ github.ref_name }}"
-          SEMVER="${VERSION#v}"
-          sed -i "s/^version = \".*\"/version = \"${SEMVER}\"/" clients/python-testcontainers/pyproject.toml
 
       - name: Build testcontainers wheel and sdist
         run: |
@@ -416,28 +366,12 @@ jobs:
       - name: Import GPG key
         run: echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
 
-      - name: Set version
-        run: |
-          VERSION="${{ github.ref_name }}"
-          SEMVER="${VERSION#v}"
-          mvn -B versions:set -DnewVersion="${SEMVER}" -DgenerateBackupPoms=false \
-            -f clients/java/pom.xml
-          sed -i "s/DEFAULT_VERSION = \"v[^\"]*\"/DEFAULT_VERSION = \"${VERSION}\"/" \
-            clients/java/src/main/java/io/mockly/driver/MocklyInstaller.java
-
       - name: Deploy to Maven Central
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: mvn -B deploy -Prelease -f clients/java/pom.xml -DskipTests
-
-      - name: Set testcontainers version
-        run: |
-          VERSION="${{ github.ref_name }}"
-          SEMVER="${VERSION#v}"
-          mvn -B versions:set -DnewVersion="${SEMVER}" -DgenerateBackupPoms=false \
-            -f clients/java/testcontainers/pom.xml
 
       - name: Deploy testcontainers to Maven Central
         env:
@@ -458,14 +392,6 @@ jobs:
 
       - name: Install Rust stable
         run: rustup update stable && rustup default stable
-
-      - name: Set version
-        run: |
-          VERSION="${{ github.ref_name }}"
-          SEMVER="${VERSION#v}"
-          sed -i "s/^version = \".*\"/version = \"${SEMVER}\"/" clients/rust/Cargo.toml
-          sed -i "s/^version = \".*\"/version = \"${SEMVER}\"/" clients/rust-testcontainers/Cargo.toml
-          sed -i "s/mockly-driver = { path = \"..\/rust\", version = \"[^\"]*\" }/mockly-driver = { path = \"..\/rust\", version = \"${SEMVER}\" }/" clients/rust-testcontainers/Cargo.toml
 
       - name: Publish driver to crates.io
         env:

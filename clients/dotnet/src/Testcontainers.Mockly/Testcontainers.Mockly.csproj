@@ -1,9 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
-    <!-- Strip any pre-release suffix before parsing, then add newer TFMs when SDK supports them -->
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <_SdkMajorVersion>$(NETCoreSdkVersion.Split('-')[0].Split('.')[0])</_SdkMajorVersion>
-    <TargetFrameworks Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(_SdkMajorVersion).0', '10.0'))">$(TargetFrameworks);net10.0</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(_SdkMajorVersion).0', '11.0'))">$(TargetFrameworks);net11.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -20,7 +18,7 @@
 
     <!-- NuGet package metadata -->
     <PackageId>Testcontainers.Mockly</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.12.4</Version>
     <Authors>dever-labs</Authors>
     <Description>Testcontainers module for Mockly — run Mockly as a Docker container in tests</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

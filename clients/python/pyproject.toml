@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mockly-driver"
-version = "0.1.0"
+version = "0.12.4"
 description = "Python client for Mockly — start/stop servers and manage HTTP mocks in tests"
 readme = "README.md"
 license = { text = "MIT" }

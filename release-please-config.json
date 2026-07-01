@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "go",
+      "extra-files": [
+        {"type": "toml", "path": "clients/rust/Cargo.toml",                       "jsonpath": "$.package.version"},
+        {"type": "toml", "path": "clients/rust-testcontainers/Cargo.toml",        "jsonpath": "$.package.version"},
+        {"type": "toml", "path": "clients/python/pyproject.toml",                 "jsonpath": "$.project.version"},
+        {"type": "toml", "path": "clients/python-testcontainers/pyproject.toml",  "jsonpath": "$.project.version"},
+        {"type": "json", "path": "clients/node/package.json", "jsonpath": "$.version"},
+        {"type": "json", "path": "clients/node/package.json", "jsonpath": "$.optionalDependencies['@dever-labs/mockly-driver-linux-x64']"},
+        {"type": "json", "path": "clients/node/package.json", "jsonpath": "$.optionalDependencies['@dever-labs/mockly-driver-linux-arm64']"},
+        {"type": "json", "path": "clients/node/package.json", "jsonpath": "$.optionalDependencies['@dever-labs/mockly-driver-darwin-x64']"},
+        {"type": "json", "path": "clients/node/package.json", "jsonpath": "$.optionalDependencies['@dever-labs/mockly-driver-darwin-arm64']"},
+        {"type": "json", "path": "clients/node/package.json", "jsonpath": "$.optionalDependencies['@dever-labs/mockly-driver-win32-x64']"},
+        {"type": "json", "path": "clients/node-testcontainers/package.json",      "jsonpath": "$.version"},
+        {"type": "json", "path": "clients/node/packages/mockly-driver-linux-x64/package.json",    "jsonpath": "$.version"},
+        {"type": "json", "path": "clients/node/packages/mockly-driver-linux-arm64/package.json",  "jsonpath": "$.version"},
+        {"type": "json", "path": "clients/node/packages/mockly-driver-darwin-x64/package.json",   "jsonpath": "$.version"},
+        {"type": "json", "path": "clients/node/packages/mockly-driver-darwin-arm64/package.json", "jsonpath": "$.version"},
+        {"type": "json", "path": "clients/node/packages/mockly-driver-win32-x64/package.json",    "jsonpath": "$.version"},
+        {"type": "pom",  "path": "clients/java/pom.xml"},
+        {"type": "pom",  "path": "clients/java/testcontainers/pom.xml"},
+        {"type": "xml",  "path": "clients/dotnet/src/Mockly.Driver/Mockly.Driver.csproj",                      "xpath": "//PropertyGroup/Version"},
+        {"type": "xml",  "path": "clients/dotnet/src/Testcontainers.Mockly/Testcontainers.Mockly.csproj",      "xpath": "//PropertyGroup/Version"},
+        "clients/go/install.go",
+        "clients/java/src/main/java/io/mockly/driver/MocklyInstaller.java",
+        "clients/python/src/mockly_driver/_install.py",
+        "clients/node/src/install.ts",
+        "clients/rust-testcontainers/Cargo.toml",
+        "README.md",
+        "docs/clients/go.md",
+        "docs/clients/java.md",
+        "docs/clients/node.md",
+        "docs/clients/python.md",
+        "docs/clients/rust.md",
+        "docs/clients/dotnet.md",
+        "clients/go/README.md",
+        "clients/java/README.md",
+        "clients/java/testcontainers/README.md",
+        "clients/node/README.md",
+        "clients/node-testcontainers/README.md",
+        "clients/python/README.md",
+        "clients/rust/README.md",
+        "clients/rust-testcontainers/README.md",
+        "clients/dotnet/README.md"
+      ]
+    }
+  }
+}

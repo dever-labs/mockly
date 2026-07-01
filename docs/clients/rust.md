@@ -8,8 +8,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dev-dependencies]
-mockly-driver = "0.4"
-```
+mockly-driver = "0.12.4" # x-release-please-version```
 
 ## Quickstart
 
@@ -300,7 +299,7 @@ Use it instead of the driver when you want Docker-managed lifecycle, no local bi
 
 ```toml
 [dev-dependencies]
-mockly-testcontainers = "0.1.0"
+mockly-testcontainers = "0.12.4" # x-release-please-version
 reqwest = { version = "0.12", features = ["blocking"] }
 testcontainers = { version = "0.23", features = ["blocking", "http_wait"] }
 ```

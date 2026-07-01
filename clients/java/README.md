@@ -72,8 +72,7 @@ class MyServiceTest {
 <dependency>
     <groupId>io.github.dever-labs</groupId>
     <artifactId>mockly-driver</artifactId>
-    <version>0.1.0</version>
-    <scope>test</scope>
+    <version>0.12.4</version> <!-- x-release-please-version -->
 </dependency>
 ```
 
@@ -89,7 +88,7 @@ Builder for server configuration.
 MocklyConfig config = MocklyConfig.builder()
     .httpPort(9000)          // fixed HTTP mock port (0 = pick free port)
     .apiPort(9001)           // fixed management API port (0 = pick free port)
-    .version("v0.1.0")       // binary version to download
+    .version("v0.12.4")      // x-release-please-version
     .binDir("bin")           // directory to search / install binary
     .binaryPath("/usr/local/bin/mockly") // explicit binary path (skips search)
     .startupTimeoutMs(10_000)            // how long to wait for readiness
@@ -187,7 +186,7 @@ String path = MocklyInstaller.getBinaryPath("bin");
 String path = MocklyInstaller.install(
     MocklyInstaller.InstallOptions.builder()
         .binDir("bin")
-        .version("v0.1.0")
+        .version("v0.12.4") // x-release-please-version
         .build()
 );
 ```
@@ -241,7 +240,7 @@ In air-gapped environments, mirror the Mockly release assets to your internal re
 
 ```bash
 export MOCKLY_DOWNLOAD_BASE_URL=https://artifactory.example.com/mockly/releases/download
-export MOCKLY_VERSION=v0.1.0
+export MOCKLY_VERSION=v0.12.4 # x-release-please-version
 ```
 
 The client will download from `{MOCKLY_DOWNLOAD_BASE_URL}/{MOCKLY_VERSION}/{asset}`.

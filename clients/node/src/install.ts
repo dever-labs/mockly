@@ -6,7 +6,7 @@ import { join, resolve, dirname } from 'path'
 import { createRequire } from 'module'
 
 /** Version of the Mockly binary this package was tested against. */
-export const DEFAULT_MOCKLY_VERSION = 'v0.1.0'
+export const DEFAULT_MOCKLY_VERSION = 'v0.12.4' // x-release-please-version
 
 /** Default GitHub releases base URL. */
 const GITHUB_BASE = 'https://github.com/dever-labs/mockly/releases/download'

@@ -131,7 +131,7 @@ type Options struct {
 }
 
 type InstallOptions struct {
-    Version string // default: "v0.1.0"
+    Version string // default: "v0.12.4" // x-release-please-version
     BaseURL string // default: GitHub releases
     BinDir  string // default: "./bin"
     Force   bool   // re-download even if binary exists
@@ -144,7 +144,7 @@ type InstallOptions struct {
 |---|---|
 | `MOCKLY_BINARY_PATH` | Absolute path to a pre-staged binary. Skips all download logic. If set and the file is missing, an error is returned. |
 | `MOCKLY_NO_INSTALL` | If set (any value), `Install()` returns an error instead of downloading. Use in air-gapped environments together with `MOCKLY_BINARY_PATH`. |
-| `MOCKLY_VERSION` | Override the default binary version (`v0.1.0`). |
+| `MOCKLY_VERSION` | Override the default binary version (`v0.12.4`<!-- x-release-please-version -->). |
 | `MOCKLY_DOWNLOAD_BASE_URL` | Override the download base URL. Useful for Artifactory or internal mirrors. |
 | `HTTPS_PROXY` / `HTTP_PROXY` | Respected automatically by Go's `net/http`. |
 | `NO_PROXY` | Respected automatically by Go's `net/http`. |

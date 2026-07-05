@@ -9,7 +9,7 @@ using Mockly.Driver.Models;
 
 namespace Mockly.Driver;
 
-public sealed class MocklyServer : IAsyncDisposable
+public sealed class MocklyServer : IAsyncDisposable, IMocklyServer
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
     {

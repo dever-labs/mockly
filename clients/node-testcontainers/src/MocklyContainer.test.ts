@@ -45,7 +45,14 @@ import {
   MocklyContainerBuilder,
   StartedMocklyContainer,
 } from './index.js'
-import type { HttpMock } from './types.js'
+import type {
+  ActiveScenariosResponse,
+  CallEntry,
+  CallSummary,
+  HttpMock,
+  MocklyServerOptions,
+  Scenario,
+} from './types.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -77,6 +84,16 @@ describe('MocklyContainerBuilder', () => {
     }
 
     expect(builder.inlineConfig).toBe('mockly: {}')
+  })
+
+  it('withOptions stores options', () => {
+    const builder = new MocklyContainerBuilder().withOptions({
+      scenarios: [{ id: 's1', name: 'Scenario', patches: [{ mock_id: 'users', status: 503 }] }],
+    }) as MocklyContainerBuilder & { options?: MocklyServerOptions }
+
+    expect(builder.options).toEqual({
+      scenarios: [{ id: 's1', name: 'Scenario', patches: [{ mock_id: 'users', status: 503 }] }],
+    })
   })
 
   it('start copies inline config and uses config path', async () => {
@@ -119,6 +136,55 @@ protocols:
       },
     ])
   })
+
+  it('withOptions generates scenario config yaml', async () => {
+    await new MocklyContainerBuilder().withOptions({
+      scenarios: [
+        {
+          id: 'payments-down',
+          name: 'Payments down',
+          description: 'Simulate outage',
+          patches: [
+            {
+              mock_id: 'charge',
+              status: 503,
+              body: '{"error":"unavailable"}',
+              headers: { 'Content-Type': 'application/json' },
+              delay: '750ms',
+              disabled: false,
+            },
+          ],
+        },
+      ],
+    }).start()
+
+    expect(genericContainerMocks.chain.withCopyContentToContainer).toHaveBeenCalledWith([
+      {
+        content: Buffer.from(`mockly:
+  api:
+    port: 9091
+protocols:
+  http:
+    enabled: true
+    port: 8090
+scenarios:
+  - id: "payments-down"
+    name: "Payments down"
+    description: "Simulate outage"
+    patches:
+      - mock_id: "charge"
+        status: 503
+        body: "{\\"error\\":\\"unavailable\\"}"
+        headers:
+          "Content-Type": "application/json"
+        delay: "750ms"
+        disabled: false
+`),
+        target: CONTAINER_CONFIG_PATH,
+        mode: 0o644,
+      },
+    ])
+  })
 })
 
 describe('StartedMocklyContainer', () => {
@@ -133,54 +199,132 @@ describe('StartedMocklyContainer', () => {
     expect(container.getHttpBase()).toBe('http://127.0.0.1:38090')
   })
 
-  it('addMock posts to correct endpoint', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 201 }))
-    vi.stubGlobal('fetch', fetchMock)
-
+  it('supports full management API parity', async () => {
     const mock: HttpMock = {
       id: 'users',
       request: { method: 'GET', path: '/users' },
       response: { status: 200, body: '[]' },
     }
-
-    const container = new StartedMocklyContainer(fakeStartedContainer())
-    await container.addMock(mock)
-
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:19091/api/mocks/http', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(mock),
-    })
-  })
-
-  it('reset posts to /api/reset', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    const container = new StartedMocklyContainer(fakeStartedContainer())
-    await container.reset()
-
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:19091/api/reset', {
-      method: 'POST',
-      headers: {},
-      body: undefined,
-    })
-  })
-
-  it('getLogs calls GET /api/logs', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify([{ matched_id: 'users' }]), {
+    const updatedMock: HttpMock = {
+      ...mock,
+      response: { ...mock.response, status: 201 },
+    }
+    const scenario: Scenario = {
+      id: 'payments-down',
+      name: 'Payments down',
+      patches: [{ mock_id: 'users', status: 503 }],
+    }
+    const logs: CallEntry[] = [
+      {
+        id: 'log-1',
+        timestamp: '2026-07-05T00:00:00Z',
+        protocol: 'http',
+        method: 'GET',
+        path: '/users',
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    )
+        duration_ms: 1,
+        matched_id: 'users',
+      },
+    ]
+    const calls: CallSummary = { mock_id: 'users', count: 1, calls: logs }
+    const activeScenarios: ActiveScenariosResponse = {
+      active: ['payments-down'],
+      scenarios: [scenario],
+    }
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse([mock]))
+      .mockResolvedValueOnce(jsonResponse(updatedMock))
+      .mockResolvedValueOnce(jsonResponse(updatedMock))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse({ env: 'test' }))
+      .mockResolvedValueOnce(jsonResponse({ env: 'prod' }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(jsonResponse([scenario]))
+      .mockResolvedValueOnce(jsonResponse(scenario))
+      .mockResolvedValueOnce(jsonResponse(scenario))
+      .mockResolvedValueOnce(jsonResponse(scenario))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse(activeScenarios))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse(logs))
+      .mockResolvedValueOnce(jsonResponse(logs))
+      .mockResolvedValueOnce(jsonResponse({ count: 1 }))
+      .mockResolvedValueOnce(jsonResponse({ count: 1 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse(calls))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse(calls))
+
     vi.stubGlobal('fetch', fetchMock)
 
     const container = new StartedMocklyContainer(fakeStartedContainer())
-    const logs = await container.getLogs()
 
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:19091/api/logs')
-    expect(logs).toBe('[{"matched_id":"users"}]')
+    await container.addMock(mock)
+    expect(await container.listMocks()).toEqual([mock])
+    expect(await container.updateMock('users', updatedMock)).toEqual(updatedMock)
+    expect(await container.patchMock('users', { status: 201 })).toEqual(updatedMock)
+    await container.deleteMock('users')
+    expect(await container.getState()).toEqual({ env: 'test' })
+    expect(await container.setState({ env: 'prod' })).toEqual({ env: 'prod' })
+    await container.deleteState('env')
+    await container.reset()
+    expect(await container.listScenarios()).toEqual([scenario])
+    expect(await container.createScenario(scenario)).toEqual(scenario)
+    expect(await container.getScenario('payments-down')).toEqual(scenario)
+    expect(await container.updateScenario('payments-down', scenario)).toEqual(scenario)
+    await container.deleteScenario('payments-down')
+    expect(await container.listActiveScenarios()).toEqual(activeScenarios)
+    await container.activateScenario('payments-down')
+    await container.deactivateScenario('payments-down')
+    await container.setFault({ enabled: true, delay: '10ms', status: 503, error_rate: 0.5 })
+    await container.clearFault()
+    expect(await container.getLogs()).toEqual(logs)
+    expect(await container.getLogs('users')).toEqual(logs)
+    expect(await container.getLogsCount()).toBe(1)
+    expect(await container.getLogsCount('users')).toBe(1)
+    await container.clearLogs()
+    expect(await container.getCalls('users')).toEqual(calls)
+    await container.clearCalls('users')
+    await container.clearAllCalls()
+    expect(await container.waitForCalls('users', 2, '15s')).toEqual(calls)
+
+    expect(fetchMock.mock.calls).toEqual([
+      ['http://localhost:19091/api/mocks/http', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mock) }],
+      ['http://localhost:19091/api/mocks/http'],
+      ['http://localhost:19091/api/mocks/http/users', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedMock) }],
+      ['http://localhost:19091/api/mocks/http/users', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 201 }) }],
+      ['http://localhost:19091/api/mocks/http/users', { method: 'DELETE' }],
+      ['http://localhost:19091/api/state'],
+      ['http://localhost:19091/api/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ env: 'prod' }) }],
+      ['http://localhost:19091/api/state/env', { method: 'DELETE' }],
+      ['http://localhost:19091/api/reset', { method: 'POST', headers: {}, body: undefined }],
+      ['http://localhost:19091/api/scenarios'],
+      ['http://localhost:19091/api/scenarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scenario) }],
+      ['http://localhost:19091/api/scenarios/payments-down'],
+      ['http://localhost:19091/api/scenarios/payments-down', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scenario) }],
+      ['http://localhost:19091/api/scenarios/payments-down', { method: 'DELETE' }],
+      ['http://localhost:19091/api/scenarios/active'],
+      ['http://localhost:19091/api/scenarios/payments-down/activate', { method: 'POST', headers: {}, body: undefined }],
+      ['http://localhost:19091/api/scenarios/payments-down/activate', { method: 'DELETE' }],
+      ['http://localhost:19091/api/fault/http', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, delay: '10ms', status: 503, error_rate: 0.5 }) }],
+      ['http://localhost:19091/api/fault', { method: 'DELETE' }],
+      ['http://localhost:19091/api/logs'],
+      ['http://localhost:19091/api/logs?matched_id=users'],
+      ['http://localhost:19091/api/logs/count'],
+      ['http://localhost:19091/api/logs/count?matched_id=users'],
+      ['http://localhost:19091/api/logs', { method: 'DELETE' }],
+      ['http://localhost:19091/api/calls/http/users'],
+      ['http://localhost:19091/api/calls/http/users', { method: 'DELETE' }],
+      ['http://localhost:19091/api/calls/http', { method: 'DELETE' }],
+      ['http://localhost:19091/api/calls/http/users/wait', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: 2, timeout: '15s' }) }],
+    ])
   })
 })
 
@@ -190,4 +334,11 @@ function fakeStartedContainer() {
     getMappedPort: (port: number) => (port === API_PORT ? 19091 : 18090),
     stop: vi.fn(),
   }
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
 }

@@ -6,4 +6,16 @@ export {
   HTTP_PORT,
   API_PORT,
 } from './MocklyContainer.js'
-export type { MockRequest, MockResponse, HttpMock, FaultConfig } from './types.js'
+export type {
+  ActiveScenariosResponse,
+  CallEntry,
+  CallSummary,
+  FaultConfig,
+  HttpMock,
+  MockRequest,
+  MockResponse,
+  MockResponsePatch,
+  MocklyServerOptions,
+  Scenario,
+  ScenarioPatch,
+} from './types.js'

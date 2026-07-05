@@ -1,6 +1,6 @@
 module github.com/dever-labs/mockly/clients/go/testcontainers
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/dever-labs/mockly/clients/go v0.0.0

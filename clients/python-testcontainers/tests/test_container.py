@@ -3,7 +3,17 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from mockly_testcontainers import MocklyContainer
-from mockly_testcontainers._types import FaultConfig, Mock, MockRequest, MockResponse
+from mockly_testcontainers._types import (
+    CallEntry,
+    FaultConfig,
+    Mock,
+    MockRequest,
+    MockResponse,
+    MockResponsePatch,
+    MocklyServerOptions,
+    Scenario,
+    ScenarioPatch,
+)
 from mockly_testcontainers.container import (
     API_PORT,
     CONTAINER_CONFIG_PATH,
@@ -93,21 +103,138 @@ def test_set_fault_posts_config():
     container = MocklyContainer()
     container._request = MagicMock()
 
-    container.set_fault(FaultConfig(enabled=True, delay="50ms", error_rate=0.1))
+    container.set_fault(FaultConfig(enabled=True, delay="50ms", error_rate=0.1, status=503))
 
     container._request.assert_called_once_with(
         "POST",
-        "/api/fault",
-        {"enabled": True, "delay": "50ms", "error_rate": 0.1},
+        "/api/fault/http",
+        {"enabled": True, "delay": "50ms", "error_rate": 0.1, "status": 503},
         expected=(200,),
     )
 
 
-def test_get_logs_returns_decoded_body():
+def test_get_logs_returns_call_entries():
     container = MocklyContainer()
     container._request = MagicMock(return_value=b'[{"matched_id":"users"}]')
 
     logs = container.get_logs()
 
-    assert logs == '[{"matched_id":"users"}]'
+    assert logs == [
+        CallEntry(
+            id="",
+            timestamp="",
+            protocol="",
+            path="",
+            duration_ms=0,
+            matched_id="users",
+        )
+    ]
     container._request.assert_called_once_with("GET", "/api/logs", expected=(200,))
+
+
+def test_get_logs_with_matched_id_adds_query_param():
+    container = MocklyContainer()
+    container._request = MagicMock(return_value=b"[]")
+
+    container.get_logs("users/mock")
+
+    container._request.assert_called_once_with(
+        "GET",
+        "/api/logs?matched_id=users%2Fmock",
+        expected=(200,),
+    )
+
+
+def test_get_logs_count_returns_count():
+    container = MocklyContainer()
+    container._request = MagicMock(return_value=b'{"count":3}')
+
+    count = container.get_logs_count("users")
+
+    assert count == 3
+    container._request.assert_called_once_with(
+        "GET",
+        "/api/logs/count?matched_id=users",
+        expected=(200,),
+    )
+
+
+def test_delete_mock_accepts_200():
+    container = MocklyContainer()
+    container._request = MagicMock()
+
+    container.delete_mock("mock-id")
+
+    container._request.assert_called_once_with(
+        "DELETE",
+        "/api/mocks/http/mock-id",
+        expected=(200,),
+    )
+
+
+def test_wait_for_calls_posts_expected_payload():
+    container = MocklyContainer()
+    container._request = MagicMock(return_value=b'{"mock_id":"m1","count":2,"calls":[]}')
+
+    result = container.wait_for_calls("m1", count=2, timeout_seconds=15)
+
+    assert result.mock_id == "m1"
+    assert result.count == 2
+    container._request.assert_called_once_with(
+        "POST",
+        "/api/calls/http/m1/wait",
+        {"count": 2, "timeout": "15s"},
+        expected=(200,),
+    )
+
+
+def test_with_options_renders_scenarios_into_config():
+    container = MocklyContainer().with_options(
+        MocklyServerOptions(
+            scenarios=[
+                Scenario(
+                    id="happy-path",
+                    name="Happy path",
+                    description="switch response",
+                    patches=[
+                        ScenarioPatch(
+                            mock_id="users",
+                            status=201,
+                            body="created",
+                            headers={"X-Test": "1"},
+                            delay="10ms",
+                            disabled=False,
+                        )
+                    ],
+                )
+            ]
+        )
+    )
+
+    assert "scenarios:" in container._config_yaml
+    assert 'id: "happy-path"' in container._config_yaml
+    assert 'name: "Happy path"' in container._config_yaml
+    assert 'description: "switch response"' in container._config_yaml
+    assert 'mock_id: "users"' in container._config_yaml
+    assert "status: 201" in container._config_yaml
+    assert 'body: "created"' in container._config_yaml
+    assert '"X-Test": "1"' in container._config_yaml
+    assert 'delay: "10ms"' in container._config_yaml
+    assert "disabled: false" in container._config_yaml
+
+
+def test_patch_mock_serializes_patch_body():
+    container = MocklyContainer()
+    container._request = MagicMock(
+        return_value=b'{"id":"users","request":{"method":"GET","path":"/users"},"response":{"status":201}}'
+    )
+
+    result = container.patch_mock("users", MockResponsePatch(status=201))
+
+    assert result.response.status == 201
+    container._request.assert_called_once_with(
+        "PATCH",
+        "/api/mocks/http/users",
+        {"status": 201},
+        expected=(200,),
+    )

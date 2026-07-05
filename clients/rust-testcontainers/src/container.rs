@@ -1,9 +1,14 @@
 use reqwest::blocking::{Client, Response};
+use serde::Deserialize;
 use serde_json::{Map, Value};
+use std::collections::HashMap;
+use std::time::Duration;
 use testcontainers::core::Container;
 
 use crate::image::{MocklyImage, API_PORT, HTTP_PORT};
-use mockly_driver::{FaultConfig, Mock};
+use mockly_driver::{
+    ActiveScenariosResponse, CallEntry, CallSummary, FaultConfig, Mock, MockResponsePatch, Scenario,
+};
 
 pub struct MocklyContainer {
     inner: Container<MocklyImage>,
@@ -56,13 +61,50 @@ impl MocklyContainer {
         )
     }
 
+    pub fn list_mocks(&self) -> Result<Vec<Mock>, Box<dyn std::error::Error>> {
+        self.get_json("/api/mocks/http")
+    }
+
+    pub fn update_mock(&self, id: &str, mock: &Mock) -> Result<Mock, Box<dyn std::error::Error>> {
+        self.put_and_read(&format!("/api/mocks/http/{id}"), mock)
+    }
+
+    pub fn patch_mock(
+        &self,
+        id: &str,
+        patch: &MockResponsePatch,
+    ) -> Result<Mock, Box<dyn std::error::Error>> {
+        self.patch_and_read(&format!("/api/mocks/http/{id}"), patch)
+    }
+
     pub fn delete_mock(&self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.expect_status(
             "DELETE",
             &format!("/api/mocks/http/{id}"),
             None,
-            &[204],
+            &[200],
             "delete_mock",
+        )
+    }
+
+    pub fn get_state(&self) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+        self.get_json("/api/state")
+    }
+
+    pub fn set_state(
+        &self,
+        state: &HashMap<String, String>,
+    ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+        self.post_and_read("/api/state", state)
+    }
+
+    pub fn delete_state(&self, key: &str) -> Result<(), Box<dyn std::error::Error>> {
+        self.expect_status(
+            "DELETE",
+            &format!("/api/state/{key}"),
+            None,
+            &[200],
+            "delete_state",
         )
     }
 
@@ -90,6 +132,45 @@ impl MocklyContainer {
         )
     }
 
+    pub fn list_scenarios(&self) -> Result<Vec<Scenario>, Box<dyn std::error::Error>> {
+        self.get_json("/api/scenarios")
+    }
+
+    pub fn create_scenario(
+        &self,
+        scenario: &Scenario,
+    ) -> Result<Scenario, Box<dyn std::error::Error>> {
+        self.post_and_read_with_status("/api/scenarios", scenario, 201)
+    }
+
+    pub fn get_scenario(&self, id: &str) -> Result<Scenario, Box<dyn std::error::Error>> {
+        self.get_json(&format!("/api/scenarios/{id}"))
+    }
+
+    pub fn update_scenario(
+        &self,
+        id: &str,
+        scenario: &Scenario,
+    ) -> Result<Scenario, Box<dyn std::error::Error>> {
+        self.put_and_read(&format!("/api/scenarios/{id}"), scenario)
+    }
+
+    pub fn delete_scenario(&self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        self.expect_status(
+            "DELETE",
+            &format!("/api/scenarios/{id}"),
+            None,
+            &[200],
+            "delete_scenario",
+        )
+    }
+
+    pub fn list_active_scenarios(
+        &self,
+    ) -> Result<ActiveScenariosResponse, Box<dyn std::error::Error>> {
+        self.get_json("/api/scenarios/active")
+    }
+
     pub fn set_fault(&self, config: &FaultConfig) -> Result<(), Box<dyn std::error::Error>> {
         self.expect_status(
             "POST",
@@ -104,19 +185,166 @@ impl MocklyContainer {
         self.expect_status("DELETE", "/api/fault", None, &[200, 204], "clear_fault")
     }
 
-    pub fn get_logs(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let resp = self.request("GET", "/api/logs", None)?;
-        let status = resp.status().as_u16();
-        let body = resp.text()?;
-        if status == 200 {
-            Ok(body)
-        } else {
-            Err(format!("get_logs failed: expected HTTP 200, got {status}: {body}").into())
-        }
+    pub fn get_logs(
+        &self,
+        matched_id: Option<&str>,
+    ) -> Result<Vec<CallEntry>, Box<dyn std::error::Error>> {
+        let url = self.with_optional_matched_id("/api/logs", matched_id)?;
+        self.get_json_from_url(url, "/api/logs")
     }
 
     pub fn clear_logs(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.expect_status("DELETE", "/api/logs", None, &[200], "clear_logs")
+    }
+
+    pub fn get_logs_count(
+        &self,
+        matched_id: Option<&str>,
+    ) -> Result<i64, Box<dyn std::error::Error>> {
+        let url = self.with_optional_matched_id("/api/logs/count", matched_id)?;
+        let response: CountResponse = self.get_json_from_url(url, "/api/logs/count")?;
+        Ok(response.count)
+    }
+
+    pub fn get_calls(&self, mock_id: &str) -> Result<CallSummary, Box<dyn std::error::Error>> {
+        self.get_json(&format!("/api/calls/http/{mock_id}"))
+    }
+
+    pub fn clear_calls(&self, mock_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        self.expect_status(
+            "DELETE",
+            &format!("/api/calls/http/{mock_id}"),
+            None,
+            &[200],
+            "clear_calls",
+        )
+    }
+
+    pub fn clear_all_calls(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.expect_status("DELETE", "/api/calls/http", None, &[200], "clear_all_calls")
+    }
+
+    pub fn wait_for_calls(
+        &self,
+        mock_id: &str,
+        count: usize,
+        timeout: Duration,
+    ) -> Result<CallSummary, Box<dyn std::error::Error>> {
+        let resp = self.request(
+            "POST",
+            &format!("/api/calls/http/{mock_id}/wait"),
+            Some(serde_json::json!({
+                "count": count,
+                "timeout": format!("{}ms", timeout.as_millis()),
+            })),
+        )?;
+        let status = resp.status().as_u16();
+        let body = resp.text()?;
+        if status == 408 {
+            return Err(format!(
+                "wait_for_calls: timeout waiting for {count} call(s) on '{mock_id}'"
+            )
+            .into());
+        }
+        if status != 200 {
+            return Err(
+                format!("POST /api/calls/http/{mock_id}/wait failed: {status}: {body}").into(),
+            );
+        }
+        Ok(serde_json::from_str(&body)?)
+    }
+
+    fn get_json<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<T, Box<dyn std::error::Error>> {
+        let resp = self.request("GET", path, None)?;
+        let status = resp.status().as_u16();
+        let body = resp.text()?;
+        if status == 200 {
+            Ok(serde_json::from_str(&body)?)
+        } else {
+            Err(format!("GET {path} failed: {status}: {body}").into())
+        }
+    }
+
+    fn get_json_from_url<T: serde::de::DeserializeOwned>(
+        &self,
+        url: reqwest::Url,
+        path: &str,
+    ) -> Result<T, Box<dyn std::error::Error>> {
+        let resp = self.request_url("GET", url, None)?;
+        let status = resp.status().as_u16();
+        let body = resp.text()?;
+        if status == 200 {
+            Ok(serde_json::from_str(&body)?)
+        } else {
+            Err(format!("GET {path} failed: {status}: {body}").into())
+        }
+    }
+
+    fn post_and_read<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &impl serde::Serialize,
+    ) -> Result<T, Box<dyn std::error::Error>> {
+        self.post_and_read_with_status(path, body, 200)
+    }
+
+    fn post_and_read_with_status<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &impl serde::Serialize,
+        expected_status: u16,
+    ) -> Result<T, Box<dyn std::error::Error>> {
+        let resp = self.request("POST", path, Some(serde_json::to_value(body)?))?;
+        self.read_json_response(resp, "POST", path, expected_status)
+    }
+
+    fn put_and_read<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &impl serde::Serialize,
+    ) -> Result<T, Box<dyn std::error::Error>> {
+        let resp = self.request("PUT", path, Some(serde_json::to_value(body)?))?;
+        self.read_json_response(resp, "PUT", path, 200)
+    }
+
+    fn patch_and_read<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &impl serde::Serialize,
+    ) -> Result<T, Box<dyn std::error::Error>> {
+        let resp = self.request("PATCH", path, Some(serde_json::to_value(body)?))?;
+        self.read_json_response(resp, "PATCH", path, 200)
+    }
+
+    fn read_json_response<T: serde::de::DeserializeOwned>(
+        &self,
+        resp: Response,
+        method: &str,
+        path: &str,
+        expected_status: u16,
+    ) -> Result<T, Box<dyn std::error::Error>> {
+        let status = resp.status().as_u16();
+        let body = resp.text()?;
+        if status == expected_status {
+            Ok(serde_json::from_str(&body)?)
+        } else {
+            Err(format!("{method} {path} failed: {status}: {body}").into())
+        }
+    }
+
+    fn with_optional_matched_id(
+        &self,
+        path: &str,
+        matched_id: Option<&str>,
+    ) -> Result<reqwest::Url, Box<dyn std::error::Error>> {
+        let mut url = reqwest::Url::parse(&format!("{}{}", self.api_base(), path))?;
+        if let Some(matched_id) = matched_id {
+            url.query_pairs_mut().append_pair("matched_id", matched_id);
+        }
+        Ok(url)
     }
 
     fn expect_status(
@@ -133,10 +361,11 @@ impl MocklyContainer {
             Ok(())
         } else {
             let body = resp.text().unwrap_or_default();
-            Err(
-                format!("{op} failed: expected one of {:?}, got {status}: {body}", expected)
-                    .into(),
+            Err(format!(
+                "{op} failed: expected one of {:?}, got {status}: {body}",
+                expected
             )
+            .into())
         }
     }
 
@@ -146,11 +375,22 @@ impl MocklyContainer {
         path: &str,
         body: Option<Value>,
     ) -> Result<Response, Box<dyn std::error::Error>> {
-        let url = format!("{}{}", self.api_base(), path);
+        let url = reqwest::Url::parse(&format!("{}{}", self.api_base(), path))?;
+        self.request_url(method, url, body)
+    }
+
+    fn request_url(
+        &self,
+        method: &str,
+        url: reqwest::Url,
+        body: Option<Value>,
+    ) -> Result<Response, Box<dyn std::error::Error>> {
         let builder = match method {
-            "GET" => self.client.get(&url),
-            "POST" => self.client.post(&url),
-            "DELETE" => self.client.delete(&url),
+            "GET" => self.client.get(url),
+            "POST" => self.client.post(url),
+            "PUT" => self.client.put(url),
+            "PATCH" => self.client.patch(url),
+            "DELETE" => self.client.delete(url),
             other => return Err(format!("unsupported HTTP method: {other}").into()),
         };
 
@@ -185,6 +425,11 @@ fn fault_payload(config: &FaultConfig) -> Value {
     }
 
     Value::Object(map)
+}
+
+#[derive(Deserialize)]
+struct CountResponse {
+    count: i64,
 }
 
 #[cfg(test)]

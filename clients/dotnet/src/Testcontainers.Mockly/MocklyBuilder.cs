@@ -1,5 +1,7 @@
 namespace Testcontainers.Mockly;
 
+using System.Text.Json;
+
 /// <summary>Fluent builder for <see cref="MocklyContainer"/>.</summary>
 public sealed class MocklyBuilder : ContainerBuilder<MocklyBuilder, MocklyContainer, MocklyConfiguration>
 {
@@ -52,6 +54,18 @@ public sealed class MocklyBuilder : ContainerBuilder<MocklyBuilder, MocklyContai
             .WithResourceMapping(Encoding.UTF8.GetBytes(yaml), ContainerConfigPath);
     }
 
+    /// <summary>
+    /// Generates Mockly YAML from structured options and applies it as the container configuration.
+    /// </summary>
+    public MocklyBuilder WithOptions(MocklyServerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var yaml = BuildOptionsYaml(options);
+        return Merge(DockerResourceConfiguration, new MocklyConfiguration(yaml, options))
+            .WithResourceMapping(Encoding.UTF8.GetBytes(yaml), ContainerConfigPath);
+    }
+
     /// <inheritdoc />
     public override MocklyContainer Build()
     {
@@ -87,4 +101,74 @@ public sealed class MocklyBuilder : ContainerBuilder<MocklyBuilder, MocklyContai
     {
         return new MocklyBuilder(new MocklyConfiguration(oldValue, newValue));
     }
+
+    private static string BuildOptionsYaml(MocklyServerOptions options)
+    {
+        var yaml = new StringBuilder(DefaultConfigYaml.TrimEnd());
+        AppendScenariosYaml(yaml, options.Scenarios);
+        return yaml.AppendLine().ToString();
+    }
+
+    private static void AppendScenariosYaml(StringBuilder yaml, IReadOnlyList<Scenario>? scenarios)
+    {
+        if (scenarios is not { Count: > 0 })
+        {
+            return;
+        }
+
+        yaml.AppendLine();
+        yaml.AppendLine("scenarios:");
+        foreach (var scenario in scenarios)
+        {
+            yaml.AppendLine($"  - id: {YamlStr(scenario.Id)}");
+            yaml.AppendLine($"    name: {YamlStr(scenario.Name)}");
+            if (scenario.Description is not null)
+            {
+                yaml.AppendLine($"    description: {YamlStr(scenario.Description)}");
+            }
+
+            if (scenario.Patches.Count <= 0)
+            {
+                continue;
+            }
+
+            yaml.AppendLine("    patches:");
+            foreach (var patch in scenario.Patches)
+            {
+                yaml.AppendLine($"      - mock_id: {YamlStr(patch.MockId)}");
+                if (patch.Status.HasValue)
+                {
+                    yaml.AppendLine($"        status: {patch.Status}");
+                }
+
+                if (patch.Body is not null)
+                {
+                    yaml.AppendLine($"        body: {YamlStr(patch.Body)}");
+                }
+
+                if (patch.Headers is { Count: > 0 })
+                {
+                    yaml.AppendLine("        headers:");
+                    foreach (var header in patch.Headers)
+                    {
+                        yaml.AppendLine($"          {YamlStr(header.Key)}: {YamlStr(header.Value)}");
+                    }
+                }
+
+                if (patch.Delay is not null)
+                {
+                    yaml.AppendLine($"        delay: {YamlStr(patch.Delay)}");
+                }
+
+                if (patch.Disabled.HasValue)
+                {
+                    yaml.AppendLine($"        disabled: {patch.Disabled.Value.ToString().ToLowerInvariant()}");
+                }
+            }
+        }
+    }
+
+    // JSON-serialized strings are valid YAML double-quoted scalars and safely
+    // escape all special characters (quotes, backslashes, newlines, etc.).
+    private static string YamlStr(string value) => JsonSerializer.Serialize(value);
 }

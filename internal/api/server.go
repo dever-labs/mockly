@@ -1714,10 +1714,14 @@ func (s *Server) getHTTPCalls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mockID := chi.URLParam(r, "mockId")
+	entries := s.log.EntriesByMockID(mockID)
+	if entries == nil {
+		entries = []logger.Entry{}
+	}
 	writeJSON(w, http.StatusOK, callSummary{
 		MockID: mockID,
 		Count:  s.http.CallCount(mockID),
-		Calls:  s.log.EntriesByMockID(mockID),
+		Calls:  entries,
 	})
 }
 

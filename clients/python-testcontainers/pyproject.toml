@@ -12,6 +12,9 @@ requires-python = ">=3.10"
 keywords = ["mock", "testing", "http", "integration-test", "mockly", "testcontainers", "docker"]
 dependencies = ["testcontainers>=4.0.0"]
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0.0"]
+
 [project.urls]
 Homepage = "https://github.com/dever-labs/mockly/tree/main/clients/python-testcontainers"
 Repository = "https://github.com/dever-labs/mockly"

@@ -4,9 +4,10 @@ namespace Testcontainers.Mockly;
 public sealed class MocklyConfiguration : ContainerConfiguration
 {
     /// <summary>Initialises a new configuration with an optional inline YAML override.</summary>
-    public MocklyConfiguration(string? inlineConfig = null)
+    public MocklyConfiguration(string? inlineConfig = null, MocklyServerOptions? options = null)
     {
         InlineConfig = inlineConfig;
+        Options = options;
     }
 
     /// <inheritdoc />
@@ -32,6 +33,7 @@ public sealed class MocklyConfiguration : ContainerConfiguration
         : base(oldValue, newValue)
     {
         InlineConfig = BuildConfiguration.Combine(oldValue.InlineConfig, newValue.InlineConfig);
+        Options = BuildConfiguration.Combine(oldValue.Options, newValue.Options);
     }
 
     /// <summary>
@@ -39,4 +41,10 @@ public sealed class MocklyConfiguration : ContainerConfiguration
     /// or <see langword="null"/> when using the default configuration.
     /// </summary>
     public string? InlineConfig { get; }
+
+    /// <summary>
+    /// The structured options set via <see cref="MocklyBuilder.WithOptions"/>,
+    /// or <see langword="null"/> when using the default configuration.
+    /// </summary>
+    public MocklyServerOptions? Options { get; }
 }

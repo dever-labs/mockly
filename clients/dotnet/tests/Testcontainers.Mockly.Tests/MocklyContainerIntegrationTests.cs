@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Mockly.Driver.Models;
 using Testcontainers.Mockly;
 using Xunit;
@@ -58,6 +57,21 @@ public sealed class MocklyContainerIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListMocks_ReturnsAddedMocks()
+    {
+        var mock = new Mock(
+            "list-mock",
+            new MockRequest("GET", "/listed"),
+            new MockResponse(200, "listed"));
+
+        await _container.AddMockAsync(mock);
+
+        var mocks = await _container.ListMocksAsync();
+
+        Assert.Contains(mocks, item => item.Id == "list-mock");
+    }
+
+    [Fact]
     public async Task Reset_ClearsMocks()
     {
         var mock = new Mock(
@@ -76,14 +90,35 @@ public sealed class MocklyContainerIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GetLogs_ReturnsEntriesAfterRequest()
     {
+        var mock = new Mock(
+            "log-mock",
+            new MockRequest("GET", "/log-probe"),
+            new MockResponse(200, "logged"));
+        await _container.AddMockAsync(mock);
+
         using var http = new HttpClient();
         await http.GetAsync(_container.GetHttpBaseAddress() + "/log-probe");
 
         var logs = await _container.GetLogsAsync();
 
-        Assert.False(string.IsNullOrWhiteSpace(logs), "GetLogs should return non-empty JSON");
-        // Verify it parses as JSON
-        using var doc = JsonDocument.Parse(logs);
-        Assert.NotNull(doc);
+        Assert.Contains(logs, entry => entry.Path == "/log-probe");
+    }
+
+    [Fact]
+    public async Task GetCalls_ReturnsEntriesAfterMatchedRequest()
+    {
+        var mock = new Mock(
+            "calls-mock",
+            new MockRequest("GET", "/calls"),
+            new MockResponse(200, "tracked"));
+        await _container.AddMockAsync(mock);
+
+        using var http = new HttpClient();
+        await http.GetAsync(_container.GetHttpBaseAddress() + "/calls");
+
+        var summary = await _container.GetCallsAsync("calls-mock");
+
+        Assert.True(summary.Count >= 1);
+        Assert.Contains(summary.Calls, call => call.Path == "/calls");
     }
 }

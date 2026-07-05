@@ -1,10 +1,28 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { createServer } from 'http'
 import type { AddressInfo } from 'net'
 import { existsSync, readFileSync, rmSync } from 'fs'
+import { createRequire } from 'module'
 import { dirname } from 'path'
 import { getFreePort } from '../src/utils.js'
 import { getBinaryPath, DEFAULT_MOCKLY_VERSION } from '../src/install.js'
+
+// Detect whether the platform-specific optional package is installed so tests
+// that depend on the bundled binary can be skipped/run conditionally.
+const _req = createRequire(import.meta.url)
+const _platformPkgs: Record<string, string> = {
+  'linux-x64':   '@dever-labs/mockly-driver-linux-x64',
+  'linux-arm64': '@dever-labs/mockly-driver-linux-arm64',
+  'darwin-x64':  '@dever-labs/mockly-driver-darwin-x64',
+  'darwin-arm64':'@dever-labs/mockly-driver-darwin-arm64',
+  'win32-x64':   '@dever-labs/mockly-driver-win32-x64',
+}
+function _hasBundledBinary(): boolean {
+  const pkg = _platformPkgs[`${process.platform}-${process.arch}`]
+  if (!pkg) return false
+  try { _req.resolve(`${pkg}/package.json`); return true } catch { return false }
+}
+const bundledBinaryAvailable = _hasBundledBinary()
 
 // ── getFreePort ───────────────────────────────────────────────────────────────
 
@@ -32,7 +50,9 @@ describe('getBinaryPath', () => {
     delete process.env.MOCKLY_BINARY_PATH
   })
 
-  it('returns null when no binary is present', () => {
+  it.skipIf(bundledBinaryAvailable)('returns null when no binary is present', () => {
+    // Only meaningful when the platform optional package is not installed.
+    // When it IS installed, getBinaryPath correctly returns the bundled binary.
     const result = getBinaryPath('/tmp/definitely-does-not-exist-dir')
     expect(result).toBeNull()
   })
@@ -73,10 +93,22 @@ describe('install() with MOCKLY_NO_INSTALL', () => {
     delete process.env.MOCKLY_BINARY_PATH
   })
 
-  it('throws with actionable message when MOCKLY_NO_INSTALL is set', async () => {
+  it.skipIf(bundledBinaryAvailable)('throws with actionable message when MOCKLY_NO_INSTALL is set and no binary exists', async () => {
+    // Only meaningful when the platform optional package is NOT installed.
+    // MOCKLY_NO_INSTALL throws only when truly no binary can be found without downloading.
     process.env.MOCKLY_NO_INSTALL = 'true'
     const { install } = await import('../src/install.js')
     await expect(install()).rejects.toThrow(/MOCKLY_NO_INSTALL/)
+  })
+
+  it.runIf(bundledBinaryAvailable)('uses bundled binary when MOCKLY_NO_INSTALL is set and optional package is installed', async () => {
+    // MOCKLY_NO_INSTALL means "do not download" — it does NOT prevent using the
+    // bundled binary that arrived via optionalDependencies (no download required).
+    process.env.MOCKLY_NO_INSTALL = 'true'
+    const { install } = await import('../src/install.js')
+    const result = await install()
+    expect(typeof result).toBe('string')
+    expect(existsSync(result)).toBe(true)
   })
 
   it('skips download when MOCKLY_BINARY_PATH points to existing binary', async () => {

@@ -57,7 +57,9 @@ export function getBinaryPath(binDir?: string): string | null {
 
   if (process.env.MOCKLY_BINARY_PATH) {
     const p = resolve(process.env.MOCKLY_BINARY_PATH)
-    if (existsSync(p)) return p
+    // Respect the user's explicit choice: if the path doesn't exist, return null
+    // instead of silently falling through to the bundled binary.
+    return existsSync(p) ? p : null
   }
 
   // Bundled binary from platform sub-package (installed via optionalDependencies).

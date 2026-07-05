@@ -137,7 +137,7 @@ jobs:
           python-version: "3.13"
 
       - name: Run Python testcontainers tests
-        run: pip install -e . && python -m pytest -m integration tests/ -v
+        run: pip install -e ".[dev]" && python -m pytest -m integration tests/ -v
         working-directory: clients/python-testcontainers
 
       # Rust

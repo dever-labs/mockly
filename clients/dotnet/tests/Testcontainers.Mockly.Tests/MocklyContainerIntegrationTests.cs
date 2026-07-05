@@ -121,4 +121,122 @@ public sealed class MocklyContainerIntegrationTests : IAsyncLifetime
         Assert.True(summary.Count >= 1);
         Assert.Contains(summary.Calls, call => call.Path == "/calls");
     }
+
+    [Fact]
+    public async Task UpdateMock_ChangesResponse()
+    {
+        await _container.ResetAsync();
+
+        await _container.AddMockAsync(new Mock(
+            "upd",
+            new MockRequest("GET", "/upd"),
+            new MockResponse(200, "original")));
+
+        await _container.UpdateMockAsync("upd", new Mock(
+            "upd",
+            new MockRequest("GET", "/upd"),
+            new MockResponse(200, "updated")));
+
+        using var http = new HttpClient();
+        var response = await http.GetAsync(_container.GetHttpBaseAddress() + "/upd");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal("updated", body);
+    }
+
+    [Fact]
+    public async Task PatchMock_ChangesStatus()
+    {
+        await _container.ResetAsync();
+
+        await _container.AddMockAsync(new Mock(
+            "patch",
+            new MockRequest("GET", "/patch-me"),
+            new MockResponse(200, "ok")));
+
+        await _container.PatchMockAsync("patch", new MockResponsePatch(Status: 418));
+
+        using var http = new HttpClient();
+        var response = await http.GetAsync(_container.GetHttpBaseAddress() + "/patch-me");
+
+        Assert.Equal(418, (int)response.StatusCode);
+    }
+
+    [Fact]
+    public async Task State_SetGetDelete()
+    {
+        await _container.ResetAsync();
+
+        await _container.SetStateAsync(new Dictionary<string, string> { ["k"] = "v" });
+
+        var state = await _container.GetStateAsync();
+        Assert.True(state.ContainsKey("k"));
+
+        await _container.DeleteStateAsync("k");
+
+        state = await _container.GetStateAsync();
+        Assert.False(state.ContainsKey("k"));
+    }
+
+    [Fact]
+    public async Task GetLogsCount_ReturnsPositiveAfterRequest()
+    {
+        await _container.ResetAsync();
+
+        using var http = new HttpClient();
+        await http.GetAsync(_container.GetHttpBaseAddress() + "/count-probe");
+
+        var count = await _container.GetLogsCountAsync();
+        await _container.GetLogsCountAsync();
+
+        Assert.True(count > 0);
+    }
+
+    [Fact]
+    public async Task Scenario_CrudWorks()
+    {
+        await _container.ResetAsync();
+
+        await _container.ListScenariosAsync();
+
+        var scenario = new Scenario("tc-dotnet-s", "TC .NET", Array.Empty<ScenarioPatch>());
+        var created = false;
+
+        try
+        {
+            await _container.CreateScenarioAsync(scenario);
+            created = true;
+
+            var fetched = await _container.GetScenarioAsync("tc-dotnet-s");
+            Assert.Equal("tc-dotnet-s", fetched.Id);
+
+            var scenarios = await _container.ListScenariosAsync();
+            Assert.True(scenarios.Count > 0);
+        }
+        finally
+        {
+            if (created)
+            {
+                await _container.DeleteScenarioAsync("tc-dotnet-s");
+            }
+        }
+    }
+
+    [Fact]
+    public async Task WaitForCalls_ResolvesWhenHit()
+    {
+        await _container.ResetAsync();
+
+        await _container.AddMockAsync(new Mock(
+            "wfc",
+            new MockRequest("GET", "/wfc"),
+            new MockResponse(200, "ok")));
+
+        using var http = new HttpClient();
+        await http.GetAsync(_container.GetHttpBaseAddress() + "/wfc");
+
+        var summary = await _container.WaitForCallsAsync("wfc", 1, TimeSpan.FromSeconds(10));
+
+        Assert.True(summary.Count >= 1);
+    }
 }

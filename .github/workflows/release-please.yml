@@ -31,11 +31,24 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Regenerate npm lock files
+      - name: Sync npm lock files to new version
         if: ${{ steps.release.outputs.pr }}
         run: |
-          (cd clients/node && npm install --package-lock-only)
-          (cd clients/node-testcontainers && npm install --package-lock-only)
+          VERSION=$(node -p "require('./clients/node/package.json').version")
+
+          # Update only the mockly-driver-* optional packages in the clients/node lock file.
+          # Specifying packages explicitly prevents npm from drifting other dep versions.
+          (cd clients/node && npm install --package-lock-only \
+            "@dever-labs/mockly-driver-linux-x64@$VERSION" \
+            "@dever-labs/mockly-driver-linux-arm64@$VERSION" \
+            "@dever-labs/mockly-driver-darwin-x64@$VERSION" \
+            "@dever-labs/mockly-driver-darwin-arm64@$VERSION" \
+            "@dever-labs/mockly-driver-win32-x64@$VERSION")
+
+          # node-testcontainers has no driver deps — only the root version metadata needs updating.
+          (cd clients/node-testcontainers && \
+            jq --arg v "$VERSION" '.version = $v | .packages[""].version = $v' package-lock.json \
+            > package-lock.json.tmp && mv package-lock.json.tmp package-lock.json)
 
       - name: Commit lock file updates
         if: ${{ steps.release.outputs.pr }}

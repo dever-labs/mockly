@@ -1,5 +1,7 @@
 namespace Testcontainers.Mockly;
 
+using System.Text.Json;
+
 /// <summary>Fluent builder for <see cref="MocklyContainer"/>.</summary>
 public sealed class MocklyBuilder : ContainerBuilder<MocklyBuilder, MocklyContainer, MocklyConfiguration>
 {
@@ -118,11 +120,11 @@ public sealed class MocklyBuilder : ContainerBuilder<MocklyBuilder, MocklyContai
         yaml.AppendLine("scenarios:");
         foreach (var scenario in scenarios)
         {
-            yaml.AppendLine($"  - id: \"{scenario.Id}\"");
-            yaml.AppendLine($"    name: \"{scenario.Name}\"");
+            yaml.AppendLine($"  - id: {YamlStr(scenario.Id)}");
+            yaml.AppendLine($"    name: {YamlStr(scenario.Name)}");
             if (scenario.Description is not null)
             {
-                yaml.AppendLine($"    description: \"{scenario.Description}\"");
+                yaml.AppendLine($"    description: {YamlStr(scenario.Description)}");
             }
 
             if (scenario.Patches.Count <= 0)
@@ -133,7 +135,7 @@ public sealed class MocklyBuilder : ContainerBuilder<MocklyBuilder, MocklyContai
             yaml.AppendLine("    patches:");
             foreach (var patch in scenario.Patches)
             {
-                yaml.AppendLine($"      - mock_id: \"{patch.MockId}\"");
+                yaml.AppendLine($"      - mock_id: {YamlStr(patch.MockId)}");
                 if (patch.Status.HasValue)
                 {
                     yaml.AppendLine($"        status: {patch.Status}");
@@ -141,7 +143,7 @@ public sealed class MocklyBuilder : ContainerBuilder<MocklyBuilder, MocklyContai
 
                 if (patch.Body is not null)
                 {
-                    yaml.AppendLine($"        body: \"{patch.Body}\"");
+                    yaml.AppendLine($"        body: {YamlStr(patch.Body)}");
                 }
 
                 if (patch.Headers is { Count: > 0 })
@@ -149,13 +151,13 @@ public sealed class MocklyBuilder : ContainerBuilder<MocklyBuilder, MocklyContai
                     yaml.AppendLine("        headers:");
                     foreach (var header in patch.Headers)
                     {
-                        yaml.AppendLine($"          \"{header.Key}\": \"{header.Value}\"");
+                        yaml.AppendLine($"          {YamlStr(header.Key)}: {YamlStr(header.Value)}");
                     }
                 }
 
                 if (patch.Delay is not null)
                 {
-                    yaml.AppendLine($"        delay: \"{patch.Delay}\"");
+                    yaml.AppendLine($"        delay: {YamlStr(patch.Delay)}");
                 }
 
                 if (patch.Disabled.HasValue)
@@ -165,4 +167,8 @@ public sealed class MocklyBuilder : ContainerBuilder<MocklyBuilder, MocklyContai
             }
         }
     }
+
+    // JSON-serialized strings are valid YAML double-quoted scalars and safely
+    // escape all special characters (quotes, backslashes, newlines, etc.).
+    private static string YamlStr(string value) => JsonSerializer.Serialize(value);
 }

@@ -9,8 +9,8 @@ NC='\033[0m'
 echo -e "${CYAN}==> Installing Java 21 + Maven...${NC}"
 sudo apt-get install -y --no-install-recommends openjdk-21-jdk-headless maven > /dev/null
 
-echo -e "${CYAN}==> Installing .NET 9 SDK...${NC}"
-curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 9.0 > /dev/null
+echo -e "${CYAN}==> Installing .NET 10 SDK...${NC}"
+curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0 > /dev/null
 # Make dotnet available in all shells (interactive, non-interactive, VSCode tasks)
 echo 'export PATH="$HOME/.dotnet:$PATH"' | sudo tee /etc/profile.d/dotnet.sh > /dev/null
 sudo chmod 644 /etc/profile.d/dotnet.sh

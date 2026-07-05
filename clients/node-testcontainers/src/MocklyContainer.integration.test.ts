@@ -47,13 +47,13 @@ describeIntegration('MocklyContainer integration', () => {
     expect(resetResponse.status).not.toBe(200)
   })
 
-  test('getLogs returns data after request', async () => {
+  test('getLogs returns parsed call entries after request', async () => {
     await fetch(`${container.getHttpBase()}/any-path`)
 
     const logs = await container.getLogs()
 
     expect(logs.length).toBeGreaterThan(0)
-    expect(() => JSON.parse(logs)).not.toThrow()
+    expect(logs[0]).toHaveProperty('path')
   })
 })
 
@@ -73,5 +73,32 @@ describeIntegration('MocklyContainer inline config integration', () => {
   test('withInlineConfig works', async () => {
     const response = await fetch(`${container.getApiBase()}/api/protocols`)
     expect(response.status).toBe(200)
+  })
+})
+
+describeIntegration('MocklyContainer options integration', () => {
+  let container: StartedMocklyContainer
+
+  beforeAll(async () => {
+    container = await new MocklyContainerBuilder()
+      .withOptions({
+        scenarios: [
+          {
+            id: 'payments-down',
+            name: 'Payments down',
+            patches: [{ mock_id: 'charge', status: 503 }],
+          },
+        ],
+      })
+      .start()
+  })
+
+  afterAll(async () => {
+    await container.stop()
+  })
+
+  test('withOptions preloads scenarios', async () => {
+    const scenarios = await container.listScenarios()
+    expect(scenarios.map((scenario) => scenario.id)).toContain('payments-down')
   })
 })

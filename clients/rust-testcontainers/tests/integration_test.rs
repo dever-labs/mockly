@@ -12,7 +12,7 @@
 //! - A running Docker daemon
 //! - Cargo >= 1.85 (transitive deps use edition 2024)
 
-use mockly_testcontainers::{Mock, MocklyContainer, MocklyImage, MockRequest, MockResponse};
+use mockly_testcontainers::{Mock, MockRequest, MockResponse, MocklyContainer, MocklyImage};
 use testcontainers::runners::SyncRunner;
 
 /// Start a container and return it. The container stops when dropped.
@@ -56,8 +56,7 @@ fn add_mock_hit_endpoint_and_reset() {
 
     c.add_mock(&mock).expect("add_mock failed");
 
-    let resp = reqwest::blocking::get(format!("{http_base}/hello"))
-        .expect("GET /hello failed");
+    let resp = reqwest::blocking::get(format!("{http_base}/hello")).expect("GET /hello failed");
     assert_eq!(resp.status().as_u16(), 200);
     assert_eq!(resp.text().unwrap(), "world");
 
@@ -65,7 +64,11 @@ fn add_mock_hit_endpoint_and_reset() {
 
     let after = reqwest::blocking::get(format!("{http_base}/hello"))
         .expect("GET /hello after reset failed");
-    assert_ne!(after.status().as_u16(), 200, "mock should be cleared after reset");
+    assert_ne!(
+        after.status().as_u16(),
+        200,
+        "mock should be cleared after reset"
+    );
 }
 
 #[test]
@@ -79,8 +82,7 @@ fn get_logs_returns_json_after_request() {
 
     let logs = c.get_logs().expect("get_logs failed");
     assert!(!logs.is_empty(), "logs should be non-empty");
-    serde_json::from_str::<serde_json::Value>(&logs)
-        .expect("logs should be valid JSON");
+    serde_json::from_str::<serde_json::Value>(&logs).expect("logs should be valid JSON");
 }
 
 #[test]
@@ -89,7 +91,9 @@ fn with_inline_config_starts_container() {
     let custom_config =
         "mockly:\n  api:\n    port: 9091\nprotocols:\n  http:\n    enabled: true\n    port: 8090\n";
     let image = MocklyImage::default().with_inline_config(custom_config);
-    let container = image.start().expect("failed to start container with inline config");
+    let container = image
+        .start()
+        .expect("failed to start container with inline config");
     let c = MocklyContainer::new(container);
 
     let resp = reqwest::blocking::get(format!("{}/api/protocols", c.api_base()))

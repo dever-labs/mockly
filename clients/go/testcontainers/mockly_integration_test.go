@@ -115,17 +115,16 @@ func TestIntegration_GetLogs(t *testing.T) {
 		t.Fatalf("draining /some-path response: %v", err)
 	}
 
-	logs, err := c.GetLogs(ctx)
+	logs, err := c.GetLogs(ctx, "")
 	if err != nil {
 		t.Fatalf("GetLogs: %v", err)
 	}
-	if logs == "" {
-		t.Fatal("GetLogs returned empty string")
+	if len(logs) == 0 {
+		t.Fatal("GetLogs returned no entries")
 	}
 
-	var parsed any
-	if err := json.Unmarshal([]byte(logs), &parsed); err != nil {
-		t.Fatalf("GetLogs returned invalid JSON: %v\nlogs=%s", err, logs)
+	if _, err := json.Marshal(logs); err != nil {
+		t.Fatalf("GetLogs returned invalid entries: %v", err)
 	}
 }
 

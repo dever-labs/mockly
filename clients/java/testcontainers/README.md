@@ -33,10 +33,10 @@ testImplementation 'io.github.dever-labs:mockly-testcontainers:0.12.4' // x-rele
 ## Quickstart
 
 ```java
+import io.mockly.driver.model.Mock;
+import io.mockly.driver.model.MockRequest;
+import io.mockly.driver.model.MockResponse;
 import io.mockly.testcontainers.MocklyContainer;
-import io.mockly.testcontainers.model.Mock;
-import io.mockly.testcontainers.model.MockRequest;
-import io.mockly.testcontainers.model.MockResponse;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -110,22 +110,23 @@ MocklyContainer mockly = new MocklyContainer()
 | Method | Description |
 |---|---|
 | `addMock(Mock mock)` | Register a dynamic HTTP mock. |
-| `deleteMock(String id)` | Delete a mock by ID. |
+| `listMocks()` / `updateMock(...)` / `patchMock(...)` / `deleteMock(...)` | Full mock-management parity with the Java driver. |
+| `getState()` / `setState(...)` / `deleteState(...)` | Manage server state entries. |
 | `reset()` | Remove dynamic mocks, deactivate scenarios, and clear faults. |
-| `activateScenario(String id)` | Activate a configured scenario. |
-| `deactivateScenario(String id)` | Deactivate a configured scenario. |
-| `setFault(FaultConfig config)` | Apply a global HTTP fault. |
-| `clearFault()` | Remove the active fault. |
-| `getLogs()` / `getLogs(String matchedId)` | Read request logs as JSON. |
-| `clearLogs()` | Clear stored request logs. |
+| `activateScenario(String id)` / `deactivateScenario(String id)` | Toggle configured scenarios. |
+| `listScenarios()` / `createScenario(...)` / `getScenario(...)` / `updateScenario(...)` / `deleteScenario(...)` | Manage scenarios over the API. |
+| `listActiveScenarios()` | Read active scenario state. |
+| `setFault(FaultConfig config)` / `clearFault()` | Manage global HTTP faults. |
+| `getApiLogs()` / `getLogs(String matchedId)` / `getLogsCount(...)` / `clearLogs()` | Read and clear parsed request logs. |
+| `getCalls(...)` / `clearCalls(...)` / `clearAllCalls()` / `waitForCalls(...)` | Inspect and await per-mock call history. |
 
 ## Model types
 
-Use the bundled model classes from `io.mockly.testcontainers.model`:
+Use the `mockly-driver` model classes from `io.mockly.driver.model` (available transitively):
 
-- `Mock`
-- `MockRequest`
-- `MockResponse`
+- `Mock`, `MockRequest`, `MockResponse`, `MockResponsePatch`
 - `FaultConfig`
+- `Scenario`, `ScenarioPatch`, `ActiveScenariosResponse`
+- `CallEntry`, `CallSummary`
 
 These use builders so test setup stays concise.

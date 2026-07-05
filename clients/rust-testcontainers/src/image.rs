@@ -13,7 +13,8 @@ pub const API_PORT: u16 = 9091;
 const CONTAINER_CONFIG_PATH: &str = "/config/mockly.yaml";
 const DEFAULT_CONFIG: &str =
     "mockly:\n  api:\n    port: 9091\nprotocols:\n  http:\n    enabled: true\n    port: 8090\n";
-const EXPOSED_PORTS: [ContainerPort; 2] = [ContainerPort::Tcp(HTTP_PORT), ContainerPort::Tcp(API_PORT)];
+const EXPOSED_PORTS: [ContainerPort; 2] =
+    [ContainerPort::Tcp(HTTP_PORT), ContainerPort::Tcp(API_PORT)];
 
 #[derive(Debug, Clone)]
 pub struct MocklyImage {

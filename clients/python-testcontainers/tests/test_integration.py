@@ -4,7 +4,6 @@ Run with:
     pytest -m integration tests/
 """
 
-import json
 import urllib.error
 import urllib.request
 
@@ -63,4 +62,4 @@ def test_get_logs(container):
 
     logs = container.get_logs()
     assert len(logs) > 0
-    json.loads(logs)
+    assert logs[0].path == "/logging-path"

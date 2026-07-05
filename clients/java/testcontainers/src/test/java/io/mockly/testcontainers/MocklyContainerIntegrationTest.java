@@ -1,8 +1,9 @@
 package io.mockly.testcontainers;
 
-import io.mockly.testcontainers.model.Mock;
-import io.mockly.testcontainers.model.MockRequest;
-import io.mockly.testcontainers.model.MockResponse;
+import io.mockly.driver.model.CallEntry;
+import io.mockly.driver.model.Mock;
+import io.mockly.driver.model.MockRequest;
+import io.mockly.driver.model.MockResponse;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.junit.jupiter.Container;
@@ -13,8 +14,13 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Integration tests that spin up a real Mockly Docker container.
@@ -71,23 +77,18 @@ class MocklyContainerIntegrationTest {
 
     @Test
     void getLogsReturnsEntriesAfterRequest() throws IOException, InterruptedException {
-        // generate a log entry
         http.send(
                 HttpRequest.newBuilder().uri(URI.create(container.getHttpBase() + "/log-probe")).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
 
-        String logs = container.getLogs();
-        assertFalse(logs.isBlank(), "getLogs() should return non-empty JSON");
-        assertTrue(logs.startsWith("[") || logs.startsWith("{"),
-                "getLogs() should return valid JSON, got: " + logs);
+        List<CallEntry> logs = container.getApiLogs();
+        assertFalse(logs.isEmpty(), "getApiLogs() should return parsed log entries");
+        assertTrue(logs.stream().anyMatch(entry -> "/log-probe".equals(entry.getPath())),
+                "expected /log-probe entry in logs");
     }
 
     @Test
     void withInlineConfigStartsContainer() {
-        // Verifies that a container started with a custom YAML config is reachable.
-        // The shared @Container above uses the default config; inline config is tested
-        // by constructing a second container in MocklyContainerTest (unit).
-        // This test just validates that the shared container's API is accessible.
         assertDoesNotThrow(() -> {
             String apiBase = container.getApiBase();
             HttpResponse<String> resp = http.send(

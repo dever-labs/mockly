@@ -1,9 +1,9 @@
 package io.mockly.testcontainers;
 
-import io.mockly.testcontainers.model.FaultConfig;
-import io.mockly.testcontainers.model.Mock;
-import io.mockly.testcontainers.model.MockRequest;
-import io.mockly.testcontainers.model.MockResponse;
+import io.mockly.driver.model.FaultConfig;
+import io.mockly.driver.model.Mock;
+import io.mockly.driver.model.MockRequest;
+import io.mockly.driver.model.MockResponse;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,12 +64,15 @@ class MocklyContainerTest {
     void testJsonSerializationFaultConfig() {
         FaultConfig faultConfig = FaultConfig.builder(true)
                 .delay("200ms")
-                .statusOverride(503)
+                .status(503)
                 .errorRate(0.5)
                 .build();
 
         String json = MocklyContainer.toJson(faultConfig);
 
-        assertEquals("{\"enabled\":true,\"delay\":\"200ms\",\"status_override\":503,\"error_rate\":0.5}", json);
+        assertTrue(json.contains("\"enabled\":true"));
+        assertTrue(json.contains("\"delay\":\"200ms\""));
+        assertTrue(json.contains("\"status\":503"));
+        assertTrue(json.contains("\"error_rate\":0.5"));
     }
 }

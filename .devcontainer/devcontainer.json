@@ -3,7 +3,8 @@
   "image": "ghcr.io/dever-labs/devcontainers/go-dev:latest",
   "mounts": [
     "source=dever-labs-gh-config,target=/home/vscode/.config/gh,type=volume",
-    "source=dever-labs-copilot,target=/home/vscode/.copilot,type=volume"
+    "source=dever-labs-copilot,target=/home/vscode/.copilot,type=volume",
+    "source=dever-labs-gitconfig,target=/home/vscode/.config/git,type=volume"
   ],
 
   "remoteEnv": {
@@ -11,7 +12,8 @@
   },
 
   "containerEnv": {
-    "DOTNET_ROOT": "/home/vscode/.dotnet"
+    "DOTNET_ROOT": "/home/vscode/.dotnet",
+    "GIT_CONFIG_GLOBAL": "/home/vscode/.config/git/config"
   },
 
   "forwardPorts": [8080, 8081, 9091, 50051],

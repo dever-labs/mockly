@@ -156,7 +156,9 @@ jobs:
           cache: maven
 
       - name: Run Java testcontainers tests
-        run: mvn -B test -f clients/java/testcontainers/pom.xml
+        run: |
+          mvn -B install -f clients/java/pom.xml -DskipTests -q
+          mvn -B test -f clients/java/testcontainers/pom.xml
         env:
           TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE: /var/run/docker.sock
 

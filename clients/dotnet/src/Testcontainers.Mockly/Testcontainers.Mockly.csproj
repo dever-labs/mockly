@@ -18,7 +18,7 @@
 
     <!-- NuGet package metadata -->
     <PackageId>Testcontainers.Mockly</PackageId>
-    <Version>0.12.4</Version>
+    <Version>0.13.0</Version>
     <Authors>dever-labs</Authors>
     <Description>Testcontainers module for Mockly — run Mockly as a Docker container in tests</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -28,7 +28,7 @@
     <PackageTags>mock testing http integration-test mockly testcontainers docker</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Testcontainers" Version="4.4.0" />
+    <PackageReference Include="Testcontainers" Version="4.4.0"/>
   </ItemGroup>
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
@@ -36,6 +36,6 @@
     </AssemblyAttribute>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Mockly.Driver\Mockly.Driver.csproj" />
+    <ProjectReference Include="..\Mockly.Driver\Mockly.Driver.csproj"/>
   </ItemGroup>
 </Project>

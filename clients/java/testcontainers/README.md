@@ -19,7 +19,7 @@ Run Mockly in Docker-backed Java tests with Testcontainers.
 <dependency>
   <groupId>io.github.dever-labs</groupId>
   <artifactId>mockly-testcontainers</artifactId>
-  <version>0.12.4</version> <!-- x-release-please-version -->
+  <version>0.13.0</version> <!-- x-release-please-version -->
   <scope>test</scope>
 </dependency>
 ```
@@ -27,7 +27,7 @@ Run Mockly in Docker-backed Java tests with Testcontainers.
 ### Gradle
 
 ```groovy
-testImplementation 'io.github.dever-labs:mockly-testcontainers:0.12.4' // x-release-please-version
+testImplementation 'io.github.dever-labs:mockly-testcontainers:0.13.0' // x-release-please-version
 ```
 
 ## Quickstart

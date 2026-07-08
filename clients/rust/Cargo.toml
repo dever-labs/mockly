@@ -1,6 +1,6 @@
 [package]
 name = "mockly-driver"
-version = "0.12.4"
+version = "0.13.0"
 edition = "2021"
 description = "Rust client for Mockly — start/stop servers and manage HTTP mocks in tests"
 license = "MIT"

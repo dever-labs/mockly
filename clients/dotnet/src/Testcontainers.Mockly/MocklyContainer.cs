@@ -31,210 +31,211 @@ public sealed class MocklyContainer : DockerContainer, IMocklyServer
         => new UriBuilder(Uri.UriSchemeHttp, Hostname, GetMappedPublicPort(MocklyBuilder.ApiPort)).ToString().TrimEnd('/');
 
     /// <summary>Registers a new HTTP mock.</summary>
+    /// <inheritdoc/>
     public Task AddMockAsync(Mock mock)
         => AddMockAsync(mock, default);
 
-    /// <summary>Registers a new HTTP mock.</summary>
+    /// <inheritdoc cref="IMocklyServer.AddMockAsync"/>
     public Task AddMockAsync(Mock mock, CancellationToken cancellationToken = default)
         => PostAsync(GetOrCreateHttpClient(), "/api/mocks/http", mock, cancellationToken);
 
-    /// <summary>Returns all registered HTTP mocks.</summary>
+    /// <inheritdoc/>
     public Task<IReadOnlyList<Mock>> ListMocksAsync()
         => ListMocksAsync(default);
 
-    /// <summary>Returns all registered HTTP mocks.</summary>
+    /// <inheritdoc cref="IMocklyServer.ListMocksAsync"/>
     public Task<IReadOnlyList<Mock>> ListMocksAsync(CancellationToken cancellationToken = default)
         => GetAsync<IReadOnlyList<Mock>>(GetOrCreateHttpClient(), "/api/mocks/http", cancellationToken);
 
-    /// <summary>Replaces the mock with the specified <paramref name="id"/>.</summary>
+    /// <inheritdoc/>
     public Task<Mock> UpdateMockAsync(string id, Mock mock)
         => UpdateMockAsync(id, mock, default);
 
-    /// <summary>Replaces the mock with the specified <paramref name="id"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.UpdateMockAsync"/>
     public Task<Mock> UpdateMockAsync(string id, Mock mock, CancellationToken cancellationToken = default)
         => PutAndReadAsync<Mock>(GetOrCreateHttpClient(), $"/api/mocks/http/{Uri.EscapeDataString(id)}", mock, cancellationToken);
 
-    /// <summary>Partially updates the response of the mock with the specified <paramref name="id"/>.</summary>
+    /// <inheritdoc/>
     public Task<Mock> PatchMockAsync(string id, MockResponsePatch patch)
         => PatchMockAsync(id, patch, default);
 
-    /// <summary>Partially updates the response of the mock with the specified <paramref name="id"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.PatchMockAsync"/>
     public Task<Mock> PatchMockAsync(string id, MockResponsePatch patch, CancellationToken cancellationToken = default)
         => PatchAndReadAsync<Mock>(GetOrCreateHttpClient(), $"/api/mocks/http/{Uri.EscapeDataString(id)}", patch, cancellationToken);
 
-    /// <summary>Removes the mock with the specified <paramref name="id"/>.</summary>
+    /// <inheritdoc/>
     public Task DeleteMockAsync(string id)
         => DeleteMockAsync(id, default);
 
-    /// <summary>Removes the mock with the specified <paramref name="id"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.DeleteMockAsync"/>
     public Task DeleteMockAsync(string id, CancellationToken cancellationToken = default)
         => DeleteAsync(GetOrCreateHttpClient(), $"/api/mocks/http/{Uri.EscapeDataString(id)}", cancellationToken);
 
-    /// <summary>Returns all key-value entries in the state store.</summary>
+    /// <inheritdoc/>
     public Task<Dictionary<string, string>> GetStateAsync()
         => GetStateAsync(default);
 
-    /// <summary>Returns all key-value entries in the state store.</summary>
+    /// <inheritdoc cref="IMocklyServer.GetStateAsync"/>
     public Task<Dictionary<string, string>> GetStateAsync(CancellationToken cancellationToken = default)
         => GetAsync<Dictionary<string, string>>(GetOrCreateHttpClient(), "/api/state", cancellationToken);
 
-    /// <summary>Merges <paramref name="kvMap"/> into the state store, adding or overwriting the given keys.</summary>
+    /// <inheritdoc/>
     public Task<Dictionary<string, string>> SetStateAsync(Dictionary<string, string> kvMap)
         => SetStateAsync(kvMap, default);
 
-    /// <summary>Merges <paramref name="kvMap"/> into the state store, adding or overwriting the given keys.</summary>
+    /// <inheritdoc cref="IMocklyServer.SetStateAsync"/>
     public Task<Dictionary<string, string>> SetStateAsync(Dictionary<string, string> kvMap, CancellationToken cancellationToken = default)
         => PostAndReadAsync<Dictionary<string, string>>(GetOrCreateHttpClient(), "/api/state", kvMap, cancellationToken);
 
-    /// <summary>Removes the state entry with the specified <paramref name="key"/>.</summary>
+    /// <inheritdoc/>
     public Task DeleteStateAsync(string key)
         => DeleteStateAsync(key, default);
 
-    /// <summary>Removes the state entry with the specified <paramref name="key"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.DeleteStateAsync"/>
     public Task DeleteStateAsync(string key, CancellationToken cancellationToken = default)
         => DeleteAsync(GetOrCreateHttpClient(), $"/api/state/{Uri.EscapeDataString(key)}", cancellationToken);
 
-    /// <summary>Returns recent request log entries, optionally filtered by <paramref name="matchedId"/>.</summary>
+    /// <inheritdoc/>
     public Task<IReadOnlyList<CallEntry>> GetLogsAsync(string? matchedId = null)
         => GetLogsAsync(matchedId, default);
 
-    /// <summary>Returns recent request log entries, optionally filtered by <paramref name="matchedId"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.GetLogsAsync"/>
     public Task<IReadOnlyList<CallEntry>> GetLogsAsync(string? matchedId, CancellationToken cancellationToken)
         => GetAsync<IReadOnlyList<CallEntry>>(GetOrCreateHttpClient(), WithMatchedId("/api/logs", matchedId), cancellationToken);
 
-    /// <summary>Clears all stored request log entries.</summary>
+    /// <inheritdoc/>
     public Task ClearLogsAsync()
         => ClearLogsAsync(default);
 
-    /// <summary>Clears all stored request log entries.</summary>
+    /// <inheritdoc cref="IMocklyServer.ClearLogsAsync"/>
     public Task ClearLogsAsync(CancellationToken cancellationToken = default)
         => DeleteAsync(GetOrCreateHttpClient(), "/api/logs", cancellationToken);
 
-    /// <summary>Returns the number of logged requests, optionally filtered by <paramref name="matchedId"/>.</summary>
+    /// <inheritdoc/>
     public Task<int> GetLogsCountAsync(string? matchedId = null)
         => GetLogsCountAsync(matchedId, default);
 
-    /// <summary>Returns the number of logged requests, optionally filtered by <paramref name="matchedId"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.GetLogsCountAsync"/>
     public async Task<int> GetLogsCountAsync(string? matchedId, CancellationToken cancellationToken)
         => (await GetAsync<CountResponse>(GetOrCreateHttpClient(), WithMatchedId("/api/logs/count", matchedId), cancellationToken).ConfigureAwait(false)).Count;
 
-    /// <summary>Returns all registered scenarios.</summary>
+    /// <inheritdoc/>
     public Task<IReadOnlyList<Scenario>> ListScenariosAsync()
         => ListScenariosAsync(default);
 
-    /// <summary>Returns all registered scenarios.</summary>
+    /// <inheritdoc cref="IMocklyServer.ListScenariosAsync"/>
     public Task<IReadOnlyList<Scenario>> ListScenariosAsync(CancellationToken cancellationToken = default)
         => GetAsync<IReadOnlyList<Scenario>>(GetOrCreateHttpClient(), "/api/scenarios", cancellationToken);
 
-    /// <summary>Creates a new scenario.</summary>
+    /// <inheritdoc/>
     public Task<Scenario> CreateScenarioAsync(Scenario scenario)
         => CreateScenarioAsync(scenario, default);
 
-    /// <summary>Creates a new scenario.</summary>
+    /// <inheritdoc cref="IMocklyServer.CreateScenarioAsync"/>
     public Task<Scenario> CreateScenarioAsync(Scenario scenario, CancellationToken cancellationToken = default)
         => PostAndReadAsync<Scenario>(GetOrCreateHttpClient(), "/api/scenarios", scenario, cancellationToken);
 
-    /// <summary>Returns the scenario with the specified <paramref name="scenarioId"/>.</summary>
+    /// <inheritdoc/>
     public Task<Scenario> GetScenarioAsync(string scenarioId)
         => GetScenarioAsync(scenarioId, default);
 
-    /// <summary>Returns the scenario with the specified <paramref name="scenarioId"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.GetScenarioAsync"/>
     public Task<Scenario> GetScenarioAsync(string scenarioId, CancellationToken cancellationToken = default)
         => GetAsync<Scenario>(GetOrCreateHttpClient(), $"/api/scenarios/{Uri.EscapeDataString(scenarioId)}", cancellationToken);
 
-    /// <summary>Replaces the scenario with the specified <paramref name="scenarioId"/>.</summary>
+    /// <inheritdoc/>
     public Task<Scenario> UpdateScenarioAsync(string scenarioId, Scenario scenario)
         => UpdateScenarioAsync(scenarioId, scenario, default);
 
-    /// <summary>Replaces the scenario with the specified <paramref name="scenarioId"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.UpdateScenarioAsync"/>
     public Task<Scenario> UpdateScenarioAsync(string scenarioId, Scenario scenario, CancellationToken cancellationToken = default)
         => PutAndReadAsync<Scenario>(GetOrCreateHttpClient(), $"/api/scenarios/{Uri.EscapeDataString(scenarioId)}", scenario, cancellationToken);
 
-    /// <summary>Removes the scenario with the specified <paramref name="scenarioId"/>.</summary>
+    /// <inheritdoc/>
     public Task DeleteScenarioAsync(string scenarioId)
         => DeleteScenarioAsync(scenarioId, default);
 
-    /// <summary>Removes the scenario with the specified <paramref name="scenarioId"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.DeleteScenarioAsync"/>
     public Task DeleteScenarioAsync(string scenarioId, CancellationToken cancellationToken = default)
         => DeleteAsync(GetOrCreateHttpClient(), $"/api/scenarios/{Uri.EscapeDataString(scenarioId)}", cancellationToken);
 
-    /// <summary>Returns all currently active scenarios.</summary>
+    /// <inheritdoc/>
     public Task<ActiveScenariosResponse> ListActiveScenariosAsync()
         => ListActiveScenariosAsync(default);
 
-    /// <summary>Returns all currently active scenarios.</summary>
+    /// <inheritdoc cref="IMocklyServer.ListActiveScenariosAsync"/>
     public Task<ActiveScenariosResponse> ListActiveScenariosAsync(CancellationToken cancellationToken = default)
         => GetAsync<ActiveScenariosResponse>(GetOrCreateHttpClient(), "/api/scenarios/active", cancellationToken);
 
-    /// <summary>Clears all dynamic mocks, deactivates all scenarios, and removes any fault configuration.</summary>
+    /// <inheritdoc/>
     public Task ResetAsync()
         => ResetAsync(default);
 
-    /// <summary>Clears all dynamic mocks, deactivates all scenarios, and removes any fault configuration.</summary>
+    /// <inheritdoc cref="IMocklyServer.ResetAsync"/>
     public Task ResetAsync(CancellationToken cancellationToken = default)
         => PostAsync(GetOrCreateHttpClient(), "/api/reset", null, cancellationToken);
 
-    /// <summary>Activates the scenario with the given <paramref name="scenarioId"/>.</summary>
+    /// <inheritdoc/>
     public Task ActivateScenarioAsync(string scenarioId)
         => ActivateScenarioAsync(scenarioId, default);
 
-    /// <summary>Activates the scenario with the given <paramref name="scenarioId"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.ActivateScenarioAsync"/>
     public Task ActivateScenarioAsync(string scenarioId, CancellationToken cancellationToken = default)
         => PostAsync(GetOrCreateHttpClient(), $"/api/scenarios/{Uri.EscapeDataString(scenarioId)}/activate", null, cancellationToken);
 
-    /// <summary>Deactivates the scenario with the given <paramref name="scenarioId"/>.</summary>
+    /// <inheritdoc/>
     public Task DeactivateScenarioAsync(string scenarioId)
         => DeactivateScenarioAsync(scenarioId, default);
 
-    /// <summary>Deactivates the scenario with the given <paramref name="scenarioId"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.DeactivateScenarioAsync"/>
     public Task DeactivateScenarioAsync(string scenarioId, CancellationToken cancellationToken = default)
         => PostAsync(GetOrCreateHttpClient(), $"/api/scenarios/{Uri.EscapeDataString(scenarioId)}/deactivate", null, cancellationToken);
 
-    /// <summary>Applies a fault configuration to the HTTP mock server.</summary>
+    /// <inheritdoc/>
     public Task SetFaultAsync(FaultConfig config)
         => SetFaultAsync(config, default);
 
-    /// <summary>Applies a fault configuration to the HTTP mock server.</summary>
+    /// <inheritdoc cref="IMocklyServer.SetFaultAsync"/>
     public Task SetFaultAsync(FaultConfig config, CancellationToken cancellationToken = default)
         => PostAsync(GetOrCreateHttpClient(), "/api/fault/http", config, cancellationToken);
 
-    /// <summary>Removes any active fault configuration.</summary>
+    /// <inheritdoc/>
     public Task ClearFaultAsync()
         => ClearFaultAsync(default);
 
-    /// <summary>Removes any active fault configuration.</summary>
+    /// <inheritdoc cref="IMocklyServer.ClearFaultAsync"/>
     public Task ClearFaultAsync(CancellationToken cancellationToken = default)
         => DeleteAsync(GetOrCreateHttpClient(), "/api/fault", cancellationToken);
 
-    /// <summary>Returns the call history for the mock with the specified <paramref name="mockId"/>.</summary>
+    /// <inheritdoc/>
     public Task<CallSummary> GetCallsAsync(string mockId)
         => GetCallsAsync(mockId, default);
 
-    /// <summary>Returns the call history for the mock with the specified <paramref name="mockId"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.GetCallsAsync"/>
     public Task<CallSummary> GetCallsAsync(string mockId, CancellationToken cancellationToken = default)
         => GetAsync<CallSummary>(GetOrCreateHttpClient(), $"/api/calls/http/{Uri.EscapeDataString(mockId)}", cancellationToken);
 
-    /// <summary>Clears the call history for the mock with the specified <paramref name="mockId"/>.</summary>
+    /// <inheritdoc/>
     public Task ClearCallsAsync(string mockId)
         => ClearCallsAsync(mockId, default);
 
-    /// <summary>Clears the call history for the mock with the specified <paramref name="mockId"/>.</summary>
+    /// <inheritdoc cref="IMocklyServer.ClearCallsAsync"/>
     public Task ClearCallsAsync(string mockId, CancellationToken cancellationToken = default)
         => DeleteAsync(GetOrCreateHttpClient(), $"/api/calls/http/{Uri.EscapeDataString(mockId)}", cancellationToken);
 
-    /// <summary>Clears the call history for all mocks.</summary>
+    /// <inheritdoc/>
     public Task ClearAllCallsAsync()
         => ClearAllCallsAsync(default);
 
-    /// <summary>Clears the call history for all mocks.</summary>
+    /// <inheritdoc cref="IMocklyServer.ClearAllCallsAsync"/>
     public Task ClearAllCallsAsync(CancellationToken cancellationToken = default)
         => DeleteAsync(GetOrCreateHttpClient(), "/api/calls/http", cancellationToken);
 
-    /// <summary>Blocks until the mock with <paramref name="mockId"/> has been called at least <paramref name="count"/> times, or until <paramref name="timeout"/> expires.</summary>
+    /// <inheritdoc/>
     public Task<CallSummary> WaitForCallsAsync(string mockId, int count = 1, TimeSpan? timeout = null)
         => WaitForCallsAsync(mockId, count, timeout, default);
 
-    /// <summary>Blocks until the mock with <paramref name="mockId"/> has been called at least <paramref name="count"/> times, or until <paramref name="timeout"/> expires.</summary>
+    /// <inheritdoc cref="IMocklyServer.WaitForCallsAsync"/>
     public Task<CallSummary> WaitForCallsAsync(string mockId, int count, TimeSpan? timeout, CancellationToken cancellationToken)
     {
         var t = timeout ?? TimeSpan.FromSeconds(10);

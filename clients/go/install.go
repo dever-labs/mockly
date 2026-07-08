@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const DefaultMocklyVersion = "v0.12.4" // x-release-please-version
+const DefaultMocklyVersion = "v0.13.0" // x-release-please-version
 const githubBase = "https://github.com/dever-labs/mockly/releases/download"
 
 // GetBinaryPath returns the path to the Mockly binary, or empty string if not found.

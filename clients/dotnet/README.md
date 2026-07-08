@@ -85,7 +85,7 @@ await server.AddMockAsync(new Mock("ping", new MockRequest("GET", "/ping"), new 
 | Variable | Description |
 |----------|-------------|
 | `MOCKLY_BINARY_PATH` | Absolute path to a pre-staged Mockly binary (skips download) |
-| `MOCKLY_VERSION` | Version to download, e.g. `v0.12.4`<!-- x-release-please-version --> |
+| `MOCKLY_VERSION` | Version to download, e.g. `v0.13.0`<!-- x-release-please-version --> |
 | `MOCKLY_DOWNLOAD_BASE_URL` | Base URL override for binary downloads (Artifactory / mirror) |
 | `MOCKLY_NO_INSTALL` | Set to any value to throw instead of downloading |
 | `HTTPS_PROXY` / `HTTP_PROXY` | Standard proxy variables, honoured automatically by `HttpClient` |

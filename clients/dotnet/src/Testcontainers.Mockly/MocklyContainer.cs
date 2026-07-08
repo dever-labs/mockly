@@ -98,7 +98,7 @@ public sealed class MocklyContainer : DockerContainer, IMocklyServer
     public Task<IReadOnlyList<CallEntry>> GetLogsAsync(string? matchedId = null)
         => GetLogsAsync(matchedId, default);
 
-    /// <summary>Returns recent request log entries.</summary>
+    /// <summary>Returns recent request log entries, optionally filtered by <paramref name="matchedId"/>.</summary>
     public Task<IReadOnlyList<CallEntry>> GetLogsAsync(string? matchedId, CancellationToken cancellationToken)
         => GetAsync<IReadOnlyList<CallEntry>>(GetOrCreateHttpClient(), WithMatchedId("/api/logs", matchedId), cancellationToken);
 

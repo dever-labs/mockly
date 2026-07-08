@@ -119,14 +119,16 @@ func (l *Logger) EntriesByMockID(mockID string) []Entry {
 // or until ctx is done. It returns the matching entries (up to that point) and
 // an error if the context expired before the count was reached.
 func (l *Logger) WaitFor(ctx context.Context, mockID string, count int) ([]Entry, error) {
-	// Fast path — already satisfied.
-	if entries := l.EntriesByMockID(mockID); len(entries) >= count {
-		return entries, nil
-	}
-
+	// Subscribe first to avoid missing events that arrive between the
+	// initial check and the subscription being registered.
 	subID := fmt.Sprintf("wait-%s-%d", mockID, time.Now().UnixNano())
 	ch, cancel := l.Subscribe(subID)
 	defer cancel()
+
+	// Fast path — already satisfied after subscribing.
+	if entries := l.EntriesByMockID(mockID); len(entries) >= count {
+		return entries, nil
+	}
 
 	for {
 		select {

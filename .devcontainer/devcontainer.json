@@ -3,17 +3,11 @@
   "image": "ghcr.io/dever-labs/devcontainers/go-dev:latest",
   "mounts": [
     "source=dever-labs-gh-config,target=/home/vscode/.config/gh,type=volume",
-    "source=dever-labs-copilot,target=/home/vscode/.copilot,type=volume",
-    "source=dever-labs-gitconfig,target=/home/vscode/.config/git,type=volume"
+    "source=dever-labs-copilot,target=/home/vscode/.copilot,type=volume"
   ],
 
   "remoteEnv": {
     "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
-  },
-
-  "containerEnv": {
-    "DOTNET_ROOT": "/home/vscode/.dotnet",
-    "GIT_CONFIG_GLOBAL": "/home/vscode/.config/git/config"
   },
 
   "forwardPorts": [8080, 8081, 9091, 50051],
@@ -24,6 +18,9 @@
     "50051": { "label": "gRPC Mocks" }
   },
   "features": {
+    "ghcr.io/devcontainers/features/dotnet:2": {
+      "version": "10.0"
+    },
     "ghcr.io/devcontainers/features/java:1": {
       "version": "21",
       "installMaven": true

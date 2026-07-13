@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mockly-testcontainers"
-version = "0.13.0"
+version = "0.13.1"
 description = "Testcontainers module for Mockly — run Mockly as a Docker container in tests"
 readme = "README.md"
 license = { text = "MIT" }

@@ -18,7 +18,7 @@
 
     <!-- NuGet package metadata -->
     <PackageId>Testcontainers.Mockly</PackageId>
-    <Version>0.13.0</Version>
+    <Version>0.13.1</Version>
     <Authors>dever-labs</Authors>
     <Description>Testcontainers module for Mockly — run Mockly as a Docker container in tests</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

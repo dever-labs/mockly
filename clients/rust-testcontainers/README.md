@@ -15,7 +15,7 @@ Add this to `Cargo.toml`:
 
 ```toml
 [dev-dependencies]
-mockly-testcontainers = "0.13.0" # x-release-please-version
+mockly-testcontainers = "0.13.1" # x-release-please-version
 reqwest = { version = "0.12", features = ["blocking"] }
 testcontainers = { version = "0.23", features = ["blocking", "http_wait"] }
 ```

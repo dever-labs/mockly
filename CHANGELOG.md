@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.1](https://github.com/dever-labs/mockly/compare/v0.13.0...v0.13.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* add missing XML doc comments to MocklyContainer public API ([#128](https://github.com/dever-labs/mockly/issues/128)) ([37d9dfb](https://github.com/dever-labs/mockly/commit/37d9dfb0590636287acbc0ef7428bb2bea6f46db))
+* update .NET SDK version and clean up init script ([#130](https://github.com/dever-labs/mockly/issues/130)) ([2cd9124](https://github.com/dever-labs/mockly/commit/2cd9124d1c7fe67b0e02f617af6a3b03c5d32ecc))
+
 ## [0.13.0](https://github.com/dever-labs/mockly/compare/v0.12.4...v0.13.0) (2026-07-08)
 
 

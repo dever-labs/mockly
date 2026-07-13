@@ -1,6 +1,6 @@
 {
   "name": "@dever-labs/mockly-driver-win32-x64",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "Mockly binary for win32-x64 (internal platform package for mockly-driver)",
   "license": "MIT",
   "repository": {

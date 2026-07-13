@@ -15,7 +15,7 @@ Rust client for [Mockly](https://github.com/dever-labs/mockly) — a fast HTTP m
 
 ```toml
 [dev-dependencies]
-mockly-driver = "0.13.0" # x-release-please-version
+mockly-driver = "0.13.1" # x-release-please-version
 ```
 
 ## Quick start
@@ -64,7 +64,7 @@ fn test_get_users() {
 |---|---|
 | `MOCKLY_BINARY_PATH` | Absolute path to a pre-staged binary |
 | `MOCKLY_DOWNLOAD_BASE_URL` | Base URL override (Artifactory / mirrors) |
-| `MOCKLY_VERSION` | Version override (default: `v0.13.0`<!-- x-release-please-version -->) |
+| `MOCKLY_VERSION` | Version override (default: `v0.13.1`<!-- x-release-please-version -->) |
 | `MOCKLY_NO_INSTALL` | Return an error instead of downloading |
 | `HTTPS_PROXY` / `HTTP_PROXY` | Proxy for downloads (handled by reqwest) |
 

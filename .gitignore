@@ -64,6 +64,7 @@ clients/java/testcontainers/target/
 # .NET client
 clients/dotnet/**/bin/
 clients/dotnet/**/obj/
+dotnet/
 
 # Rust client
 clients/rust/target/

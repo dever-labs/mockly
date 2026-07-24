@@ -35,8 +35,8 @@ github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+
 github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/gosnmp/gosnmp v1.36.2-0.20231009064202-d306ed5aa998/go.mod h1:O938QjIS4vpSag1UTcnnBq9MfNmimuOGtvQsT1NbErc=
-github.com/gosnmp/gosnmp v1.43.2 h1:F9loz6uMCNtIQj0RNO5wz/mZ+FZt2WyNKJYOvw+Zosw=
-github.com/gosnmp/gosnmp v1.43.2/go.mod h1:smHIwoaqr1M+HTAEd7+mKkPs8lp3Lf/U+htPUql1Q3c=
+github.com/gosnmp/gosnmp v1.44.0 h1:6SUNAJWjSu/j05rm+M1G39NoPW8jvShiFqYf6XNnM+k=
+github.com/gosnmp/gosnmp v1.44.0/go.mod h1:30xQDXCVXXehh/xwRd62+JwIizwc3HZaBi4F/Hv5/0o=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/jinzhu/copier v0.3.5 h1:GlvfUwHk62RokgqVNvYsku0TATCF7bAHVwEXoBh3iJg=

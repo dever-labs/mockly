@@ -30,7 +30,7 @@ import java.util.Set;
  */
 public class MocklyInstaller {
 
-    public static final String DEFAULT_VERSION = "v0.13.1"; // x-release-please-version
+    public static final String DEFAULT_VERSION = "v0.13.2"; // x-release-please-version
 
     private static final String DEFAULT_DOWNLOAD_BASE =
             "https://github.com/dever-labs/mockly/releases/download";

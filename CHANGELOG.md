@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.2](https://github.com/dever-labs/mockly/compare/v0.13.1...v0.13.2) (2026-07-24)
+
+
+### Bug Fixes
+
+* remove dotnet run-file cache and add dotnet/ to .gitignore ([#139](https://github.com/dever-labs/mockly/issues/139)) ([326fa05](https://github.com/dever-labs/mockly/commit/326fa0509882fc94ba6823f37646995ef0eb7043))
+
 ## [0.13.1](https://github.com/dever-labs/mockly/compare/v0.13.0...v0.13.1) (2026-07-13)
 
 

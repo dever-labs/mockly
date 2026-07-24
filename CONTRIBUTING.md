@@ -100,6 +100,20 @@ docs: add gRPC preset example to README
 
 Commits that land on `main` are squash-merged so history stays clean.
 
+### Dependency updates and release notes
+
+Release Please (our automated release tool) only bumps the version and adds a
+changelog entry for `feat` and `fix` commits (plus breaking changes). Routine
+dependency bumps use `chore(deps)`/`chore(ci)` — by design these do **not**
+trigger a release on their own, so Dependabot PRs can be merged freely without
+spamming consumers with meaningless releases.
+
+**Exception:** if a Dependabot PR fixes a security advisory (flagged by
+GitHub as a security update), retitle the squash-merge commit to
+`fix(deps): ...` instead of `chore(deps): ...` before merging. This ensures
+the fix is versioned as a patch release and shows up in the changelog under
+"Bug Fixes", so consumers actually get the patched artifact.
+
 ## Pull request process
 
 1. Fill in the PR template

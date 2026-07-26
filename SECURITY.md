@@ -44,7 +44,7 @@ Report privately via GitHub's built-in private vulnerability reporting:
 2. Click **"Report a vulnerability"**
 3. Fill in the details described below
 
-Alternatively, email **security@dever-labs.io** with the subject line
+Alternatively, email **security@labs.dever.dk** with the subject line
 `[mockly] Security Vulnerability Report`.
 
 ### What to include

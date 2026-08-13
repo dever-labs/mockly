@@ -1,6 +1,6 @@
 {
   "name": "@dever-labs/mockly-testcontainers",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "description": "Testcontainers module for Mockly — run Mockly as a Docker container in tests",
   "type": "module",
   "main": "./dist/index.js",

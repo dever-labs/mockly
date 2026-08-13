@@ -2,6 +2,7 @@
 package redisserver
 
 import (
+	"io"
 	"net"
 	"testing"
 
@@ -25,26 +26,27 @@ type mockConn struct {
 	arrays []int
 }
 
-func (m *mockConn) WriteNull()                  { m.nulls++ }
-func (m *mockConn) WriteBulkString(s string)    { m.bulks = append(m.bulks, s) }
-func (m *mockConn) WriteInt(n int)              { m.ints = append(m.ints, n) }
-func (m *mockConn) WriteInt64(n int64)          { m.int64s = append(m.int64s, n) }
-func (m *mockConn) WriteError(msg string)       { m.errors = append(m.errors, msg) }
-func (m *mockConn) WriteArray(count int)        { m.arrays = append(m.arrays, count) }
-func (m *mockConn) RemoteAddr() string          { return "127.0.0.1:0" }
-func (m *mockConn) Close() error                { return nil }
-func (m *mockConn) WriteString(s string)        {}
-func (m *mockConn) WriteBulk(b []byte)          {}
-func (m *mockConn) WriteUint64(n uint64)        {}
-func (m *mockConn) WriteRaw(data []byte)        {}
-func (m *mockConn) WriteAny(any interface{})    {}
-func (m *mockConn) Context() interface{}        { return nil }
-func (m *mockConn) SetContext(v interface{})    {}
-func (m *mockConn) SetReadBuffer(bytes int)     {}
-func (m *mockConn) Detach() redcon.DetachedConn      { return nil }
-func (m *mockConn) NetConn() net.Conn                { return nil }
-func (m *mockConn) PeekPipeline() []redcon.Command   { return nil }
-func (m *mockConn) ReadPipeline() []redcon.Command   { return nil }
+func (m *mockConn) WriteNull()                          { m.nulls++ }
+func (m *mockConn) WriteBulkString(s string)            { m.bulks = append(m.bulks, s) }
+func (m *mockConn) WriteInt(n int)                      { m.ints = append(m.ints, n) }
+func (m *mockConn) WriteInt64(n int64)                  { m.int64s = append(m.int64s, n) }
+func (m *mockConn) WriteError(msg string)               { m.errors = append(m.errors, msg) }
+func (m *mockConn) WriteArray(count int)                { m.arrays = append(m.arrays, count) }
+func (m *mockConn) RemoteAddr() string                  { return "127.0.0.1:0" }
+func (m *mockConn) Close() error                        { return nil }
+func (m *mockConn) WriteString(s string)                {}
+func (m *mockConn) WriteBulk(b []byte)                  {}
+func (m *mockConn) WriteUint64(n uint64)                {}
+func (m *mockConn) WriteRaw(data []byte)                {}
+func (m *mockConn) WriteAny(any interface{})            {}
+func (m *mockConn) Context() interface{}                { return nil }
+func (m *mockConn) SetContext(v interface{})            {}
+func (m *mockConn) SetReadBuffer(bytes int)             {}
+func (m *mockConn) WriteBulkFrom(n int64, rb io.Reader) {}
+func (m *mockConn) Detach() redcon.DetachedConn         { return nil }
+func (m *mockConn) NetConn() net.Conn                   { return nil }
+func (m *mockConn) PeekPipeline() []redcon.Command      { return nil }
+func (m *mockConn) ReadPipeline() []redcon.Command      { return nil }
 
 var _ redcon.Conn = (*mockConn)(nil)
 

@@ -13,7 +13,7 @@ require (
 	github.com/rs/xid v1.6.0
 	github.com/slayercat/GoSNMPServer v0.5.2
 	github.com/spf13/cobra v1.10.2
-	github.com/tidwall/redcon v1.6.2
+	github.com/tidwall/redcon v1.6.4
 	google.golang.org/grpc v1.83.0
 	gopkg.in/yaml.v3 v3.0.1
 )

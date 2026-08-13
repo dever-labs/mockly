@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <PackageId>Mockly.Driver</PackageId>
-    <Version>0.13.1</Version>
+    <Version>0.13.2</Version>
     <Authors>dever-labs</Authors>
     <Description>C# client for Mockly — start/stop servers and manage HTTP mocks in tests</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

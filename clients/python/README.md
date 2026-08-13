@@ -172,7 +172,7 @@ Returns the path to an existing binary, or `None` if not found.
 | Variable | Description | Default |
 |---|---|---|
 | `MOCKLY_BINARY_PATH` | Absolute path to a pre-staged binary — skips all download logic | — |
-| `MOCKLY_VERSION` | Binary version to download | `v0.13.1`<!-- x-release-please-version --> |
+| `MOCKLY_VERSION` | Binary version to download | `v0.13.2`<!-- x-release-please-version --> |
 | `MOCKLY_DOWNLOAD_BASE_URL` | Override the GitHub releases base URL (for mirrors/Artifactory) | `https://github.com/dever-labs/mockly/releases/download` |
 | `MOCKLY_NO_INSTALL` | If set, `install()` raises `RuntimeError` instead of downloading | — |
 | `HTTPS_PROXY` / `HTTP_PROXY` | Route downloads through an HTTP proxy | — |

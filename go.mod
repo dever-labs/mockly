@@ -3,7 +3,7 @@ module github.com/dever-labs/mockly
 go 1.26.0
 
 require (
-	github.com/emersion/go-smtp v0.24.0
+	github.com/emersion/go-smtp v0.25.0
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/go-chi/cors v1.2.2
 	github.com/gorilla/websocket v1.5.3

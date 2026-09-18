@@ -12,7 +12,7 @@ try:
     from importlib.metadata import version as _pkg_version
     _DEFAULT_VERSION = "v" + _pkg_version("mockly-driver")
 except Exception:
-    _DEFAULT_VERSION = "v0.13.1"  # x-release-please-version
+    _DEFAULT_VERSION = "v0.13.2"  # x-release-please-version
 
 _DEFAULT_BASE_URL = "https://github.com/dever-labs/mockly/releases/download"
 

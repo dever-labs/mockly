@@ -2209,6 +2209,46 @@ paths:
         "204":
           description: Fault cleared for protocol
 
+  /api/fault/{protocol}/effective:
+    get:
+      tags: [Fault Injection]
+      operationId: getEffectiveProtocolFault
+      summary: Get the effective fault config for a protocol
+      description: >-
+        Returns the fault that will actually be applied to the next matching
+        request for this protocol — the direct fault set via `/api/fault/{protocol}`
+        merged with any fault contributed by a currently active scenario.
+      parameters:
+        - $ref: "#/components/parameters/protocol"
+      responses:
+        "200":
+          description: Effective fault config for the selected protocol, or null when none is active
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/HTTPFault"
+                  - $ref: "#/components/schemas/WebSocketFault"
+                  - $ref: "#/components/schemas/GRPCFault"
+                  - $ref: "#/components/schemas/TCPFault"
+                  - $ref: "#/components/schemas/RedisFault"
+                  - $ref: "#/components/schemas/MQTTFault"
+                  - $ref: "#/components/schemas/SMTPFault"
+                  - $ref: "#/components/schemas/SNMPFault"
+                  - $ref: "#/components/schemas/DNSFault"
+                  - $ref: "#/components/schemas/AMQPFault"
+                  - $ref: "#/components/schemas/KafkaFault"
+                  - $ref: "#/components/schemas/LDAPFault"
+                  - $ref: "#/components/schemas/IMAPFault"
+                  - $ref: "#/components/schemas/FTPFault"
+                  - $ref: "#/components/schemas/MemcachedFault"
+                  - $ref: "#/components/schemas/STOMPFault"
+                  - $ref: "#/components/schemas/CoAPFault"
+                  - $ref: "#/components/schemas/SIPFault"
+                  - type: "null"
+        "404":
+          description: Unknown protocol
+
   # ---------------------------------------------------------------------------
   # Logs
   # ---------------------------------------------------------------------------

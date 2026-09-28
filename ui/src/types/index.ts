@@ -39,6 +39,36 @@ export interface ProtocolInfo {
   mocks: number
 }
 
+export interface MockPatch {
+  mock_id: string
+  status?: number
+  headers?: Record<string, string>
+  body?: string
+  delay?: string
+  disabled?: boolean
+}
+
+export interface Scenario {
+  id: string
+  name: string
+  description?: string
+  patches?: MockPatch[]
+  faults?: Record<string, unknown>
+}
+
+export interface ActiveScenarios {
+  active: string[]
+  scenarios: Scenario[]
+}
+
+export const FAULT_PROTOCOLS = [
+  'http', 'graphql', 'websocket', 'grpc', 'tcp', 'redis', 'mqtt', 'smtp',
+  'snmp', 'dns', 'amqp', 'kafka', 'ldap', 'imap', 'ftp', 'memcached',
+  'stomp', 'coap', 'sip',
+] as const
+
+export type FaultProtocol = (typeof FAULT_PROTOCOLS)[number]
+
 export interface LogEntry {
   id: string
   timestamp: string

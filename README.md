@@ -47,7 +47,7 @@
 | **Call verification** | Track how many times each mock was hit; block until an expected count is reached |
 | **Log filtering** | Filter logs and log counts by matched mock ID via `/api/logs` and `/api/logs/count` |
 | **PATCH mocks** | Change only specific response fields at runtime without replacing the whole mock |
-| **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid, NTLM |
+| **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid, Anthropic, Resend, PagerDuty, AWS S3, NTLM |
 | **Web UI** | Served from the binary itself — no separate install |
 | **Management API** | 40+ REST endpoints covering all protocols, scenarios, fault, state, logs, and call counts |
 | **Live request log** | SSE-streamed in real time to the UI |
@@ -1170,6 +1170,10 @@ curl -X DELETE http://localhost:9091/api/fault/dns
 
 # Clear all faults
 curl -X DELETE http://localhost:9091/api/fault
+
+# Get the effective fault for a protocol (direct fault merged with any
+# fault activated via a scenario — what will actually be applied next)
+curl http://localhost:9091/api/fault/dns/effective
 ```
 
 ### Fault fields per protocol
@@ -1231,6 +1235,10 @@ Mockly ships with pre-built YAML configs for common services:
 | `slack` | Messages, channels, users, reactions |
 | `twilio` | SMS, calls, lookup |
 | `sendgrid` | Email send, templates, contacts |
+| `anthropic` | Claude messages, models |
+| `resend` | Email send, retrieve, domains, API keys |
+| `pagerduty` | Incidents, services, users, escalations |
+| `aws-s3` | List buckets/objects, get/put/delete objects |
 
 Each preset also includes built-in scenarios for common failure modes (e.g. `keycloak-unauthorized`, `stripe-card-declined`).
 
@@ -1365,6 +1373,7 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 | `GET` | `/api/fault/{protocol}` | Get fault config for a protocol |
 | `POST` | `/api/fault/{protocol}` | Set fault config for a protocol |
 | `DELETE` | `/api/fault/{protocol}` | Clear fault for a protocol |
+| `GET` | `/api/fault/{protocol}/effective` | Get the effective fault (direct + active scenario) for a protocol |
 
 `{protocol}` is one of: `http`, `graphql`, `websocket`, `grpc`, `tcp`, `redis`, `mqtt`, `smtp`, `snmp`, `dns`, `amqp`, `kafka`, `ldap`, `imap`, `ftp`, `memcached`, `stomp`, `coap`, `sip`.
 

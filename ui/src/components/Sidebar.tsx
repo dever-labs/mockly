@@ -7,6 +7,8 @@ const links = [
   { to: '/grpc', label: 'gRPC', icon: '◈' },
   { to: '/logs', label: 'Logs', icon: '≡' },
   { to: '/state', label: 'State', icon: '◎' },
+  { to: '/scenarios', label: 'Scenarios', icon: '▶' },
+  { to: '/fault', label: 'Fault Injection', icon: '⚠' },
 ]
 
 export function Sidebar() {

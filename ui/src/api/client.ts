@@ -1,4 +1,4 @@
-import type { HTTPMock, WebSocketMock, GRPCMock, ProtocolInfo, LogEntry } from '../types'
+import type { HTTPMock, WebSocketMock, GRPCMock, ProtocolInfo, LogEntry, Scenario, ActiveScenarios } from '../types'
 
 const BASE = '/api'
 
@@ -11,7 +11,9 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error ?? res.statusText)
   }
-  return res.json()
+  if (res.status === 204) return undefined as T
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
 export const getProtocols = () => req<ProtocolInfo[]>('/protocols')
@@ -49,3 +51,27 @@ export const deleteStateKey = (key: string) =>
 export const getLogs = () => req<LogEntry[]>('/logs')
 export const clearLogs = () => req<{ status: string }>('/logs', { method: 'DELETE' })
 export const resetAll = () => req<{ status: string }>('/reset', { method: 'POST' })
+
+// Scenarios
+export const getScenarios = () => req<Scenario[]>('/scenarios')
+export const getActiveScenarios = () => req<ActiveScenarios>('/scenarios/active')
+export const createScenario = (sc: Omit<Scenario, 'id'> & { id?: string }) =>
+  req<Scenario>('/scenarios', { method: 'POST', body: JSON.stringify(sc) })
+export const updateScenario = (id: string, sc: Scenario) =>
+  req<Scenario>(`/scenarios/${id}`, { method: 'PUT', body: JSON.stringify(sc) })
+export const deleteScenario = (id: string) =>
+  req<{ deleted: string }>(`/scenarios/${id}`, { method: 'DELETE' })
+export const activateScenario = (id: string) =>
+  req<{ activated: string; active: string[] }>(`/scenarios/${id}/activate`, { method: 'POST' })
+export const deactivateScenario = (id: string) =>
+  req<{ deactivated: string; active: string[] }>(`/scenarios/${id}/deactivate`, { method: 'POST' })
+
+// Fault injection
+export const getAllFaults = () => req<Record<string, unknown>>('/fault')
+export const clearAllFaults = () => req<void>('/fault', { method: 'DELETE' })
+export const getProtocolFault = (protocol: string) => req<unknown>(`/fault/${protocol}`)
+export const getEffectiveProtocolFault = (protocol: string) => req<unknown>(`/fault/${protocol}/effective`)
+export const setProtocolFault = (protocol: string, fault: unknown) =>
+  req<unknown>(`/fault/${protocol}`, { method: 'POST', body: JSON.stringify(fault) })
+export const clearProtocolFault = (protocol: string) =>
+  req<void>(`/fault/${protocol}`, { method: 'DELETE' })

@@ -1,6 +1,6 @@
 {
   "$schema": "postly/v1",
-  "exportedAt": "2026-04-17T00:00:00.000Z",
+  "exportedAt": "2026-09-28T00:00:00.000Z",
   "collections": [
     {
       "name": "Mockly API",
@@ -885,12 +885,12 @@
         },
         {
           "name": "Fault Injection",
-          "description": "Inject latency or error responses globally across all HTTP mocks.",
+          "description": "Protocol-native direct fault injection, set per protocol via /api/fault/{protocol}",
           "auth": { "type": "none", "config": {} },
           "ssl": "inherit",
           "requests": [
             {
-              "name": "Get Fault",
+              "name": "Get All Active Faults",
               "method": "GET",
               "url": "{{baseUrl}}/api/fault",
               "protocol": "http",
@@ -900,43 +900,11 @@
               "bodyContent": "",
               "auth": { "type": "inherit", "config": {} },
               "ssl": "inherit",
-              "description": "Returns the current global fault configuration. Returns {\"enabled\":false} when no fault is active.",
+              "description": "",
               "protocolConfig": {}
             },
             {
-              "name": "Set Fault – Latency",
-              "method": "POST",
-              "url": "{{baseUrl}}/api/fault",
-              "protocol": "http",
-              "params": [],
-              "headers": [
-                { "key": "Content-Type", "value": "application/json", "enabled": true }
-              ],
-              "bodyType": "json",
-              "bodyContent": "{\n  \"delay\": \"500ms\"\n}",
-              "auth": { "type": "inherit", "config": {} },
-              "ssl": "inherit",
-              "description": "Adds 500ms latency to every HTTP mock response.",
-              "protocolConfig": {}
-            },
-            {
-              "name": "Set Fault – Error Rate",
-              "method": "POST",
-              "url": "{{baseUrl}}/api/fault",
-              "protocol": "http",
-              "params": [],
-              "headers": [
-                { "key": "Content-Type", "value": "application/json", "enabled": true }
-              ],
-              "bodyType": "json",
-              "bodyContent": "{\n  \"status_override\": 503,\n  \"error_rate\": 0.5,\n  \"body\": \"{\\\"error\\\":\\\"injected fault\\\"}\"\n}",
-              "auth": { "type": "inherit", "config": {} },
-              "ssl": "inherit",
-              "description": "Returns 503 for ~50% of requests. Set error_rate to 0 or omit it to affect 100% of requests.",
-              "protocolConfig": {}
-            },
-            {
-              "name": "Clear Fault",
+              "name": "Clear All Faults",
               "method": "DELETE",
               "url": "{{baseUrl}}/api/fault",
               "protocol": "http",
@@ -946,7 +914,97 @@
               "bodyContent": "",
               "auth": { "type": "inherit", "config": {} },
               "ssl": "inherit",
-              "description": "Disables global fault injection and restores normal mock behaviour.",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Get Protocol Fault",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/fault/{{protocol}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "protocol: http|websocket|grpc|graphql|tcp|redis|smtp|mqtt|snmp|dns|amqp|kafka|ldap|imap|ftp|memcached|stomp|coap|sip",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Get Effective Protocol Fault",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/fault/{{protocol}}/effective",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Merges the direct fault with any fault set by an active scenario.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Set HTTP Fault",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/fault/http",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"status\": 503,\n  \"body\": \"{\\\"error\\\":\\\"service_unavailable\\\"}\",\n  \"error_rate\": 0.3\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Set DNS Fault",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/fault/dns",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"rcode\": \"NXDOMAIN\",\n  \"error_rate\": 0.5\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Set gRPC Fault",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/fault/grpc",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"code\": \"UNAVAILABLE\",\n  \"error_rate\": 1.0\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Clear Protocol Fault",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/fault/{{protocol}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
               "protocolConfig": {}
             }
           ]
@@ -983,6 +1041,34 @@
               "auth": { "type": "inherit", "config": {} },
               "ssl": "inherit",
               "description": "Clears all captured log entries.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Get Logs Count",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/logs/count",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Optional ?mockId= filter.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Stream Logs (SSE)",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/logs/stream",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Server-Sent Events stream of new log entries as they happen.",
               "protocolConfig": {}
             }
           ]
@@ -1049,6 +1135,918 @@
               "auth": { "type": "inherit", "config": {} },
               "ssl": "inherit",
               "description": "Resets call counts for all HTTP mocks.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "DNS Mocks",
+          "description": "Manage DNS record mocks",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List DNS Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/dns",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create DNS Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/dns",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"dns-example\",\n  \"name\": \"example.com\",\n  \"type\": \"A\",\n  \"records\": [\n    \"93.184.216.34\"\n  ],\n  \"ttl\": 300\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Creates a DNS record mock. type: A|AAAA|CNAME|MX|TXT|NS|SOA|PTR|SRV.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update DNS Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/dns/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"dns-example\",\n  \"name\": \"example.com\",\n  \"type\": \"A\",\n  \"records\": [\n    \"93.184.216.35\"\n  ],\n  \"ttl\": 300\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete DNS Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/dns/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "AMQP Mocks",
+          "description": "Manage AMQP publish/consume mocks and captured messages",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List AMQP Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/amqp",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create AMQP Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/amqp",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"amqp-order-created\",\n  \"exchange\": \"orders\",\n  \"routing_key\": \"order.created\",\n  \"response\": {\n    \"exchange\": \"orders\",\n    \"routing_key\": \"order.ack\",\n    \"body\": \"{\\\"ack\\\":true}\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Matches on exchange + routing_key; response is published back when set.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update AMQP Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/amqp/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"amqp-order-created\",\n  \"exchange\": \"orders\",\n  \"routing_key\": \"order.created\",\n  \"response\": {\n    \"exchange\": \"orders\",\n    \"routing_key\": \"order.ack\",\n    \"body\": \"{\\\"ack\\\":true}\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete AMQP Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/amqp/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "List Captured AMQP Messages",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/amqp/messages",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Clear AMQP Messages",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/amqp/messages",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "Kafka Mocks",
+          "description": "Manage Kafka topic mocks and captured messages",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List Kafka Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/kafka",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create Kafka Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/kafka",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"kafka-events\",\n  \"topic\": \"events\",\n  \"records\": [\n    {\n      \"key\": \"k1\",\n      \"value\": \"{\\\"event\\\":\\\"created\\\"}\"\n    }\n  ]\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "records are produced to the topic whenever a message matches.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update Kafka Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/kafka/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"kafka-events\",\n  \"topic\": \"events\",\n  \"records\": [\n    {\n      \"key\": \"k1\",\n      \"value\": \"{\\\"event\\\":\\\"updated\\\"}\"\n    }\n  ]\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete Kafka Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/kafka/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "List Captured Kafka Messages",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/kafka/messages",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Clear Kafka Messages",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/kafka/messages",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "LDAP Mocks",
+          "description": "Manage LDAP bind/search mocks",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List LDAP Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/ldap",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create LDAP Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/ldap",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"ldap-user-search\",\n  \"base_dn\": \"ou=users,dc=example,dc=com\",\n  \"filter\": \"(uid=alice)\",\n  \"attributes\": {\n    \"cn\": [\n      \"Alice Example\"\n    ],\n    \"mail\": [\n      \"alice@example.com\"\n    ]\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Matches an LDAP search request by base DN + filter.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update LDAP Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/ldap/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"ldap-user-search\",\n  \"base_dn\": \"ou=users,dc=example,dc=com\",\n  \"filter\": \"(uid=alice)\",\n  \"attributes\": {\n    \"cn\": [\n      \"Alice Updated\"\n    ],\n    \"mail\": [\n      \"alice@example.com\"\n    ]\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete LDAP Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/ldap/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "IMAP Mocks",
+          "description": "Manage IMAP mailboxes and messages",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List IMAP Mailboxes",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/imap",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create IMAP Mailbox",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/imap",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"inbox\",\n  \"name\": \"INBOX\",\n  \"messages\": [\n    {\n      \"seq_num\": 1,\n      \"from\": \"alice@example.com\",\n      \"to\": \"bob@example.com\",\n      \"subject\": \"Hello\",\n      \"body\": \"Hi Bob!\",\n      \"flags\": [\n        \"\\\\Seen\"\n      ]\n    }\n  ]\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Each mailbox holds a fixed set of messages served over IMAP.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update IMAP Mailbox",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/imap/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"inbox\",\n  \"name\": \"INBOX\",\n  \"messages\": [\n    {\n      \"seq_num\": 1,\n      \"from\": \"alice@example.com\",\n      \"to\": \"bob@example.com\",\n      \"subject\": \"Hello (updated)\",\n      \"body\": \"Hi Bob!\",\n      \"flags\": [\n        \"\\\\Seen\"\n      ]\n    }\n  ]\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete IMAP Mailbox",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/imap/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "FTP Mocks",
+          "description": "Manage FTP files",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List FTP Files",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/ftp",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create FTP File",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/ftp",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"readme\",\n  \"path\": \"/readme.txt\",\n  \"content\": \"hello world\",\n  \"permissions\": \"rw-r--r--\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update FTP File",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/ftp/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"readme\",\n  \"path\": \"/readme.txt\",\n  \"content\": \"hello world (updated)\",\n  \"permissions\": \"rw-r--r--\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete FTP File",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/ftp/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "Memcached Mocks",
+          "description": "Manage Memcached command mocks",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List Memcached Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/memcached",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create Memcached Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/memcached",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"get-session\",\n  \"command\": \"get\",\n  \"key\": \"session:123\",\n  \"response\": {\n    \"value\": \"abc123\",\n    \"flags\": 0,\n    \"status\": \"STORED\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "command: get|set|add|replace|delete|incr|decr, etc.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update Memcached Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/memcached/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"get-session\",\n  \"command\": \"get\",\n  \"key\": \"session:123\",\n  \"response\": {\n    \"value\": \"def456\",\n    \"flags\": 0,\n    \"status\": \"STORED\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete Memcached Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/memcached/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "STOMP Mocks",
+          "description": "Manage STOMP destination mocks and captured messages",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List STOMP Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/stomp",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create STOMP Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/stomp",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"stomp-orders\",\n  \"destination\": \"/queue/orders\",\n  \"response\": {\n    \"destination\": \"/queue/orders.ack\",\n    \"body\": \"{\\\"ack\\\":true}\",\n    \"content_type\": \"application/json\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update STOMP Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/stomp/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"stomp-orders\",\n  \"destination\": \"/queue/orders\",\n  \"response\": {\n    \"destination\": \"/queue/orders.ack\",\n    \"body\": \"{\\\"ack\\\":true,\\\"v\\\":2}\",\n    \"content_type\": \"application/json\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete STOMP Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/stomp/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "List Captured STOMP Messages",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/stomp/messages",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Clear STOMP Messages",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/stomp/messages",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "CoAP Mocks",
+          "description": "Manage CoAP request/response mocks",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List CoAP Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/coap",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create CoAP Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/coap",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"coap-temp\",\n  \"method\": \"GET\",\n  \"path\": \"/sensors/temperature\",\n  \"response\": {\n    \"code\": \"2.05\",\n    \"payload\": \"21.5\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "response.code uses CoAP dotted status codes, e.g. 2.05 Content, 4.04 Not Found.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update CoAP Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/coap/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"coap-temp\",\n  \"method\": \"GET\",\n  \"path\": \"/sensors/temperature\",\n  \"response\": {\n    \"code\": \"2.05\",\n    \"payload\": \"22.0\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete CoAP Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/coap/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "SIP Mocks",
+          "description": "Manage SIP method/URI mocks",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List SIP Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/sip",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create SIP Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/sip",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"sip-register\",\n  \"method\": \"REGISTER\",\n  \"uri\": \"sip:alice@example.com\",\n  \"response\": {\n    \"status\": 200,\n    \"reason\": \"OK\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update SIP Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/sip/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"sip-register\",\n  \"method\": \"REGISTER\",\n  \"uri\": \"sip:alice@example.com\",\n  \"response\": {\n    \"status\": 403,\n    \"reason\": \"Forbidden\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete SIP Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/sip/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "SNMP Mocks",
+          "description": "Manage SNMP OID mock definitions and outbound TRAP configurations",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List SNMP Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/snmp",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create SNMP Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/snmp",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"snmp-sysdescr\",\n  \"oid\": \"1.3.6.1.2.1.1.1.0\",\n  \"type\": \"OctetString\",\n  \"value\": \"Mockly Device\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update SNMP Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/snmp/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"snmp-sysdescr\",\n  \"oid\": \"1.3.6.1.2.1.1.1.0\",\n  \"type\": \"OctetString\",\n  \"value\": \"Mockly Device v2\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete SNMP Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/snmp/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "List SNMP Traps",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/snmp/traps",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Send SNMP Trap",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/snmp/traps/{{trapId}}/send",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Fires the configured TRAP to its target host:port.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
+          "name": "Webhooks",
+          "description": "Outbound webhook attempt history and manual \"send now\" dispatch",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List Webhook History",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/webhooks",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Clear Webhook History",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/webhooks",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Send Webhook (ad hoc)",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/webhooks/send",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"url\": \"https://example.com/webhook\",\n  \"method\": \"POST\",\n  \"headers\": {\n    \"Authorization\": \"whsec_123\"\n  },\n  \"body\": \"{\\\"event\\\":\\\"test\\\"}\"\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Fires a one-off webhook synchronously, independent of any mock, and returns the resulting attempt record.",
               "protocolConfig": {}
             }
           ]

@@ -45,9 +45,10 @@
 | **Per-protocol fault injection** | Each protocol exposes its own native fault fields (DNS rcode, gRPC status code, Kafka error code, etc.) — activate via API or bundled inside a scenario |
 | **Per-mock fault injection** | Fault fields on individual HTTP mocks with independent delay, status/body override, and error rate |
 | **Call verification** | Track how many times each mock was hit; block until an expected count is reached |
+| **Outbound webhooks** | Any HTTP mock can fire a templated outbound callback (server-initiated notification) when matched — with delay, retries, and a searchable attempt history |
 | **Log filtering** | Filter logs and log counts by matched mock ID via `/api/logs` and `/api/logs/count` |
 | **PATCH mocks** | Change only specific response fields at runtime without replacing the whole mock |
-| **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid, Anthropic, Resend, PagerDuty, AWS S3, NTLM |
+| **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid, Anthropic, Resend, PagerDuty, AWS S3, NTLM, Nets/Nexi |
 | **Web UI** | Served from the binary itself — no separate install |
 | **Management API** | 40+ REST endpoints covering all protocols, scenarios, fault, state, logs, and call counts |
 | **Live request log** | SSE-streamed in real time to the UI |
@@ -507,6 +508,53 @@ Requires an `Authorization: Digest …` header to be present (no nonce validatio
           auth:
             type: digest
 ```
+
+### Outbound Webhooks
+
+Any HTTP mock can fire a templated outbound HTTP callback when it's matched
+— simulating systems that notify clients asynchronously via server-initiated
+requests (payment gateway callbacks, job-completion notifications, message
+broker pushes, etc.) rather than only responding synchronously.
+
+Dispatch is fire-and-forget: the callback is sent in the background and
+never blocks or delays the mock's own HTTP response. `url`, `headers`, and
+`body` all support the same Go template syntax as response bodies, so the
+callback target and payload can be derived from the triggering request
+(e.g. a caller-supplied `callback_url` field).
+
+```yaml
+      - id: create-payment
+        request:
+          method: POST
+          path: /v1/payment
+        response:
+          status: 201
+          body: '{"paymentId":"pay_123"}'
+        webhooks:
+          - url: "{{.request.body.webhookUrl}}"
+            method: POST
+            headers:
+              Authorization: "{{.request.body.webhookSecret}}"
+            delay: 300ms        # wait before sending, simulating async processing
+            retries: 2          # additional attempts on failure or a 5xx response
+            retry_delay: 1s
+            body: |
+              {"event": "payment.created", "id": "{{uuid}}"}
+```
+
+Every attempt (including retries) is recorded and available via the
+management API:
+
+```sh
+curl http://localhost:9090/api/webhooks                 # attempt history
+curl -X DELETE http://localhost:9090/api/webhooks        # clear history
+curl -X POST http://localhost:9090/api/webhooks/send \
+  -d '{"url":"https://example.com/hook","body":"{\"ping\":true}"}'  # send one ad hoc
+```
+
+See the [Nets/Nexi preset](configs/presets/nets.yaml) for a full example
+that templates the callback URL and authorization straight out of the
+request body, matching how real payment gateways accept a `webhooks` array.
 
 ### WebSocket
 
@@ -1239,6 +1287,7 @@ Mockly ships with pre-built YAML configs for common services:
 | `resend` | Email send, retrieve, domains, API keys |
 | `pagerduty` | Incidents, services, users, escalations |
 | `aws-s3` | List buckets/objects, get/put/delete objects |
+| `nets` | Nets/Nexi Easy Checkout payments — create/get/charge/refund/cancel, plus an outbound "payment created" webhook |
 
 Each preset also includes built-in scenarios for common failure modes (e.g. `keycloak-unauthorized`, `stripe-card-declined`).
 
@@ -1320,6 +1369,14 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 |---|---|---|
 | `GET` | `/api/emails` | List captured emails |
 | `DELETE` | `/api/emails` | Clear inbox |
+
+### Outbound Webhooks
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/webhooks` | List the outbound webhook attempt history |
+| `DELETE` | `/api/webhooks` | Clear the webhook attempt history |
+| `POST` | `/api/webhooks/send` | Fire a one-off webhook synchronously (body: `{"url":"...","method":"POST","headers":{...},"body":"..."}`); returns the resulting attempt record |
 
 ### MQTT messages
 

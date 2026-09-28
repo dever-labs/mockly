@@ -31,6 +31,7 @@ const (
 	DefaultTCPReadBufferSize = 65536
 	DefaultTCPReadDeadline   = 30 * time.Second
 )
+
 // Config is the top-level Mockly configuration.
 type Config struct {
 	Mockly    MocklyConfig    `yaml:"mockly" json:"mockly"`
@@ -136,6 +137,12 @@ type HTTPMock struct {
 
 	// Fault overrides the response for this mock independently of the global fault.
 	Fault *MockFault `yaml:"fault,omitempty" json:"fault,omitempty"`
+
+	// Webhooks are outbound HTTP callbacks fired asynchronously whenever this
+	// mock is matched — see the Webhook type for details. Any number of
+	// mocks (across any preset) can attach webhooks; the mechanism is generic
+	// and not tied to any specific API shape.
+	Webhooks []Webhook `yaml:"webhooks,omitempty" json:"webhooks,omitempty"`
 }
 
 // MockFault injects latency or error responses for a specific mock.
@@ -145,6 +152,38 @@ type MockFault struct {
 	Body           string            `yaml:"body,omitempty" json:"body,omitempty"`
 	Headers        map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"` // Extra response headers
 	ErrorRate      float64           `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+}
+
+// Webhook defines an outbound HTTP call fired asynchronously when the mock it
+// is attached to is matched. This simulates systems that notify clients via
+// server-initiated callbacks rather than only responding synchronously —
+// payment gateways, message brokers, job queues, CI systems, etc.
+//
+// URL, Headers, and Body support the same Go template syntax as response
+// bodies (e.g. "{{.request.body.callback_url}}", "{{uuid}}", "{{now}}"),
+// rendered against the request that triggered the mock. This lets a
+// caller-supplied callback URL/credentials embedded in the request itself
+// (a common pattern — e.g. a "webhooks" array in a payment creation request)
+// drive where the callback is actually sent, without any protocol-specific
+// code in Mockly.
+type Webhook struct {
+	// URL is the callback endpoint. Supports templating.
+	URL string `yaml:"url" json:"url"`
+	// Method is the HTTP method used for the callback (default: POST).
+	Method string `yaml:"method,omitempty" json:"method,omitempty"`
+	// Headers are extra request headers sent with the callback. Values support templating.
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	// Body is the callback request body. Supports templating.
+	Body string `yaml:"body,omitempty" json:"body,omitempty"`
+	// Delay waits before sending the callback, simulating asynchronous
+	// processing (e.g. a payment gateway sending a "charge completed"
+	// webhook a few hundred ms after the charge call returns).
+	Delay Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	// Retries is the number of additional attempts on failure or a 5xx
+	// response (0 = no retry, the default).
+	Retries int `yaml:"retries,omitempty" json:"retries,omitempty"`
+	// RetryDelay is the wait between retry attempts (default: 1s).
+	RetryDelay Duration `yaml:"retry_delay,omitempty" json:"retry_delay,omitempty"`
 }
 
 type HTTPRequest struct {
@@ -736,13 +775,13 @@ type SIPConfig struct {
 }
 
 type SIPMock struct {
-	ID        string          `yaml:"id" json:"id"`
-	Method    string          `yaml:"method" json:"method"`
-	URI       string          `yaml:"uri,omitempty" json:"uri,omitempty"`
-	URIRegex  string          `yaml:"uri_regex,omitempty" json:"uri_regex,omitempty"`
-	Response  SIPResponse     `yaml:"response" json:"response"`
-	Delay     Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
-	State     *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+	ID       string          `yaml:"id" json:"id"`
+	Method   string          `yaml:"method" json:"method"`
+	URI      string          `yaml:"uri,omitempty" json:"uri,omitempty"`
+	URIRegex string          `yaml:"uri_regex,omitempty" json:"uri_regex,omitempty"`
+	Response SIPResponse     `yaml:"response" json:"response"`
+	Delay    Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State    *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
 }
 
 type SIPResponse struct {

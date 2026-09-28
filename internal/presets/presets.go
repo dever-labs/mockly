@@ -40,6 +40,7 @@ var All = []Preset{
 	{Name: "pagerduty", Description: "PagerDuty API mock (incidents, services, users, escalations)", Filename: "pagerduty.yaml"},
 	{Name: "aws-s3", Description: "AWS S3 API mock (list buckets/objects, get/put/delete objects)", Filename: "aws-s3.yaml"},
 	{Name: "ntlm", Description: "Windows NTLM authentication mock (full 3-step handshake)", Filename: "ntlm.yaml"},
+	{Name: "nets", Description: "Nets/Nexi Easy Checkout payment API mock (payments, charges, refunds, outbound webhooks)", Filename: "nets.yaml"},
 }
 
 // Find returns the Preset with the given name (case-insensitive), or an error.

@@ -7,6 +7,8 @@ import { WebSocketPage } from './pages/WebSocketPage'
 import { GRPCPage } from './pages/GRPCPage'
 import { LogsPage } from './pages/LogsPage'
 import { StatePage } from './pages/StatePage'
+import { ScenariosPage } from './pages/ScenariosPage'
+import { FaultPage } from './pages/FaultPage'
 
 const qc = new QueryClient()
 
@@ -23,6 +25,8 @@ export default function App() {
             <Route path="/grpc" element={<GRPCPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/state" element={<StatePage />} />
+            <Route path="/scenarios" element={<ScenariosPage />} />
+            <Route path="/fault" element={<FaultPage />} />
           </Routes>
         </div>
       </BrowserRouter>

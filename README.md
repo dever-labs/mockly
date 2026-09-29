@@ -311,6 +311,35 @@ response:
 
 ---
 
+### Environment variable substitution
+
+Config files support `${VAR}` and `${VAR:-default}` references, expanded
+against the process environment before the file is parsed as YAML. This
+keeps secrets and per-environment values (signing keys, ports, hostnames)
+out of a config file that might be committed to source control:
+
+```yaml
+protocols:
+  http:
+    enabled: true
+    port: ${MOCKLY_HTTP_PORT:-8080}
+    mocks:
+      - id: webhook
+        request: { method: POST, path: /webhook }
+        response:
+          status: 200
+          headers:
+            X-Signature: "${WEBHOOK_SIGNING_KEY}"
+```
+
+- `${VAR}` — replaced with the environment variable's value. If `VAR` is
+  unset, config loading fails with an error listing every missing variable.
+- `${VAR:-default}` — replaced with the environment variable's value if
+  set, otherwise the literal `default` (which may be empty:
+  `${VAR:-}`).
+
+---
+
 ## Protocols
 
 ### HTTP

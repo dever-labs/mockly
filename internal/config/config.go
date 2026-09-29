@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -1037,12 +1039,54 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config %q: %w", path, err)
 	}
 
+	data, err = expandEnvVars(data)
+	if err != nil {
+		return nil, fmt.Errorf("expanding env vars in config %q: %w", path, err)
+	}
+
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config %q: %w", path, err)
 	}
 
 	applyDefaults(&cfg)
 	return &cfg, nil
+}
+
+// envVarPattern matches "${NAME}" and "${NAME:-default}" references in raw
+// config bytes, prior to YAML parsing. NAME must look like a shell-style
+// environment variable name; "default" may be empty or contain any
+// characters except "}".
+var envVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}`)
+
+// expandEnvVars substitutes "${VAR}"/"${VAR:-default}" references in raw
+// config bytes with the corresponding environment variable's value, before
+// the bytes are parsed as YAML. This lets a config reference a secret or
+// per-environment value (e.g. a webhook signing key) without hardcoding it
+// into a file that might be committed to source control.
+//
+// A missing, undefaulted variable ("${VAR}" with no ":-default" and no
+// matching environment variable) is a hard error — config loading fails
+// loudly rather than silently substituting an empty string, so a broken
+// reference can't go unnoticed.
+func expandEnvVars(data []byte) ([]byte, error) {
+	var missing []string
+	result := envVarPattern.ReplaceAllFunc(data, func(match []byte) []byte {
+		groups := envVarPattern.FindSubmatch(match)
+		name := string(groups[1])
+		hasDefault := len(groups[2]) > 0
+		if val, ok := os.LookupEnv(name); ok {
+			return []byte(val)
+		}
+		if hasDefault {
+			return groups[3]
+		}
+		missing = append(missing, name)
+		return match
+	})
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("undefined environment variable(s) referenced with no default: %s (use \"${VAR:-default}\" to provide a fallback)", strings.Join(missing, ", "))
+	}
+	return result, nil
 }
 
 // Save writes the config back to the given path as YAML.

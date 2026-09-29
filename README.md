@@ -49,7 +49,7 @@
 | **PATCH mocks** | Change only specific response fields at runtime without replacing the whole mock |
 | **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid, Anthropic, Resend, PagerDuty, AWS S3, NTLM |
 | **Web UI** | Served from the binary itself — no separate install |
-| **Management API** | 40+ REST endpoints covering all protocols, scenarios, fault, state, logs, and call counts |
+| **Management API** | 60+ REST endpoints covering all protocols, scenarios, fault, state, logs, webhooks, and call counts |
 | **Live request log** | SSE-streamed in real time to the UI |
 | **CI-friendly** | Zero dependencies, single binary, YAML config, Docker image |
 
@@ -1129,21 +1129,25 @@ Inject protocol-native faults to test your application's resilience without touc
 
 ### Via CLI
 
+The `mockly fault` CLI subcommand only controls **HTTP** direct fault
+injection (`/api/fault/http`). For all other protocols (DNS, gRPC, Redis,
+Kafka, etc.), use the [Management API](#via-api) below.
+
 ```sh
-# DNS: 50% of queries return NXDOMAIN
-mockly fault set --protocol dns --rcode NXDOMAIN --rate 0.5
+# Add 500ms latency to every HTTP request
+mockly fault set --delay 500ms
 
-# gRPC: always return UNAVAILABLE
-mockly fault set --protocol grpc --code UNAVAILABLE
+# Return 503 for every HTTP request
+mockly fault set --status 503 --body '{"error":"service_unavailable"}'
 
-# Redis: always return LOADING error
-mockly fault set --protocol redis --error "LOADING"
+# Return 429 for 30% of HTTP requests
+mockly fault set --status 429 --error-rate 0.3
 
-# Add 200ms latency to all Kafka requests
-mockly fault set --protocol kafka --delay 200ms
+# Combine: 200ms latency + 500 errors 10% of the time
+mockly fault set --delay 200ms --status 500 --error-rate 0.1
 
-# Clear a specific protocol's fault
-mockly fault clear --protocol dns
+# Show the current global fault configuration
+mockly fault status
 
 # Clear all faults
 mockly fault clear
@@ -1261,7 +1265,7 @@ mockly start --config keycloak.yaml
 ## CLI Reference
 
 ```
-mockly start       [--config <file>] [--http-port <n>] [--api-port <n>]
+mockly start       [--config <file>] [--ui-port <n>] [--api-port <n>]
 mockly apply       --config <file>
 mockly list
 mockly add http    --method GET --path /foo --status 200 --body '{"ok":true}'
@@ -1269,9 +1273,15 @@ mockly delete      <mock-id>
 mockly status
 mockly reset
 mockly preset      list | show <name> | use <name>
-mockly scenario    list | show <id> | activate <id> | deactivate <id>
-mockly fault       set --protocol <proto> [--delay <d>] [--rate <f>] [protocol-specific flags] | clear [--protocol <proto>] | show
+mockly scenario    list | active | activate <id> | deactivate <id>
+mockly fault       set [--status <n>] [--delay <d>] [--body <s>] [--error-rate <f>] | clear | status
 ```
+
+> The `fault` CLI subcommand only controls the **HTTP** protocol's direct
+> fault (`/api/fault/http`). To inject faults on other protocols (DNS, gRPC,
+> Redis, Kafka, etc.), use the [Management API](#fault-injection) directly
+> (`POST/GET/DELETE /api/fault/{protocol}`) or bundle them into a
+> [scenario](#scenarios).
 
 ---
 

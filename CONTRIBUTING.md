@@ -37,7 +37,7 @@ By participating you agree to abide by its terms.
 
 | Tool | Minimum version |
 | ---- | --------------- |
-| Go   | 1.23            |
+| Go   | 1.26            |
 | Node | 20              |
 | npm  | 9               |
 | make | any             |

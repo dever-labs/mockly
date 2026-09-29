@@ -51,7 +51,9 @@ func main() {
 		Use:   "mockly",
 		Short: "Mockly — cross-platform multi-protocol mock server",
 		Long: `Mockly is a fast, cross-platform mock server that supports HTTP,
-WebSocket, and gRPC protocols with a built-in web UI and REST management API.`,
+WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP, DNS, AMQP, Kafka,
+LDAP, IMAP, FTP, Memcached, STOMP, CoAP, and SIP protocols in a single
+binary with a built-in web UI and REST management API.`,
 	}
 
 	root.PersistentFlags().StringVarP(&cfgFile, "config", "c", "mockly.yaml", "Config file path")

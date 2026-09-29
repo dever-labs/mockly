@@ -135,9 +135,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		hdrs[k] = strings.Join(v, ", ")
 	}
 
-	query := make(map[string]string, len(r.URL.Query()))
-	for k, v := range r.URL.Query() {
-		query[k] = v[0]
+	queryValues := r.URL.Query()
+	querySingle := make(map[string]string, len(queryValues))
+	for k, v := range queryValues {
+		if len(v) > 0 {
+			querySingle[k] = v[0]
+		}
 	}
 
 	// Protocol fault: inject latency before processing.
@@ -156,7 +159,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, matched := engine.HTTPMatch(mocks, r.Method, r.URL.Path, query, hdrs, string(body), s.store)
+	result, matched := engine.HTTPMatch(mocks, r.Method, r.URL.Path, queryValues, hdrs, string(body), s.store)
 
 	status := http.StatusNotFound
 	respBody := `{"error":"no mock matched"}`
@@ -174,7 +177,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		reqCtx := engine.RequestContext{
 			Method:     r.Method,
 			Path:       r.URL.Path,
-			Query:      query,
+			Query:      querySingle,
 			Headers:    hdrs,
 			Body:       string(body),
 			PathParams: result.PathParams,

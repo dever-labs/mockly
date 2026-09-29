@@ -74,11 +74,15 @@ type MatchResult struct {
 func HTTPMatch(
 	mocks []config.HTTPMock,
 	method, path string,
-	query map[string]string,
+	query map[string][]string,
 	headers map[string]string,
 	body string,
 	store *state.Store,
 ) (MatchResult, bool) {
+	// querySingle carries the first value per query key, used for templating
+	// and auth checks (which have always been single-value; repeated-value
+	// matching is opt-in via matchQuery below and doesn't affect these).
+	querySingle := firstQueryValues(query)
 	for _, m := range mocks {
 		if !matchMethod(m.Request.Method, method) {
 			continue
@@ -114,14 +118,14 @@ func HTTPMatch(
 		if !matchState(m.State, store) {
 			continue
 		}
-		if m.Request.Auth != nil && !matchAuth(m.Request.Auth, headers, query) {
+		if m.Request.Auth != nil && !matchAuth(m.Request.Auth, headers, querySingle) {
 			continue
 		}
 
 		req := RequestContext{
 			Method:     method,
 			Path:       path,
-			Query:      query,
+			Query:      querySingle,
 			Headers:    headers,
 			Body:       body,
 			PathParams: pathParams,
@@ -283,19 +287,70 @@ func matchHeaders(want, got map[string]string) bool {
 	return true
 }
 
-// matchQuery checks that all required query params are present in the request.
-// A value of "*" matches any value for that key.
-func matchQuery(want, got map[string]string) bool {
+// queryAbsent is a reserved query-matcher value asserting that a query
+// parameter must NOT be present on the request at all.
+const queryAbsent = "!present"
+
+// matchQuery checks that all required query params are present in the request
+// and satisfy the configured value/pattern.
+//
+// A configured value of "*" matches any value for that key. A "re:" prefix
+// (mirroring the path/header/body regex convention) matches the value as a
+// regular expression. "!present" asserts the key must be absent from the
+// request entirely. When a request repeats a query key (e.g. "?tag=a&tag=b"),
+// a match succeeds if ANY occurrence satisfies the configured value/pattern.
+func matchQuery(want map[string]string, got map[string][]string) bool {
 	for k, v := range want {
-		actual, ok := got[k]
-		if !ok {
+		values, ok := got[k]
+		if v == queryAbsent {
+			if ok && len(values) > 0 {
+				return false
+			}
+			continue
+		}
+		if !ok || len(values) == 0 {
 			return false
 		}
-		if v != "*" && v != actual {
+		matched := false
+		for _, actual := range values {
+			if v == "*" || matchQueryValue(v, actual) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return false
 		}
 	}
 	return true
+}
+
+// matchQueryValue compares a single query value against a configured pattern,
+// supporting the "re:" regex prefix in addition to exact equality.
+func matchQueryValue(pattern, actual string) bool {
+	if strings.HasPrefix(pattern, "re:") {
+		re, err := compiledRegex(strings.TrimPrefix(pattern, "re:"))
+		if err != nil {
+			return false
+		}
+		return re.MatchString(actual)
+	}
+	return pattern == actual
+}
+
+// firstQueryValues collapses a multi-value query map to its first value per
+// key, for use anywhere a single-value view is needed (templating, auth).
+func firstQueryValues(query map[string][]string) map[string]string {
+	if query == nil {
+		return nil
+	}
+	out := make(map[string]string, len(query))
+	for k, v := range query {
+		if len(v) > 0 {
+			out[k] = v[0]
+		}
+	}
+	return out
 }
 
 func matchBody(pattern, body string) bool {

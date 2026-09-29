@@ -33,6 +33,9 @@ type Server struct {
 
 	srv     *GoSNMPServer.SNMPServer
 	restart chan struct{} // closed to signal a restart is needed
+
+	ready     chan struct{} // closed once the UDP port is bound and accepting packets
+	readyOnce sync.Once
 }
 
 // New creates a new SNMP Server.
@@ -43,6 +46,7 @@ func New(cfg *config.SNMPConfig, store *state.Store, sc *scenarios.Store, log *l
 		scenarios: sc,
 		log:       log,
 		restart:   make(chan struct{}),
+		ready:     make(chan struct{}),
 	}
 	s.mocks = append([]config.SNMPMock(nil), cfg.Mocks...)
 	s.traps = append([]config.SNMPTrap(nil), cfg.Traps...)
@@ -50,6 +54,16 @@ func New(cfg *config.SNMPConfig, store *state.Store, sc *scenarios.Store, log *l
 		s.values.Store(m.OID, m.Value)
 	}
 	return s
+}
+
+// Ready returns a channel that is closed once the server's UDP port has been
+// bound and is accepting packets (i.e. after the first successful
+// buildAndListen call in Start). Callers — chiefly tests — can wait on this
+// instead of polling the port, which is unreliable for connectionless UDP
+// sockets (a UDP "connect" succeeds immediately regardless of whether
+// anything is listening on the other end).
+func (s *Server) Ready() <-chan struct{} {
+	return s.ready
 }
 
 func (s *Server) GetMocks() []config.SNMPMock {
@@ -114,15 +128,25 @@ func (s *Server) Start(ctx context.Context) error {
 			return err
 		}
 
+		// Capture the restart channel that corresponds to *this* build before
+		// signalling readiness. If we signalled readiness first, a caller
+		// (e.g. SetMocks, invoked immediately after Ready() unblocks it) could
+		// swap s.restart for a new channel before this goroutine reads it —
+		// the close() meant for us would land on the old channel, which we'd
+		// never observe, permanently losing the restart signal.
+		s.mu.RLock()
+		restartCh := s.restart
+		s.mu.RUnlock()
+
+		// The UDP port is now bound (buildAndListen calls ListenUDP
+		// synchronously) — signal readiness once, on the first bind.
+		s.readyOnce.Do(func() { close(s.ready) })
+
 		s.log.Log(logger.Entry{
 			Protocol: "snmp",
 			Method:   "START",
 			Path:     fmt.Sprintf(":%d", s.cfg.Port),
 		})
-
-		s.mu.RLock()
-		restartCh := s.restart
-		s.mu.RUnlock()
 
 		errCh := make(chan error, 1)
 		s.mu.RLock()

@@ -558,6 +558,75 @@ func TestHTTPServer_QueryParams(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_QueryParams_RegexAbsenceAndRepeated(t *testing.T) {
+	mocks := []config.HTTPMock{
+		{
+			ID: "order",
+			Request: config.HTTPRequest{
+				Method: "GET",
+				Path:   "/orders",
+				Query:  map[string]string{"order_id": `re:^ORD-\d+$`, "debug": "!present"},
+			},
+			Response: config.HTTPResponse{Status: 200, Body: `{"matched":true}`},
+		},
+		{
+			ID:       "tagged",
+			Request:  config.HTTPRequest{Method: "GET", Path: "/items", Query: map[string]string{"tag": "b"}},
+			Response: config.HTTPResponse{Status: 200, Body: `{"tagged":true}`},
+		},
+	}
+	base := startTestServer(t, mocks, nil)
+
+	// order_id regex matches, debug absent → matched.
+	resp, err := http.Get(base + "/orders?order_id=ORD-42")
+	if err != nil {
+		t.Fatalf("GET /orders?order_id=ORD-42: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 for matching order_id, got %d", resp.StatusCode)
+	}
+
+	// order_id doesn't match the regex → no match (404).
+	resp2, err := http.Get(base + "/orders?order_id=not-an-order")
+	if err != nil {
+		t.Fatalf("GET /orders?order_id=not-an-order: %v", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 for non-conforming order_id, got %d", resp2.StatusCode)
+	}
+
+	// debug present → disallowed, no match.
+	resp3, err := http.Get(base + "/orders?order_id=ORD-42&debug=1")
+	if err != nil {
+		t.Fatalf("GET /orders?order_id=ORD-42&debug=1: %v", err)
+	}
+	defer resp3.Body.Close() //nolint:errcheck
+	if resp3.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 when disallowed debug param is present, got %d", resp3.StatusCode)
+	}
+
+	// Repeated tag param: match succeeds if any occurrence satisfies the value.
+	resp4, err := http.Get(base + "/items?tag=a&tag=b&tag=c")
+	if err != nil {
+		t.Fatalf("GET /items?tag=a&tag=b&tag=c: %v", err)
+	}
+	defer resp4.Body.Close() //nolint:errcheck
+	if resp4.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 when a repeated tag value matches, got %d", resp4.StatusCode)
+	}
+
+	resp5, err := http.Get(base + "/items?tag=a&tag=c")
+	if err != nil {
+		t.Fatalf("GET /items?tag=a&tag=c: %v", err)
+	}
+	defer resp5.Body.Close() //nolint:errcheck
+	if resp5.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 when no repeated tag value matches, got %d", resp5.StatusCode)
+	}
+}
+
 func TestHTTPServer_BodyJSON(t *testing.T) {
 	mocks := []config.HTTPMock{
 		{

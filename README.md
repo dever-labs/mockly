@@ -36,7 +36,7 @@
 | Feature | Details |
 |---|---|
 | **Protocols** | HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, SIP |
-| **Request matching** | Method + path (exact / wildcard / named params / regex), headers (with `re:` pattern support), query params, JSON body fields, authentication |
+| **Request matching** | Method + path (exact / wildcard / named params / regex), headers (with `re:` pattern support), query params (exact / wildcard / regex / absence / repeated-value), JSON body fields, authentication |
 | **Response sequences** | Return a different response on each successive call — loop, hold last, or 404 when exhausted |
 | **Response control** | Status code, headers, body, artificial delay |
 | **Template responses** | Go template syntax in response bodies and headers (`{{now}}`, `{{.request.params.id}}`, `{{.request.body.foo}}`, etc.) |
@@ -375,12 +375,17 @@ protocols:
           method: GET
           path: /users
           query:
-            role: admin          # exact match
-            page: "*"            # any value (wildcard)
+            role: admin              # exact match
+            page: "*"                # any value (wildcard)
+            order_id: 're:^ORD-\d+$' # regex match ("re:" prefix)
+            debug: "!present"        # asserts the param must be ABSENT
         response:
           status: 200
           body: '[{"id":1,"role":"admin"}]'
 ```
+
+When a query param is repeated (e.g. `?tag=a&tag=b`), a match succeeds if
+**any** occurrence satisfies the configured value/pattern.
 
 #### JSON body field matching
 

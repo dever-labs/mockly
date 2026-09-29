@@ -217,7 +217,7 @@ func TestHTTPMatch_QueryParams(t *testing.T) {
 	}
 
 	// Should match the admin mock specifically
-	q := map[string]string{"role": "admin"}
+	q := map[string][]string{"role": {"admin"}}
 	res, ok := engine.HTTPMatch(mocks, "GET", "/users", q, nil, "", nil)
 	if !ok || res.MockID != "admin" {
 		t.Fatalf("expected admin mock, got %q ok=%v", res.MockID, ok)
@@ -235,7 +235,7 @@ func TestHTTPMatch_QueryParams(t *testing.T) {
 		Request:  config.HTTPRequest{Method: "GET", Path: "/items", Query: map[string]string{"page": "*"}},
 		Response: config.HTTPResponse{Status: 200},
 	}}
-	_, ok3 := engine.HTTPMatch(mocks2, "GET", "/items", map[string]string{"page": "3"}, nil, "", nil)
+	_, ok3 := engine.HTTPMatch(mocks2, "GET", "/items", map[string][]string{"page": {"3"}}, nil, "", nil)
 	if !ok3 {
 		t.Fatal("expected wildcard query match")
 	}
@@ -280,7 +280,7 @@ func TestHTTPMatch_QueryParamInBody(t *testing.T) {
 		Request:  config.HTTPRequest{Method: "GET", Path: "/echo"},
 		Response: config.HTTPResponse{Status: 200, Body: `{"param":"{{.query.foo}}"}`},
 	}}
-	query := map[string]string{"foo": "bar"}
+	query := map[string][]string{"foo": {"bar"}}
 	result, ok := engine.HTTPMatch(mocks, "GET", "/echo", query, nil, "", nil)
 	if !ok {
 		t.Fatal("expected match")
@@ -301,7 +301,7 @@ func TestHTTPMatch_QueryParamInResponseHeader(t *testing.T) {
 			},
 		},
 	}}
-	query := map[string]string{"redirect_uri": "http://app.example.com/cb", "state": "xyz123"}
+	query := map[string][]string{"redirect_uri": {"http://app.example.com/cb"}, "state": {"xyz123"}}
 	result, ok := engine.HTTPMatch(mocks, "GET", "/authorize", query, nil, "", nil)
 	if !ok {
 		t.Fatal("expected match")
@@ -354,7 +354,7 @@ func TestHTTPMatch_QueryParams_ExtraParamsIgnored(t *testing.T) {
 		Response: config.HTTPResponse{Status: 200},
 	}}
 	// Extra params in request beyond what mock requires should still match
-	q := map[string]string{"type": "book", "page": "2", "limit": "10"}
+	q := map[string][]string{"type": {"book"}, "page": {"2"}, "limit": {"10"}}
 	_, ok := engine.HTTPMatch(mocks, "GET", "/items", q, nil, "", nil)
 	if !ok {
 		t.Fatal("expected match when request has extra query params beyond required ones")
@@ -386,11 +386,11 @@ func TestHTTPMatch_OAuthAuthorize(t *testing.T) {
 		},
 	}
 
-	q := map[string]string{
-		"response_type": "code",
-		"client_id":     "my-client",
-		"redirect_uri":  "https://app.example.com/callback",
-		"state":         "random-state-42",
+	q := map[string][]string{
+		"response_type": {"code"},
+		"client_id":     {"my-client"},
+		"redirect_uri":  {"https://app.example.com/callback"},
+		"state":         {"random-state-42"},
 	}
 
 	result, ok := engine.HTTPMatch(mocks, "GET", "/oauth/authorize", q, nil, "", nil)
@@ -406,11 +406,11 @@ func TestHTTPMatch_OAuthAuthorize(t *testing.T) {
 	}
 
 	// Wrong client_id should not match
-	qWrong := map[string]string{
-		"response_type": "code",
-		"client_id":     "other-client",
-		"redirect_uri":  "https://app.example.com/callback",
-		"state":         "s",
+	qWrong := map[string][]string{
+		"response_type": {"code"},
+		"client_id":     {"other-client"},
+		"redirect_uri":  {"https://app.example.com/callback"},
+		"state":         {"s"},
 	}
 	_, ok2 := engine.HTTPMatch(mocks, "GET", "/oauth/authorize", qWrong, nil, "", nil)
 	if ok2 {
@@ -1009,7 +1009,7 @@ func TestHTTPMatch_APIKey_Query(t *testing.T) {
 		Response: config.HTTPResponse{Status: 200},
 	}}
 
-	query := map[string]string{"apikey": "key-xyz"}
+	query := map[string][]string{"apikey": {"key-xyz"}}
 	_, ok := engine.HTTPMatch(mocks, "GET", "/data", query, nil, "", nil)
 	if !ok {
 		t.Fatal("expected match with valid API key query param")
@@ -1154,5 +1154,82 @@ func TestHTTPMatch_APIKey_ExactNotSubstring(t *testing.T) {
 	_, ok = engine.HTTPMatch(mocks, "GET", "/data", nil, exact, "", nil)
 	if !ok {
 		t.Fatal("exact api key should match")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Query param matching — regex, absence, repeated values (#206)
+// ---------------------------------------------------------------------------
+
+func TestHTTPMatch_QueryRegex(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "order",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/orders", Query: map[string]string{"order_id": `re:^ORD-\d+$`}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	ok1 := map[string][]string{"order_id": {"ORD-42"}}
+	_, matched := engine.HTTPMatch(mocks, "GET", "/orders", ok1, nil, "", nil)
+	if !matched {
+		t.Fatal("expected query regex to match ORD-42")
+	}
+
+	bad := map[string][]string{"order_id": {"invalid"}}
+	_, matched2 := engine.HTTPMatch(mocks, "GET", "/orders", bad, nil, "", nil)
+	if matched2 {
+		t.Fatal("expected query regex not to match a non-conforming value")
+	}
+}
+
+func TestHTTPMatch_QueryAbsent(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "no-debug",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/status", Query: map[string]string{"debug": "!present"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	_, matched := engine.HTTPMatch(mocks, "GET", "/status", nil, nil, "", nil)
+	if !matched {
+		t.Fatal("expected match when the disallowed query param is absent")
+	}
+
+	withDebug := map[string][]string{"debug": {"1"}}
+	_, matched2 := engine.HTTPMatch(mocks, "GET", "/status", withDebug, nil, "", nil)
+	if matched2 {
+		t.Fatal("expected no match when the disallowed query param is present")
+	}
+}
+
+func TestHTTPMatch_QueryRepeatedValueMatchesAny(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "tagged",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/items", Query: map[string]string{"tag": "b"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	repeated := map[string][]string{"tag": {"a", "b", "c"}}
+	_, matched := engine.HTTPMatch(mocks, "GET", "/items", repeated, nil, "", nil)
+	if !matched {
+		t.Fatal("expected match when any repeated query value satisfies the configured value")
+	}
+
+	none := map[string][]string{"tag": {"a", "c"}}
+	_, matched2 := engine.HTTPMatch(mocks, "GET", "/items", none, nil, "", nil)
+	if matched2 {
+		t.Fatal("expected no match when no repeated query value satisfies the configured value")
+	}
+}
+
+func TestHTTPMatch_QueryRepeatedValueWithRegex(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "tagged-regex",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/items", Query: map[string]string{"tag": `re:^b\d$`}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+
+	repeated := map[string][]string{"tag": {"a1", "b2", "c3"}}
+	_, matched := engine.HTTPMatch(mocks, "GET", "/items", repeated, nil, "", nil)
+	if !matched {
+		t.Fatal("expected regex to match against any repeated query value")
 	}
 }

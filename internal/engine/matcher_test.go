@@ -1,6 +1,8 @@
 package engine_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/dever-labs/mockly/internal/config"
@@ -1231,5 +1233,98 @@ func TestHTTPMatch_QueryRepeatedValueWithRegex(t *testing.T) {
 	_, matched := engine.HTTPMatch(mocks, "GET", "/items", repeated, nil, "", nil)
 	if !matched {
 		t.Fatal("expected regex to match against any repeated query value")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Near-miss diagnostics (#205)
+// ---------------------------------------------------------------------------
+
+func TestHTTPDiagnose_MethodMismatch(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "create-user",
+		Request: config.HTTPRequest{Method: "POST", Path: "/users"},
+	}}
+	misses := engine.HTTPDiagnose(mocks, "GET", "/users", nil, nil, "", nil)
+	if len(misses) != 1 || misses[0].MockID != "create-user" {
+		t.Fatalf("expected one near-miss for create-user, got %+v", misses)
+	}
+	if !strings.Contains(misses[0].Reason, "method mismatch") {
+		t.Errorf("expected a method-mismatch reason, got %q", misses[0].Reason)
+	}
+}
+
+func TestHTTPDiagnose_PathMismatch(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "get-user",
+		Request: config.HTTPRequest{Method: "GET", Path: "/users/{id}"},
+	}}
+	misses := engine.HTTPDiagnose(mocks, "GET", "/orders/1", nil, nil, "", nil)
+	if len(misses) != 1 {
+		t.Fatalf("expected one near-miss, got %+v", misses)
+	}
+	if !strings.Contains(misses[0].Reason, "path") {
+		t.Errorf("expected a path-mismatch reason, got %q", misses[0].Reason)
+	}
+}
+
+func TestHTTPDiagnose_HeaderMismatch(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID: "secure",
+		Request: config.HTTPRequest{
+			Method:  "GET",
+			Path:    "/secure",
+			Headers: map[string]string{"X-Token": "abc"},
+		},
+	}}
+	misses := engine.HTTPDiagnose(mocks, "GET", "/secure", nil, map[string]string{"X-Token": "wrong"}, "", nil)
+	if len(misses) != 1 || !strings.Contains(misses[0].Reason, "X-Token") {
+		t.Fatalf("expected a header-mismatch reason mentioning X-Token, got %+v", misses)
+	}
+}
+
+func TestHTTPDiagnose_QueryMismatch(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "filtered",
+		Request: config.HTTPRequest{Method: "GET", Path: "/items", Query: map[string]string{"tag": "b"}},
+	}}
+	got := map[string][]string{"tag": {"a"}}
+	misses := engine.HTTPDiagnose(mocks, "GET", "/items", got, nil, "", nil)
+	if len(misses) != 1 || !strings.Contains(misses[0].Reason, "tag") {
+		t.Fatalf("expected a query-mismatch reason mentioning tag, got %+v", misses)
+	}
+}
+
+func TestHTTPDiagnose_RanksClosestCandidateFirst(t *testing.T) {
+	mocks := []config.HTTPMock{
+		{ID: "wrong-method", Request: config.HTTPRequest{Method: "POST", Path: "/items"}},
+		{ID: "wrong-header", Request: config.HTTPRequest{
+			Method:  "GET",
+			Path:    "/items",
+			Headers: map[string]string{"X-Token": "abc"},
+		}},
+	}
+	misses := engine.HTTPDiagnose(mocks, "GET", "/items", nil, map[string]string{"X-Token": "wrong"}, "", nil)
+	if len(misses) != 2 {
+		t.Fatalf("expected two near-misses, got %+v", misses)
+	}
+	// "wrong-header" got further (passed method+path) than "wrong-method"
+	// (failed on method), so it should rank first.
+	if misses[0].MockID != "wrong-header" {
+		t.Errorf("expected wrong-header to rank first as the closer candidate, got %+v", misses)
+	}
+}
+
+func TestHTTPDiagnose_CapsToTopN(t *testing.T) {
+	var mocks []config.HTTPMock
+	for i := 0; i < 10; i++ {
+		mocks = append(mocks, config.HTTPMock{
+			ID:      fmt.Sprintf("m%d", i),
+			Request: config.HTTPRequest{Method: "POST", Path: "/items"},
+		})
+	}
+	misses := engine.HTTPDiagnose(mocks, "GET", "/items", nil, nil, "", nil)
+	if len(misses) != 3 {
+		t.Fatalf("expected diagnostics capped to 3, got %d", len(misses))
 	}
 }

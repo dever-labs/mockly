@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+// NearMiss describes why a candidate mock didn't match a logged request,
+// surfaced only when near-miss diagnostics were requested for that request.
+type NearMiss struct {
+	MockID string `json:"mock_id"`
+	Reason string `json:"reason"`
+}
+
 // Entry is a single logged request/event.
 type Entry struct {
 	ID         string            `json:"id"`
@@ -24,6 +31,7 @@ type Entry struct {
 	Body       string            `json:"body,omitempty"`
 	MatchedID  string            `json:"matched_id,omitempty"`
 	PathParams map[string]string `json:"path_params,omitempty"`
+	NearMisses []NearMiss        `json:"near_misses,omitempty"`
 }
 
 // Logger stores recent entries and broadcasts to SSE subscribers.

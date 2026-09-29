@@ -32,18 +32,16 @@ func startSNMP(t *testing.T, srv *Server) func() {
 	ctx, cancel := context.WithCancel(context.Background())
 	go srv.Start(ctx) //nolint:errcheck
 
-	// Wait until the UDP port is accepting packets.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("udp", fmt.Sprintf("127.0.0.1:%d", srv.cfg.Port), 100*time.Millisecond)
-		if err == nil {
-			_ = conn.Close()
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
+	// Wait for the server to signal that its UDP port is bound. Polling by
+	// dialing the UDP port (the previous approach) is unreliable: a UDP
+	// "connect" succeeds immediately regardless of whether anything is
+	// listening on the other end, so it doesn't actually confirm readiness
+	// and can flake under CI load.
+	select {
+	case <-srv.Ready():
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for SNMP server to become ready")
 	}
-	// Give the server a moment to be fully ready.
-	time.Sleep(100 * time.Millisecond)
 	return cancel
 }
 
@@ -329,26 +327,41 @@ func TestSNMPServer_SetMocks_DynamicUpdate(t *testing.T) {
 		t.Errorf("after SetMocks: got %v, want [b]", got)
 	}
 
-	// Give the server time to restart with new OID list.
-	time.Sleep(300 * time.Millisecond)
-
-	g := snmpClient(port)
-	if err := g.Connect(); err != nil {
-		t.Fatalf("connect after restart: %v", err)
+	// The server restarts (shuts down + re-binds the UDP port) asynchronously
+	// after SetMocks; retry the GET for a bit instead of relying on a single
+	// fixed sleep, which is inherently racy against however long the restart
+	// actually takes on a given machine/run.
+	deadline := time.Now().Add(3 * time.Second)
+	var got2 int64
+	var lastErr error
+	for time.Now().Before(deadline) {
+		g := snmpClient(port)
+		if err := g.Connect(); err != nil {
+			lastErr = err
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		result, err := g.Get([]string{"1.3.6.1.4.1.9999.4.0"})
+		closeErr := g.Conn.Close()
+		_ = closeErr
+		if err != nil {
+			lastErr = err
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		if len(result.Variables) == 0 {
+			lastErr = fmt.Errorf("no variables returned")
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		got2 = gosnmp.ToBigInt(result.Variables[0].Value).Int64()
+		if got2 == 99 {
+			return
+		}
+		lastErr = fmt.Errorf("new OID value = %d, want 99", got2)
+		time.Sleep(50 * time.Millisecond)
 	}
-	defer g.Conn.Close() //nolint:errcheck
-
-	result, err := g.Get([]string{"1.3.6.1.4.1.9999.4.0"})
-	if err != nil {
-		t.Fatalf("GET new OID: %v", err)
-	}
-	if len(result.Variables) == 0 {
-		t.Fatal("no variables returned")
-	}
-	got2 := gosnmp.ToBigInt(result.Variables[0].Value).Int64()
-	if got2 != 99 {
-		t.Errorf("new OID value = %d, want 99", got2)
-	}
+	t.Fatalf("GET new OID after restart never returned the expected value (last error/result: %v)", lastErr)
 }
 
 func TestSNMPServer_GetMocks_Roundtrip(t *testing.T) {

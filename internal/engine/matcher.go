@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -162,6 +163,173 @@ func HTTPMatch(
 		}, true
 	}
 	return MatchResult{}, false
+}
+
+// NearMiss describes why a candidate mock did not match a request, for
+// opt-in debugging when no mock matches at all (see HTTPDiagnose).
+type NearMiss struct {
+	MockID string `json:"mock_id"`
+	Reason string `json:"reason"`
+}
+
+// httpDiagnoseTopN caps the number of near-miss candidates HTTPDiagnose
+// reports, keeping output readable even with many configured mocks.
+const httpDiagnoseTopN = 3
+
+// HTTPDiagnose re-evaluates every mock against a request that failed to
+// match anything, and reports the first check that rejected each one
+// (method → path → headers → query → body → body_json → state → auth),
+// ranked by how many checks each mock passed before failing (closest
+// candidates first). It is intended for opt-in debugging only (e.g. behind
+// a "?debug=true" request flag) and is not used on the normal hot path, so
+// it's fine for it to be less optimized than HTTPMatch.
+func HTTPDiagnose(
+	mocks []config.HTTPMock,
+	method, path string,
+	query map[string][]string,
+	headers map[string]string,
+	body string,
+	store *state.Store,
+) []NearMiss {
+	querySingle := firstQueryValues(query)
+
+	type candidate struct {
+		NearMiss
+		depth int
+	}
+	candidates := make([]candidate, 0, len(mocks))
+
+	for _, m := range mocks {
+		depth := 0
+		reason := "matches all checks (unexpected — check mock ordering/state)"
+
+	evaluate:
+		for {
+			if !matchMethod(m.Request.Method, method) {
+				want := m.Request.Method
+				if want == "" {
+					want = "*"
+				}
+				reason = fmt.Sprintf("method mismatch: mock requires %q, got %q", want, method)
+				break evaluate
+			}
+			depth++
+
+			var pathMatched bool
+			if m.Request.PathRegex != "" {
+				re, err := compiledRegex(m.Request.PathRegex)
+				pathMatched = err == nil && re.MatchString(path)
+				if !pathMatched {
+					reason = fmt.Sprintf("path_regex %q did not match %q", m.Request.PathRegex, path)
+					break evaluate
+				}
+			} else {
+				pathMatched, _ = matchPath(m.Request.Path, path)
+				if !pathMatched {
+					reason = fmt.Sprintf("path %q did not match %q", m.Request.Path, path)
+					break evaluate
+				}
+			}
+			depth++
+
+			if !matchHeaders(m.Request.Headers, headers) {
+				reason = firstFailingHeader(m.Request.Headers, headers)
+				break evaluate
+			}
+			depth++
+
+			if !matchQuery(m.Request.Query, query) {
+				reason = firstFailingQuery(m.Request.Query, query)
+				break evaluate
+			}
+			depth++
+
+			if m.Request.Body != "" && !matchBody(m.Request.Body, body) {
+				reason = fmt.Sprintf("body did not match pattern %q", m.Request.Body)
+				break evaluate
+			}
+			depth++
+
+			if len(m.Request.BodyJSON) > 0 && !matchBodyJSON(m.Request.BodyJSON, body) {
+				reason = "body_json field(s) did not match"
+				break evaluate
+			}
+			depth++
+
+			if !matchState(m.State, store) {
+				reason = "state condition not satisfied"
+				break evaluate
+			}
+			depth++
+
+			if m.Request.Auth != nil && !matchAuth(m.Request.Auth, headers, querySingle) {
+				reason = "authentication failed"
+				break evaluate
+			}
+			depth++
+			break evaluate
+		}
+
+		candidates = append(candidates, candidate{NearMiss{MockID: m.ID, Reason: reason}, depth})
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].depth > candidates[j].depth })
+
+	if len(candidates) > httpDiagnoseTopN {
+		candidates = candidates[:httpDiagnoseTopN]
+	}
+	out := make([]NearMiss, len(candidates))
+	for i, c := range candidates {
+		out[i] = c.NearMiss
+	}
+	return out
+}
+
+// firstFailingHeader returns a human-readable reason for the first configured
+// header that didn't match, for use by HTTPDiagnose.
+func firstFailingHeader(want, got map[string]string) string {
+	for k, v := range want {
+		actual, ok := got[k]
+		if !ok {
+			canonical := http.CanonicalHeaderKey(k)
+			actual, ok = got[canonical]
+		}
+		if !ok {
+			return fmt.Sprintf("header %q was not present", k)
+		}
+		if !matchPattern(v, actual) {
+			return fmt.Sprintf("header %q value %q did not match %q", k, actual, v)
+		}
+	}
+	return "header mismatch"
+}
+
+// firstFailingQuery returns a human-readable reason for the first configured
+// query param that didn't match, for use by HTTPDiagnose.
+func firstFailingQuery(want map[string]string, got map[string][]string) string {
+	for k, v := range want {
+		values, ok := got[k]
+		if v == queryAbsent {
+			if ok && len(values) > 0 {
+				return fmt.Sprintf("query %q must be absent but was present", k)
+			}
+			continue
+		}
+		if !ok || len(values) == 0 {
+			return fmt.Sprintf("query %q was not present", k)
+		}
+		matched := false
+		for _, actual := range values {
+			if v == "*" || matchQueryValue(v, actual) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Sprintf("query %q value(s) %v did not match %q", k, values, v)
+		}
+	}
+	return "query mismatch"
 }
 
 // WSMatch finds the first WebSocketRule matching the given message text.

@@ -450,6 +450,32 @@ Every HTTP mock can have its own `fault:` block — independently of protocol-le
           body: '[]'
 ```
 
+#### Near-miss diagnostics for unmatched requests
+
+By default, a request that matches no mock returns a plain
+`{"error":"no mock matched"}` (404) — this never changes for normal
+client traffic. To debug *why* a request didn't hit the mock you
+expected, opt in with `?debug=true` or an `X-Mockly-Debug: true` header:
+
+```bash
+curl "http://localhost:8080/orders?order_id=bad-id&debug=true"
+```
+
+```json
+{
+  "error": "no mock matched",
+  "near_misses": [
+    { "mock_id": "get-order", "reason": "query \"order_id\" value(s) [bad-id] did not match \"re:^ORD-\\d+$\"" }
+  ]
+}
+```
+
+Up to 3 of the closest candidates are reported (mocks that passed the
+most checks — method, path, headers, query, body, `body_json`, state,
+auth — before failing), ranked closest-first. Near-miss info is also
+included in the mock's request log entry whenever diagnostics were
+requested, so it shows up in the management UI's live log stream too.
+
 #### Authentication matching
 
 Use the `auth:` block to require valid credentials before a mock is considered a match. When auth fails the mock is skipped — add a fallback mock (without `auth`) to return your preferred 401 response.

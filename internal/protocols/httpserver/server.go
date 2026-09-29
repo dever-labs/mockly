@@ -167,6 +167,22 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	matchedID := ""
 	delay := time.Duration(0)
 
+	// Opt-in near-miss diagnostics: only computed (and only changes the
+	// response) when explicitly requested, so normal 404 behavior for real
+	// client integrations is unchanged.
+	var nearMisses []engine.NearMiss
+	if !matched && debugRequested(r) {
+		nearMisses = engine.HTTPDiagnose(mocks, r.Method, r.URL.Path, queryValues, hdrs, string(body), s.store)
+		if len(nearMisses) > 0 {
+			if b, err := json.Marshal(map[string]interface{}{
+				"error":       "no mock matched",
+				"near_misses": nearMisses,
+			}); err == nil {
+				respBody = string(b)
+			}
+		}
+	}
+
 	if matched {
 		status = result.Status
 		respBody = result.Body
@@ -364,6 +380,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Body:       string(body),
 		MatchedID:  matchedID,
 		PathParams: result.PathParams,
+		NearMisses: toLoggerNearMisses(nearMisses),
 	})
 }
 
@@ -463,6 +480,28 @@ func (s *Server) MarshalMocks() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return json.Marshal(s.mocks)
+}
+
+// debugRequested reports whether the request opted into near-miss match
+// diagnostics via "?debug=true" or an "X-Mockly-Debug: true" header.
+func debugRequested(r *http.Request) bool {
+	if r.URL.Query().Get("debug") == "true" {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Mockly-Debug"), "true")
+}
+
+// toLoggerNearMisses converts engine near-miss diagnostics to the logger
+// package's own (dependency-free) NearMiss type for inclusion in log entries.
+func toLoggerNearMisses(in []engine.NearMiss) []logger.NearMiss {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]logger.NearMiss, len(in))
+	for i, nm := range in {
+		out[i] = logger.NearMiss{MockID: nm.MockID, Reason: nm.Reason}
+	}
+	return out
 }
 
 // abortConn hijacks the connection and performs a TCP reset (RST) — the client

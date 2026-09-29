@@ -558,6 +558,71 @@ func TestHTTPServer_QueryParams(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_NearMissDiagnostics(t *testing.T) {
+	mocks := []config.HTTPMock{
+		{
+			ID:       "create-user",
+			Request:  config.HTTPRequest{Method: "POST", Path: "/users"},
+			Response: config.HTTPResponse{Status: 201},
+		},
+	}
+	base := startTestServer(t, mocks, nil)
+
+	// Default (non-debug) 404: unchanged flat body, no near-miss info leaked.
+	resp, err := http.Get(base + "/users")
+	if err != nil {
+		t.Fatalf("GET /users: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if strings.Contains(string(body), "near_miss") {
+		t.Errorf("expected no near-miss info in default 404 body, got %q", body)
+	}
+
+	// "?debug=true": near-miss diagnostics included in the 404 body.
+	resp2, err := http.Get(base + "/users?debug=true")
+	if err != nil {
+		t.Fatalf("GET /users?debug=true: %v", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp2.StatusCode)
+	}
+	body2, _ := io.ReadAll(resp2.Body)
+	var payload struct {
+		Error      string `json:"error"`
+		NearMisses []struct {
+			MockID string `json:"mock_id"`
+			Reason string `json:"reason"`
+		} `json:"near_misses"`
+	}
+	if err := json.Unmarshal(body2, &payload); err != nil {
+		t.Fatalf("failed to parse debug 404 body %q: %v", body2, err)
+	}
+	if len(payload.NearMisses) != 1 || payload.NearMisses[0].MockID != "create-user" {
+		t.Fatalf("expected one near-miss for create-user, got %+v", payload.NearMisses)
+	}
+	if !strings.Contains(payload.NearMisses[0].Reason, "method mismatch") {
+		t.Errorf("expected a method-mismatch reason, got %q", payload.NearMisses[0].Reason)
+	}
+
+	// "X-Mockly-Debug: true" header achieves the same thing.
+	req, _ := http.NewRequest(http.MethodGet, base+"/users", nil)
+	req.Header.Set("X-Mockly-Debug", "true")
+	resp3, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /users with debug header: %v", err)
+	}
+	defer resp3.Body.Close() //nolint:errcheck
+	body3, _ := io.ReadAll(resp3.Body)
+	if !strings.Contains(string(body3), "create-user") {
+		t.Errorf("expected near-miss info via debug header, got %q", body3)
+	}
+}
+
 func TestHTTPServer_QueryParams_RegexAbsenceAndRepeated(t *testing.T) {
 	mocks := []config.HTTPMock{
 		{

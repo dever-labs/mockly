@@ -38,6 +38,7 @@ import (
 	"github.com/dever-labs/mockly/internal/protocols/wsserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/webhook"
 )
 
 var (
@@ -110,6 +111,7 @@ func runServers(cfg *config.Config) error {
 	store := state.New()
 	sc := scenarios.New(cfg.Scenarios)
 	log := logger.New(500)
+	wh := webhook.New(500)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -137,7 +139,7 @@ func runServers(cfg *config.Config) error {
 	var sipSrv api.SIPProtocol
 
 	if cfg.Protocols.HTTP != nil && cfg.Protocols.HTTP.Enabled {
-		srv := httpserver.New(cfg.Protocols.HTTP, store, sc, log)
+		srv := httpserver.New(cfg.Protocols.HTTP, store, sc, log, wh)
 		httpSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ HTTP mock server  on :%d\n", cfg.Protocols.HTTP.Port)
@@ -269,7 +271,7 @@ func runServers(cfg *config.Config) error {
 		fmt.Printf("→ SIP server        on :%d\n", cfg.Protocols.SIP.Port)
 	}
 
-	apiSrv := api.New(cfg, store, sc, log, httpSrv, wsSrv, grpcSrv, graphqlSrv, tcpSrv, redisSrv, smtpSrv, mqttSrv, snmpSrv, dnsSrv, amqpSrv, kafkaSrv, ldapSrv, imapSrv, ftpSrv, memcachedSrv, stompSrv, coapSrv, sipSrv)
+	apiSrv := api.New(cfg, store, sc, log, wh, httpSrv, wsSrv, grpcSrv, graphqlSrv, tcpSrv, redisSrv, smtpSrv, mqttSrv, snmpSrv, dnsSrv, amqpSrv, kafkaSrv, ldapSrv, imapSrv, ftpSrv, memcachedSrv, stompSrv, coapSrv, sipSrv)
 
 	if cfg.Mockly.UI.Enabled {
 		apiSrv.AttachUI(assets.DistFS())

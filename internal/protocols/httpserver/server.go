@@ -21,6 +21,7 @@ import (
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 	"github.com/dever-labs/mockly/internal/tlsutil"
+	"github.com/dever-labs/mockly/internal/webhook"
 )
 
 // Server is the HTTP mock server.
@@ -29,6 +30,7 @@ type Server struct {
 	store     *state.Store
 	scenarios *scenarios.Store
 	log       *logger.Logger
+	webhooks  *webhook.Sender
 
 	mu         sync.RWMutex
 	mocks      []config.HTTPMock
@@ -38,13 +40,16 @@ type Server struct {
 }
 
 // New creates a Server. The mocks slice is taken from cfg initially but can
-// be replaced at runtime via SetMocks.
-func New(cfg *config.HTTPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
+// be replaced at runtime via SetMocks. wh may be nil, in which case any
+// mock-attached webhooks are silently skipped (used by tests that don't
+// care about outbound callbacks).
+func New(cfg *config.HTTPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger, wh *webhook.Sender) *Server {
 	s := &Server{
 		cfg:        cfg,
 		store:      store,
 		scenarios:  sc,
 		log:        log,
+		webhooks:   wh,
 		mocks:      append([]config.HTTPMock(nil), cfg.Mocks...),
 		callCounts: make(map[string]int64),
 	}
@@ -187,6 +192,14 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			if mocks[i].ID == matchedID {
 				matchedMock = &mocks[i]
 				break
+			}
+		}
+
+		// Fire any outbound webhooks configured on this mock. Dispatch is
+		// asynchronous and never blocks or affects the HTTP response below.
+		if matchedMock != nil && s.webhooks != nil {
+			for _, wh := range matchedMock.Webhooks {
+				s.webhooks.Dispatch("http", matchedMock.ID, wh, reqCtx)
 			}
 		}
 

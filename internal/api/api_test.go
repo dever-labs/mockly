@@ -166,7 +166,7 @@ func startAPIWithLogger(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenari
 	snmpStub := &stubSNMP{}
 
 	srv := api.New(
-		cfg, store, sc, log,
+		cfg, store, sc, log, nil,
 		httpStub,
 		&stubWS{},
 		&stubGRPC{},

@@ -44,7 +44,7 @@ func startTestServer(t *testing.T, mocks []config.HTTPMock, sc *scenarios.Store)
 	}
 	store := state.New()
 	log := logger.New(100)
-	srv := httpserver.New(cfg, store, sc, log)
+	srv := httpserver.New(cfg, store, sc, log, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -152,7 +152,7 @@ func TestHTTPServer_NamedWildcard_LogsPathParams(t *testing.T) {
 	cfg := &config.HTTPConfig{Enabled: true}
 	store := state.New()
 	sc := scenarios.New(nil)
-	srv := httpserver.New(cfg, store, sc, log)
+	srv := httpserver.New(cfg, store, sc, log, nil)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -505,7 +505,7 @@ func startTestServerWithServer(t *testing.T, mocks []config.HTTPMock, sc *scenar
 	}
 	store := state.New()
 	log := logger.New(100)
-	srv := httpserver.New(cfg, store, sc, log)
+	srv := httpserver.New(cfg, store, sc, log, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -828,7 +828,7 @@ func startTLSTestServer(t *testing.T, mocks []config.HTTPMock) (string, *http.Cl
 	store := state.New()
 	sc := scenarios.New(nil)
 	log := logger.New(100)
-	srv := httpserver.New(cfg, store, sc, log)
+	srv := httpserver.New(cfg, store, sc, log, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

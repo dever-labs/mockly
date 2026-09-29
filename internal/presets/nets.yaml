@@ -1,0 +1,227 @@
+# Mockly preset: Nets / Nexi Easy Checkout API
+#
+# Mocks the Nets Easy / Nexi Checkout payment API for testing integrations
+# without hitting Nets' test environment.
+#
+# Start:   mockly preset use nets
+#          mockly start --config configs/presets/nets.yaml
+#
+# Base URL in your app config: http://localhost:8080
+# Docs: https://developers.nets.eu/nets-easy/en-EU/api/
+#
+# Auth: Nets expects the raw secret API key in the "Authorization" header
+# (no "Bearer" prefix) — modelled here as api_key auth on the header.
+# Replace "secret_test_key" below (or set state to swap it) with your own
+# test key if you want stricter matching; "*" style matching is also
+# supported by changing auth.value to "re:.+".
+#
+# Includes:
+#   - Create payment (POST /v1/payment) — fires an outbound "created"
+#     webhook using Mockly's generic Webhooks feature, driven by the
+#     "webhooks" array the real Nets API accepts in the request body
+#     (e.g. {"webhooks":[{"eventName":"payment.created","url":"...","authorization":"..."}]})
+#   - Get payment (GET /v1/payment/{id}) — state-gated status responses
+#   - Charge (POST /v1/payment/{id}/charges)
+#   - Refund (POST /v1/payment/{id}/refunds)
+#   - Cancel (POST /v1/payment/{id}/cancels)
+#   - Failure scenarios: declined card, insufficient funds, gateway 5xx
+#
+# Try the webhook flow with a local receiver, e.g.:
+#   npx local-webhook-receiver  (or any http bin)
+#   curl -X POST localhost:8080/v1/payment \
+#     -H "Authorization: secret_test_key" -H "Content-Type: application/json" \
+#     -d '{"order":{"amount":1000,"currency":"EUR"},"webhooks":[{"eventName":"payment.created","url":"https://example.com/webhook","authorization":"whsec_123"}]}'
+
+mockly:
+  ui:
+    enabled: true
+    port: 9091
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+
+      # ── Create payment ─────────────────────────────────────────────────────
+      # The real Nets request body may include a "webhooks" array specifying
+      # where and how to notify the merchant of lifecycle events. Mockly
+      # templates the outbound URL/authorization straight out of that array,
+      # so callers get a realistic asynchronous "payment.created" callback
+      # without any Nets-specific code in Mockly itself.
+      #
+      # Failure scenarios are matched first (only when their state key is
+      # set — see below); this mock has no state condition, so it's the
+      # default whenever no scenario is active.
+
+      # ── Declined-card scenario ──────────────────────────────────────────────
+      # Activate with: mockly state set nets_scenario declined
+      - id: create-payment-declined
+        state:
+          key: nets_scenario
+          value: "declined"
+        request:
+          method: POST
+          path: /v1/payment
+        response:
+          status: 400
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "message": "The card was declined",
+              "code": 1,
+              "source": "PSP",
+              "errors": [{"code": 91, "message": "Card issuer declined the transaction"}]
+            }
+
+      # ── Insufficient-funds scenario ──────────────────────────────────────────
+      # Activate with: mockly state set nets_scenario insufficient_funds
+      - id: create-payment-insufficient-funds
+        state:
+          key: nets_scenario
+          value: "insufficient_funds"
+        request:
+          method: POST
+          path: /v1/payment
+        response:
+          status: 400
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "message": "Insufficient funds",
+              "code": 1,
+              "source": "PSP",
+              "errors": [{"code": 96, "message": "Insufficient funds on the card"}]
+            }
+
+      # ── Gateway outage scenario ──────────────────────────────────────────────
+      # Activate with: mockly state set nets_scenario gateway_error
+      - id: create-payment-gateway-error
+        state:
+          key: nets_scenario
+          value: "gateway_error"
+        request:
+          method: POST
+          path: /v1/payment
+        response:
+          status: 503
+          headers:
+            Content-Type: application/json
+          body: |
+            {"message": "Service temporarily unavailable", "code": 99, "source": "Nets"}
+
+      - id: create-payment
+        request:
+          method: POST
+          path: /v1/payment
+          auth:
+            type: api_key
+            header: Authorization
+            value: "re:.+"
+        response:
+          status: 201
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "paymentId": "018e2b6e-mockpaymentid-0001"
+            }
+        webhooks:
+          - url: "{{ (index .request.body.webhooks 0).url }}"
+            method: POST
+            headers:
+              Authorization: "{{ (index .request.body.webhooks 0).authorization }}"
+              Content-Type: application/json
+            delay: 300ms
+            retries: 2
+            retry_delay: 1s
+            body: |
+              {
+                "id": "{{uuid}}",
+                "timestamp": "{{now}}",
+                "event": "{{ (index .request.body.webhooks 0).eventName }}",
+                "data": {
+                  "paymentId": "018e2b6e-mockpaymentid-0001",
+                  "amount": {{ .request.body.order.amount }},
+                  "currency": "{{ .request.body.order.currency }}"
+                }
+              }
+
+      # ── Get payment ───────────────────────────────────────────────────────
+      # Activate with: mockly state set nets_payment_status charged
+      - id: get-payment-charged
+        state:
+          key: nets_payment_status
+          value: "charged"
+        request:
+          method: GET
+          path: re:^/v1/payment/[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "payment": {
+                "paymentId": "018e2b6e-mockpaymentid-0001",
+                "summary": {"reservedAmount": 1000, "chargedAmount": 1000},
+                "orderDetails": {"amount": 1000, "currency": "EUR", "reference": "order-001"},
+                "charges": [{"chargeId": "charge-mock-0001", "amount": 1000}],
+                "created": "2024-01-01T00:00:00.0000Z"
+              }
+            }
+
+      - id: get-payment-reserved
+        request:
+          method: GET
+          path: re:^/v1/payment/[^/]+$
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {
+              "payment": {
+                "paymentId": "018e2b6e-mockpaymentid-0001",
+                "summary": {"reservedAmount": 1000},
+                "orderDetails": {"amount": 1000, "currency": "EUR", "reference": "order-001"},
+                "checkout": {"url": "https://checkout.nets.eu/mock"},
+                "created": "2024-01-01T00:00:00.0000Z"
+              }
+            }
+
+      # ── Charge a reservation ─────────────────────────────────────────────────
+      - id: charge-payment
+        request:
+          method: POST
+          path: re:^/v1/payment/[^/]+/charges$
+        response:
+          status: 201
+          headers:
+            Content-Type: application/json
+          body: |
+            {"chargeId": "charge-mock-0001"}
+
+      # ── Refund a charge ──────────────────────────────────────────────────────
+      - id: refund-payment
+        request:
+          method: POST
+          path: re:^/v1/payment/[^/]+/refunds$
+        response:
+          status: 201
+          headers:
+            Content-Type: application/json
+          body: |
+            {"refundId": "refund-mock-0001"}
+
+      # ── Cancel a reservation ─────────────────────────────────────────────────
+      - id: cancel-payment
+        request:
+          method: POST
+          path: re:^/v1/payment/[^/]+/cancels$
+        response:
+          status: 204

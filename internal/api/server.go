@@ -24,6 +24,7 @@ import (
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 	"github.com/dever-labs/mockly/internal/tlsutil"
+	"github.com/dever-labs/mockly/internal/webhook"
 )
 
 // ProtocolServer is implemented by each protocol server so the API can read
@@ -108,6 +109,7 @@ type Server struct {
 	store     *state.Store
 	scenarios *scenarios.Store
 	log       *logger.Logger
+	webhooks  *webhook.Sender
 	http      HTTPProtocol
 	ws        WSProtocol
 	grpc      GRPCProtocol
@@ -137,6 +139,7 @@ func New(
 	store *state.Store,
 	sc *scenarios.Store,
 	log *logger.Logger,
+	wh *webhook.Sender,
 	httpSrv HTTPProtocol,
 	wsSrv WSProtocol,
 	grpcSrv GRPCProtocol,
@@ -162,6 +165,7 @@ func New(
 		store:     store,
 		scenarios: sc,
 		log:       log,
+		webhooks:  wh,
 		http:      httpSrv,
 		ws:        wsSrv,
 		grpc:      grpcSrv,
@@ -291,7 +295,10 @@ func (s *Server) buildRouter() http.Handler {
 		r.Delete("/api/mocks/smtp/{id}", s.deleteSMTPRule)
 		r.Get("/api/emails", s.listEmails)
 		r.Delete("/api/emails", s.clearEmails)
-
+		// Outbound webhooks (attempt history + manual "send now")
+		r.Get("/api/webhooks", s.listWebhooks)
+		r.Delete("/api/webhooks", s.clearWebhooks)
+		r.Post("/api/webhooks/send", s.sendWebhook)
 		// MQTT mocks + captured messages
 		r.Get("/api/mocks/mqtt", s.listMQTTMocks)
 		r.Post("/api/mocks/mqtt", s.addMQTTMock)
@@ -1263,6 +1270,51 @@ func (s *Server) clearEmails(w http.ResponseWriter, r *http.Request) {
 		s.smtp.GetInbox().Clear()
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+// ---------------------------------------------------------------------------
+// Outbound webhooks (attempt history + manual "send now")
+// ---------------------------------------------------------------------------
+
+// listWebhooks returns the history of outbound webhook attempts, oldest first.
+func (s *Server) listWebhooks(w http.ResponseWriter, r *http.Request) {
+	if s.webhooks == nil {
+		writeJSON(w, http.StatusOK, []webhook.Record{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.webhooks.History().All())
+}
+
+// clearWebhooks clears the recorded webhook attempt history.
+func (s *Server) clearWebhooks(w http.ResponseWriter, r *http.Request) {
+	if s.webhooks != nil {
+		s.webhooks.History().Clear()
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+// sendWebhook fires a one-off outbound webhook synchronously, independent of
+// any mock — useful for simulating an out-of-band callback (e.g. a payment
+// gateway notification) on demand.
+//
+//	POST /api/webhooks/send
+//	Body: {"url": "...", "method": "POST", "headers": {...}, "body": "..."}
+func (s *Server) sendWebhook(w http.ResponseWriter, r *http.Request) {
+	if s.webhooks == nil {
+		writeError(w, http.StatusServiceUnavailable, "webhooks not enabled")
+		return
+	}
+	var wh config.Webhook
+	if err := decodeBody(r, &wh); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if wh.URL == "" {
+		writeError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+	rec := s.webhooks.SendAdHoc(wh)
+	writeJSON(w, http.StatusOK, rec)
 }
 
 // ---------------------------------------------------------------------------

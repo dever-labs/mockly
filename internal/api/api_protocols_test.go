@@ -180,7 +180,7 @@ func startAPIFull(t *testing.T) (string, *fullAPIStubs) {
 	}
 
 	srv := api.New(
-		cfg, store, sc, log,
+		cfg, store, sc, log, nil,
 		&stubHTTP{},
 		&stubWS{},
 		&stubGRPC{},

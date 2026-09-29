@@ -444,7 +444,7 @@ func startLoggedHTTPServer(t *testing.T, mocks []config.HTTPMock, log *logger.Lo
 		Port:    port,
 		Mocks:   mocks,
 	}
-	srv := httpserver.New(cfg, state.New(), scenarios.New(nil), log)
+	srv := httpserver.New(cfg, state.New(), scenarios.New(nil), log, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

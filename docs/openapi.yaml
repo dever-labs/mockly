@@ -63,6 +63,8 @@ tags:
     description: Request/response log access and streaming
   - name: Call Verification
     description: HTTP mock call counts and wait-for-call helpers
+  - name: Webhooks
+    description: Outbound webhook attempt history and manual "send now" dispatch
 
 paths:
   # ---------------------------------------------------------------------------
@@ -792,6 +794,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusMessage"
+
+  # ---------------------------------------------------------------------------
+  # Webhooks
+  # ---------------------------------------------------------------------------
+  /api/webhooks:
+    get:
+      tags: [Webhooks]
+      operationId: listWebhooks
+      summary: List the outbound webhook attempt history (oldest first)
+      responses:
+        "200":
+          description: Array of webhook attempt records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebhookRecord"
+    delete:
+      tags: [Webhooks]
+      operationId: clearWebhooks
+      summary: Clear the outbound webhook attempt history
+      responses:
+        "200":
+          description: History cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+
+  /api/webhooks/send:
+    post:
+      tags: [Webhooks]
+      operationId: sendWebhook
+      summary: Fire a one-off outbound webhook synchronously, independent of any mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookSendRequest"
+      responses:
+        "200":
+          description: The resulting webhook attempt record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookRecord"
+        "400":
+          description: Missing or invalid url
+        "503":
+          description: Webhooks are not enabled
 
   # ---------------------------------------------------------------------------
   # MQTT Mocks
@@ -2815,6 +2869,54 @@ components:
         received_at:
           type: string
           format: date-time
+
+    # ── Webhooks ────────────────────────────────────────────────────────────
+    WebhookRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        mock_id:
+          type: string
+          description: ID of the mock that triggered this webhook (absent for ad-hoc sends)
+        protocol:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        url:
+          type: string
+        method:
+          type: string
+        request_body:
+          type: string
+        status_code:
+          type: integer
+        response_body:
+          type: string
+        error:
+          type: string
+        attempt:
+          type: integer
+          description: 1-based attempt number (>1 indicates a retry)
+        duration_ms:
+          type: integer
+
+    WebhookSendRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+        method:
+          type: string
+          default: POST
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
 
     # ── MQTT ──────────────────────────────────────────────────────────────────
     MQTTResponse:

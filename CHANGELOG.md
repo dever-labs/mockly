@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.14.0](https://github.com/dever-labs/mockly/compare/v0.13.1...v0.14.0) (2026-09-29)
+
+
+### Features
+
+* add `mockly config validate` command ([#225](https://github.com/dever-labs/mockly/issues/225)) ([b4854a8](https://github.com/dever-labs/mockly/commit/b4854a858431a973e8be5cefd86465d0ec3d4a38))
+* add generic outbound webhook support + Nets/Nexi preset ([#200](https://github.com/dever-labs/mockly/issues/200)) ([fa03453](https://github.com/dever-labs/mockly/commit/fa0345392a2e4f75452e21f63979c829a29818c5))
+* opt-in near-miss diagnostics for unmatched HTTP requests ([#228](https://github.com/dever-labs/mockly/issues/228)) ([361aaba](https://github.com/dever-labs/mockly/commit/361aaba3ef717241b2fa4bf5c0af42a250637088))
+* query param matching supports regex, absence, and repeated values ([#227](https://github.com/dever-labs/mockly/issues/227)) ([e084485](https://github.com/dever-labs/mockly/commit/e0844855afc0940f57621d361b62c7c820da0de6)), closes [#206](https://github.com/dever-labs/mockly/issues/206)
+* support ${VAR}/${VAR:-default} env var substitution in config ([#226](https://github.com/dever-labs/mockly/issues/226)) ([ea7a925](https://github.com/dever-labs/mockly/commit/ea7a925e82a9ceb2a80776e033e6fb80f7c82c5c)), closes [#214](https://github.com/dever-labs/mockly/issues/214)
+
+
+### Bug Fixes
+
+* register missing NTLM preset, document undocumented endpoints/presets, add Scenarios and Fault Injection UI pages ([#194](https://github.com/dever-labs/mockly/issues/194)) ([1237bb8](https://github.com/dever-labs/mockly/commit/1237bb89c0eeba0be106fd94bfbbbac138fa68f1))
+* remove dotnet run-file cache and add dotnet/ to .gitignore ([#139](https://github.com/dever-labs/mockly/issues/139)) ([326fa05](https://github.com/dever-labs/mockly/commit/326fa0509882fc94ba6823f37646995ef0eb7043))
+
 ## [0.13.1](https://github.com/dever-labs/mockly/compare/v0.13.0...v0.13.1) (2026-07-13)
 
 

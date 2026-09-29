@@ -1316,6 +1316,7 @@ mockly start --config keycloak.yaml
 ```
 mockly start       [--config <file>] [--ui-port <n>] [--api-port <n>]
 mockly apply       --config <file>
+mockly config      validate [file]
 mockly list
 mockly add http    --method GET --path /foo --status 200 --body '{"ok":true}'
 mockly delete      <mock-id>

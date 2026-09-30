@@ -43,7 +43,7 @@
 | **State conditions** | Fire a mock only when a runtime state variable matches |
 | **Scenarios** | Named sets of mock patches — activate/deactivate atomically via API or CLI |
 | **Per-protocol fault injection** | Each protocol exposes its own native fault fields (DNS rcode, gRPC status code, Kafka error code, etc.) — activate via API or bundled inside a scenario |
-| **Per-mock fault injection** | Fault fields on individual HTTP mocks with independent delay, status/body override, and error rate |
+| **Per-mock fault injection** | Fault fields on individual HTTP mocks with independent delay (fixed or jittered range), status/body override, error rate, and rate limiting |
 | **Call verification** | Track how many times each mock was hit; block until an expected count is reached |
 | **Outbound webhooks** | Any HTTP mock can fire a templated outbound callback (server-initiated notification) when matched — with delay, retries, and a searchable attempt history |
 | **Log filtering** | Filter logs and log counts by matched mock ID via `/api/logs` and `/api/logs/count` |
@@ -448,6 +448,31 @@ Every HTTP mock can have its own `fault:` block — independently of protocol-le
         response:
           status: 200
           body: '[]'
+```
+
+Instead of (or in addition to) a fixed `delay`, use `delay_range` for a
+uniform-random jittered delay per request — more realistic than one constant
+value for testing timeout/retry/loading-state handling:
+
+```yaml
+        fault:
+          delay_range:
+            min: 150ms
+            max: 400ms
+```
+
+Use `rate_limit` to simulate a throttled API: once more than
+`requests_per_second` requests are observed in the trailing one-second
+window, `over_limit_status` (default 429) is returned instead of the normal
+response. Each mock with a `rate_limit` fault tracks its own independent
+window.
+
+```yaml
+        fault:
+          rate_limit:
+            requests_per_second: 5
+            over_limit_status: 429     # default 429
+            body: '{"error":"rate limit exceeded"}'
 ```
 
 #### Near-miss diagnostics for unmatched requests
@@ -1245,14 +1270,17 @@ Kafka, etc.), use the [Management API](#via-api) below.
 # Add 500ms latency to every HTTP request
 mockly fault set --delay 500ms
 
+# Add jittery 150ms-400ms latency to every HTTP request
+mockly fault set --delay-min 150ms --delay-max 400ms
+
 # Return 503 for every HTTP request
 mockly fault set --status 503 --body '{"error":"service_unavailable"}'
 
 # Return 429 for 30% of HTTP requests
 mockly fault set --status 429 --error-rate 0.3
 
-# Combine: 200ms latency + 500 errors 10% of the time
-mockly fault set --delay 200ms --status 500 --error-rate 0.1
+# Return 429 once more than 5 requests/sec are received
+mockly fault set --rate-limit 5
 
 # Show the current global fault configuration
 mockly fault status
@@ -1292,7 +1320,8 @@ curl http://localhost:9091/api/fault/dns/effective
 
 | Protocol | Fields | Values / notes |
 |---|---|---|
-| `http` / `graphql` | `status`, `body`, `delay`, `error_rate` | HTTP status code (default 503) |
+| `http` | `status`, `body`, `delay`, `delay_range`, `error_rate`, `rate_limit` | HTTP status code (default 503); `delay_range: {min, max}` jitters the delay instead of a fixed value; `rate_limit: {requests_per_second, over_limit_status, body}` returns `over_limit_status` (default 429) once the trailing 1s window is exceeded |
+| `graphql` | `status`, `body`, `delay`, `error_rate` | HTTP status code (default 503) |
 | `websocket` | `close_code`, `message`, `delay`, `error_rate` | WS close code (default 1011) |
 | `grpc` | `code`, `message`, `delay`, `error_rate` | `UNAVAILABLE` \| `NOT_FOUND` \| `DEADLINE_EXCEEDED` \| `PERMISSION_DENIED` \| `RESOURCE_EXHAUSTED` \| `INTERNAL` |
 | `tcp` | `response`, `delay`, `error_rate` | Send `response` bytes then close (default: just close) |
@@ -1384,7 +1413,7 @@ mockly status
 mockly reset
 mockly preset      list | show <name> | use <name>
 mockly scenario    list | active | activate <id> | deactivate <id>
-mockly fault       set [--status <n>] [--delay <d>] [--body <s>] [--error-rate <f>] | clear | status
+mockly fault       set [--status <n>] [--delay <d>] [--delay-min <d>] [--delay-max <d>] [--body <s>] [--error-rate <f>] [--rate-limit <n>] [--rate-limit-status <n>] | clear | status
 ```
 
 > The `fault` CLI subcommand only controls the **HTTP** protocol's direct

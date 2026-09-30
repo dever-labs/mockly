@@ -718,8 +718,12 @@ func faultCmd() *cobra.Command {
 func faultSetCmd() *cobra.Command {
 	var status int
 	var delayStr string
+	var delayMinStr string
+	var delayMaxStr string
 	var body string
 	var errorRate float64
+	var rateLimit int
+	var rateLimitStatus int
 
 	cmd := &cobra.Command{
 		Use:   "set",
@@ -729,11 +733,17 @@ func faultSetCmd() *cobra.Command {
   # Add 500ms latency to every request
   mockly fault set --delay 500ms
 
+  # Add jittery 150ms-400ms latency to every request
+  mockly fault set --delay-min 150ms --delay-max 400ms
+
   # Return 503 for every request
   mockly fault set --status 503 --body '{"error":"service_unavailable"}'
 
   # Return 429 for 30% of requests
   mockly fault set --status 429 --error-rate 0.3
+
+  # Return 429 once more than 5 requests/sec are received
+  mockly fault set --rate-limit 5
 
   # Combine: 200ms latency + 500 errors 10% of the time
   mockly fault set --delay 200ms --status 500 --error-rate 0.1`,
@@ -750,6 +760,26 @@ func faultSetCmd() *cobra.Command {
 					return err
 				}
 			}
+			if delayMinStr != "" || delayMaxStr != "" {
+				dr := &config.DelayRange{}
+				if delayMinStr != "" {
+					if err := dr.Min.UnmarshalText([]byte(delayMinStr)); err != nil {
+						return err
+					}
+				}
+				if delayMaxStr != "" {
+					if err := dr.Max.UnmarshalText([]byte(delayMaxStr)); err != nil {
+						return err
+					}
+				}
+				fault.DelayRange = dr
+			}
+			if rateLimit > 0 {
+				fault.RateLimit = &config.RateLimitFault{
+					RequestsPerSecond: rateLimit,
+					OverLimitStatus:   rateLimitStatus,
+				}
+			}
 			if err := postJSON(fmt.Sprintf("http://localhost:%d/api/fault/http", cfg.Mockly.API.Port), fault); err != nil {
 				return err
 			}
@@ -759,8 +789,12 @@ func faultSetCmd() *cobra.Command {
 	}
 	cmd.Flags().IntVar(&status, "status", 0, "HTTP status code to inject (0 = only inject delay)")
 	cmd.Flags().StringVar(&delayStr, "delay", "", "Latency to add to every request (e.g. 500ms, 2s)")
+	cmd.Flags().StringVar(&delayMinStr, "delay-min", "", "Minimum latency for a random jittered delay (e.g. 150ms); requires --delay-max")
+	cmd.Flags().StringVar(&delayMaxStr, "delay-max", "", "Maximum latency for a random jittered delay (e.g. 400ms); requires --delay-min")
 	cmd.Flags().StringVar(&body, "body", "", "Response body to return when fault fires")
 	cmd.Flags().Float64Var(&errorRate, "error-rate", 0, "Fraction of requests to affect (0.0–1.0; default: all)")
+	cmd.Flags().IntVar(&rateLimit, "rate-limit", 0, "Requests/sec allowed before returning --rate-limit-status (0 = disabled)")
+	cmd.Flags().IntVar(&rateLimitStatus, "rate-limit-status", 0, "Status code returned once --rate-limit is exceeded (default 429)")
 	return cmd
 }
 

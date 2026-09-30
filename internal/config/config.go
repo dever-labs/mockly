@@ -59,6 +59,17 @@ type APIConfig struct {
 	// as a local mock tool. Set Enabled: false to strip the CORS middleware
 	// entirely (useful when running behind a reverse proxy that handles CORS).
 	CORS *CORSConfig `yaml:"cors,omitempty" json:"cors,omitempty"`
+	// Metrics configures the optional Prometheus-format /metrics endpoint.
+	// Disabled by default (opt-in) to keep the management API surface
+	// minimal for users who don't need it.
+	Metrics *MetricsConfig `yaml:"metrics,omitempty" json:"metrics,omitempty"`
+}
+
+// MetricsConfig controls the optional Prometheus /metrics endpoint exposed
+// on the management API.
+type MetricsConfig struct {
+	// Enabled turns on GET /metrics (Prometheus text exposition format).
+	Enabled bool `yaml:"enabled" json:"enabled"`
 }
 
 // CORSConfig controls the CORS middleware on the management API server.

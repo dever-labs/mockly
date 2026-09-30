@@ -16,6 +16,7 @@ import (
 	"github.com/dever-labs/mockly/internal/api"
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/metrics"
 	"github.com/dever-labs/mockly/internal/presets"
 	"github.com/dever-labs/mockly/internal/protocols/amqpserver"
 	"github.com/dever-labs/mockly/internal/protocols/coapserver"
@@ -273,6 +274,36 @@ func runServers(cfg *config.Config) error {
 	}
 
 	apiSrv := api.New(cfg, store, sc, log, wh, httpSrv, wsSrv, grpcSrv, graphqlSrv, tcpSrv, redisSrv, smtpSrv, mqttSrv, snmpSrv, dnsSrv, amqpSrv, kafkaSrv, ldapSrv, imapSrv, ftpSrv, memcachedSrv, stompSrv, coapSrv, sipSrv)
+
+	if cfg.Mockly.API.Metrics != nil && cfg.Mockly.API.Metrics.Enabled {
+		metricsReg := metrics.New(func() float64 {
+			if httpSrv == nil {
+				return 0
+			}
+			return float64(len(httpSrv.GetMocks()))
+		})
+		apiSrv.SetMetrics(metricsReg)
+
+		// Observe every completed HTTP mock request (logged with
+		// Protocol == "http") as Prometheus counters/histograms.
+		ch, cancelSub := log.Subscribe("metrics")
+		go func() {
+			defer cancelSub()
+			for {
+				select {
+				case e, ok := <-ch:
+					if !ok {
+						return
+					}
+					if e.Protocol == "http" {
+						metricsReg.ObserveHTTPRequest(e.MatchedID, e.Method, e.Status, float64(e.Duration)/1000.0)
+					}
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
 
 	if cfg.Mockly.UI.Enabled {
 		apiSrv.AttachUI(assets.DistFS())

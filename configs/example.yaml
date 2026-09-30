@@ -16,6 +16,8 @@ mockly:
     #   allowed_origins: ["http://localhost:3000"]  # Restrict to specific origins
     #   allowed_methods: ["GET","POST","PUT","DELETE","OPTIONS"]
     #   allowed_headers: ["Content-Type","Authorization"]
+    # metrics:       # Opt-in Prometheus /metrics endpoint (disabled by default)
+    #   enabled: true
 
 protocols:
 

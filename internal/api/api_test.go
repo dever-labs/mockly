@@ -90,6 +90,7 @@ func (s *stubRedis) StatusInfo() map[string]interface{} {
 }
 func (s *stubRedis) GetMocks() []config.RedisMock  { return s.mocks }
 func (s *stubRedis) SetMocks(m []config.RedisMock) { s.mocks = m }
+func (s *stubRedis) ResetData()                    {}
 
 type stubSMTP struct {
 	inbox *smtpserver.Inbox

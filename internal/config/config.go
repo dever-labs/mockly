@@ -378,6 +378,16 @@ type RedisConfig struct {
 	Enabled bool        `yaml:"enabled" json:"enabled"`
 	Port    int         `yaml:"port" json:"port"`
 	Mocks   []RedisMock `yaml:"mocks" json:"mocks"`
+
+	// Mode selects how commands are resolved:
+	//   ""          (default) — static mocks only, exactly as before.
+	//   "stateful"  — a real in-memory key/value datastore backs
+	//                 SET/GET/DEL/EXPIRE/TTL/INCR/DECR and basic hash/list
+	//                 commands, so writes actually round-trip on reads.
+	//                 Commands not covered by the datastore still fall
+	//                 back to static mock matching, so existing configs
+	//                 keep working unchanged.
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
 }
 
 // RedisMock matches an incoming Redis command and returns a configured response.

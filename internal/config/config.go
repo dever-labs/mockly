@@ -150,10 +150,33 @@ type HTTPMock struct {
 // MockFault injects latency or error responses for a specific mock.
 type MockFault struct {
 	Delay          Duration          `yaml:"delay,omitempty" json:"delay,omitempty"`
+	DelayRange     *DelayRange       `yaml:"delay_range,omitempty" json:"delay_range,omitempty"`
 	StatusOverride int               `yaml:"status_override,omitempty" json:"status_override,omitempty"`
 	Body           string            `yaml:"body,omitempty" json:"body,omitempty"`
 	Headers        map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"` // Extra response headers
 	ErrorRate      float64           `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+	// RateLimit, if set, returns OverLimitStatus once RequestsPerSecond is
+	// exceeded for this mock, simulating throttling instead of a random
+	// error rate.
+	RateLimit *RateLimitFault `yaml:"rate_limit,omitempty" json:"rate_limit,omitempty"`
+}
+
+// DelayRange configures a uniform-random delay between Min and Max,
+// simulating jittery real-world latency instead of one fixed value. It is a
+// sibling to the existing Delay field on MockFault/HTTPFault: when set (and
+// Max > 0), it takes precedence over Delay for that fault.
+type DelayRange struct {
+	Min Duration `yaml:"min" json:"min"`
+	Max Duration `yaml:"max" json:"max"`
+}
+
+// RateLimitFault simulates a throttled API: once more than
+// RequestsPerSecond requests are observed in the trailing one-second window,
+// OverLimitStatus (default 429) is returned instead of the normal response.
+type RateLimitFault struct {
+	RequestsPerSecond int    `yaml:"requests_per_second" json:"requests_per_second"`
+	OverLimitStatus   int    `yaml:"over_limit_status,omitempty" json:"over_limit_status,omitempty"` // default 429
+	Body              string `yaml:"body,omitempty" json:"body,omitempty"`
 }
 
 // Webhook defines an outbound HTTP call fired asynchronously when the mock it
@@ -838,16 +861,20 @@ type GRPCFault struct {
 }
 
 type HTTPFault struct {
-	Delay     Duration          `yaml:"delay,omitempty" json:"delay,omitempty"`
-	Status    int               `yaml:"status,omitempty" json:"status,omitempty"` // HTTP status code (default 503 when non-zero status/body is set)
-	Body      string            `yaml:"body,omitempty" json:"body,omitempty"`
-	Headers   map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"` // Extra response headers (e.g. Retry-After)
-	ErrorRate float64           `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+	Delay      Duration          `yaml:"delay,omitempty" json:"delay,omitempty"`
+	DelayRange *DelayRange       `yaml:"delay_range,omitempty" json:"delay_range,omitempty"`
+	Status     int               `yaml:"status,omitempty" json:"status,omitempty"` // HTTP status code (default 503 when non-zero status/body is set)
+	Body       string            `yaml:"body,omitempty" json:"body,omitempty"`
+	Headers    map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"` // Extra response headers (e.g. Retry-After)
+	ErrorRate  float64           `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
 	// Abort closes the connection immediately with a TCP reset — no response is sent.
 	Abort bool `yaml:"abort,omitempty" json:"abort,omitempty"`
 	// TruncateBody sends only the first N bytes of the response body then abruptly
 	// closes the connection, simulating a mid-transfer server crash.
 	TruncateBody int `yaml:"truncate_body,omitempty" json:"truncate_body,omitempty"`
+	// RateLimit, if set, returns OverLimitStatus once RequestsPerSecond is
+	// exceeded, simulating an API throttling clients.
+	RateLimit *RateLimitFault `yaml:"rate_limit,omitempty" json:"rate_limit,omitempty"`
 }
 
 type WebSocketFault struct {

@@ -143,10 +143,19 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Protocol fault: inject latency before processing.
+	// Protocol fault: inject latency before processing, and rate limiting
+	// short-circuits everything else, simulating a throttled API returning
+	// e.g. 429 once the configured requests-per-second is exceeded.
 	fault := s.scenarios.EffectiveHTTPFault()
-	if fault != nil && fault.Delay.Duration > 0 {
-		time.Sleep(fault.Delay.Duration)
+	if fault != nil && fault.RateLimit != nil &&
+		s.scenarios.RateLimited("http:global", fault.RateLimit.RequestsPerSecond) {
+		s.respondRateLimited(w, r, hdrs, string(body), start, fault.RateLimit)
+		return
+	}
+	if fault != nil {
+		if d := s.scenarios.ResolveDelay(fault.Delay.Duration, fault.DelayRange); d > 0 {
+			time.Sleep(d)
+		}
 	}
 
 	s.mu.RLock()
@@ -308,10 +317,19 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		// Per-mock fault (applied after scenario patches).
 		if matchedMock != nil && matchedMock.Fault != nil {
 			mf := matchedMock.Fault
-			if mf.Delay.Duration > 0 {
-				delay += mf.Delay.Duration
-			}
-			if mf.StatusOverride != 0 && s.scenarios.ShouldFault(mf.ErrorRate) {
+			delay += s.scenarios.ResolveDelay(mf.Delay.Duration, mf.DelayRange)
+			switch {
+			case mf.RateLimit != nil && s.scenarios.RateLimited("http:mock:"+matchedMock.ID, mf.RateLimit.RequestsPerSecond):
+				status = mf.RateLimit.OverLimitStatus
+				if status == 0 {
+					status = http.StatusTooManyRequests
+				}
+				if mf.RateLimit.Body != "" {
+					respBody = mf.RateLimit.Body
+				} else {
+					respBody = `{"error":"rate limit exceeded"}`
+				}
+			case mf.StatusOverride != 0 && s.scenarios.ShouldFault(mf.ErrorRate):
 				status = mf.StatusOverride
 				if mf.Body != "" {
 					respBody = mf.Body
@@ -502,6 +520,33 @@ func toLoggerNearMisses(in []engine.NearMiss) []logger.NearMiss {
 		out[i] = logger.NearMiss{MockID: nm.MockID, Reason: nm.Reason}
 	}
 	return out
+}
+
+// respondRateLimited writes the configured over-limit response (default 429)
+// for a rate_limit fault and logs the request. Used when a global (direct or
+// scenario) HTTP fault's requests_per_second has been exceeded.
+func (s *Server) respondRateLimited(w http.ResponseWriter, r *http.Request, hdrs map[string]string, body string, start time.Time, rl *config.RateLimitFault) {
+	status := rl.OverLimitStatus
+	if status == 0 {
+		status = http.StatusTooManyRequests
+	}
+	respBody := rl.Body
+	if respBody == "" {
+		respBody = `{"error":"rate limit exceeded"}`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = fmt.Fprint(w, respBody)
+
+	s.log.Log(logger.Entry{
+		Protocol: "http",
+		Method:   r.Method,
+		Path:     r.URL.Path,
+		Status:   status,
+		Duration: time.Since(start).Milliseconds(),
+		Headers:  hdrs,
+		Body:     body,
+	})
 }
 
 // abortConn hijacks the connection and performs a TCP reset (RST) — the client

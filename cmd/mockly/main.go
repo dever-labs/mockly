@@ -761,16 +761,15 @@ func faultSetCmd() *cobra.Command {
 				}
 			}
 			if delayMinStr != "" || delayMaxStr != "" {
-				dr := &config.DelayRange{}
-				if delayMinStr != "" {
-					if err := dr.Min.UnmarshalText([]byte(delayMinStr)); err != nil {
-						return err
-					}
+				if delayMinStr == "" || delayMaxStr == "" {
+					return fmt.Errorf("--delay-min and --delay-max must be set together")
 				}
-				if delayMaxStr != "" {
-					if err := dr.Max.UnmarshalText([]byte(delayMaxStr)); err != nil {
-						return err
-					}
+				dr := &config.DelayRange{}
+				if err := dr.Min.UnmarshalText([]byte(delayMinStr)); err != nil {
+					return err
+				}
+				if err := dr.Max.UnmarshalText([]byte(delayMaxStr)); err != nil {
+					return err
 				}
 				fault.DelayRange = dr
 			}

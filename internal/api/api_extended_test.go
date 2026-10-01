@@ -87,6 +87,118 @@ func TestAPI_State_DeleteKey(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// /api/state TTL and prefix reset
+// ---------------------------------------------------------------------------
+
+func TestAPI_State_SetWithTTL_Expires(t *testing.T) {
+	base, _, _, _, _ := startAPI(t)
+
+	resp, err := http.Post(base+"/api/state?ttl=20ms", "application/json", bytes.NewBufferString(`{"ephemeral":"v"}`))
+	if err != nil {
+		t.Fatalf("POST /api/state?ttl=20ms: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	resp2, err := http.Get(base + "/api/state")
+	if err != nil {
+		t.Fatalf("GET /api/state: %v", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	var all map[string]string
+	if err := json.NewDecoder(resp2.Body).Decode(&all); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := all["ephemeral"]; ok {
+		t.Error("expected ephemeral key to have expired")
+	}
+}
+
+func TestAPI_State_SetWithInvalidTTL(t *testing.T) {
+	base, _, _, _, _ := startAPI(t)
+
+	resp, err := http.Post(base+"/api/state?ttl=not-a-duration", "application/json", bytes.NewBufferString(`{"k":"v"}`))
+	if err != nil {
+		t.Fatalf("POST /api/state?ttl=bad: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != 400 {
+		t.Errorf("want 400 for invalid ttl, got %d", resp.StatusCode)
+	}
+}
+
+func TestAPI_State_ResetPrefix(t *testing.T) {
+	base, _, _, _, _ := startAPI(t)
+
+	body := `{"login:session":"abc","login:user":"alice","cart:items":"3"}`
+	resp, _ := http.Post(base+"/api/state", "application/json", bytes.NewBufferString(body))
+	_ = resp.Body.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, base+"/api/state?prefix=login:", nil)
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE /api/state?prefix=login:: %v", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	if resp2.StatusCode != 200 {
+		t.Errorf("want 200, got %d", resp2.StatusCode)
+	}
+
+	resp3, err := http.Get(base + "/api/state")
+	if err != nil {
+		t.Fatalf("GET /api/state: %v", err)
+	}
+	defer resp3.Body.Close() //nolint:errcheck
+	var all map[string]string
+	if err := json.NewDecoder(resp3.Body).Decode(&all); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := all["login:session"]; ok {
+		t.Error("expected login:session to be cleared by prefix reset")
+	}
+	if _, ok := all["login:user"]; ok {
+		t.Error("expected login:user to be cleared by prefix reset")
+	}
+	if v, ok := all["cart:items"]; !ok || v != "3" {
+		t.Errorf("expected unrelated key to survive prefix reset, got v=%q ok=%v", v, ok)
+	}
+}
+
+func TestAPI_State_ResetAllViaEmptyPrefix(t *testing.T) {
+	base, _, _, _, _ := startAPI(t)
+
+	resp, _ := http.Post(base+"/api/state", "application/json", bytes.NewBufferString(`{"a":"1","b":"2"}`))
+	_ = resp.Body.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, base+"/api/state", nil)
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE /api/state: %v", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	if resp2.StatusCode != 200 {
+		t.Errorf("want 200, got %d", resp2.StatusCode)
+	}
+
+	resp3, err := http.Get(base + "/api/state")
+	if err != nil {
+		t.Fatalf("GET /api/state: %v", err)
+	}
+	defer resp3.Body.Close() //nolint:errcheck
+	var all map[string]string
+	if err := json.NewDecoder(resp3.Body).Decode(&all); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(all) != 0 {
+		t.Errorf("expected all state cleared, got %v", all)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // /api/scenarios – list, get, update, delete, active, deactivate alias
 // ---------------------------------------------------------------------------
 

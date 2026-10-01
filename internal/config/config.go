@@ -205,6 +205,19 @@ type HTTPRequest struct {
 	// Example: {"user.role": "admin"} matches {"user":{"role":"admin"}}.
 	BodyJSON map[string]string `yaml:"body_json,omitempty" json:"body_json,omitempty"`
 
+	// BodyMultipart matches fields in a multipart/form-data request body.
+	// Keys are the form field name for text parts (e.g. "name": "Alice"),
+	// or "<field>.filename"/"<field>.content_type" for file parts (e.g.
+	// "avatar.filename": "*" asserts a file was uploaded under "avatar").
+	// All values support the "*" wildcard (field/attribute present, any value).
+	BodyMultipart map[string]string `yaml:"body_multipart,omitempty" json:"body_multipart,omitempty"`
+
+	// BodyXML matches elements/attributes in an XML request body using
+	// dot-notation paths, mirroring BodyJSON. "user.role" resolves to the
+	// text content of <user><role>...</role></user>; a leading "@" segment
+	// resolves to an attribute (e.g. "user.@id" matches <user id="...">).
+	BodyXML map[string]string `yaml:"body_xml,omitempty" json:"body_xml,omitempty"`
+
 	// Auth requires the incoming request to carry valid credentials.
 	// When set, the mock is skipped if authentication fails — add a fallback
 	// mock (without auth) to return a 401 for unauthenticated callers.

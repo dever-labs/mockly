@@ -75,6 +75,7 @@ type RedisProtocol interface {
 	ProtocolServer
 	GetMocks() []config.RedisMock
 	SetMocks([]config.RedisMock)
+	ResetData()
 }
 
 // SMTPProtocol is the subset of smtpserver.Server used by the API.
@@ -1644,6 +1645,7 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 			mocks = s.cfg.Protocols.Redis.Mocks
 		}
 		s.redis.SetMocks(mocks)
+		s.redis.ResetData()
 	}
 	if s.smtp != nil {
 		var rules []config.SMTPRule

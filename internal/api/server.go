@@ -374,6 +374,7 @@ func (s *Server) buildRouter() http.Handler {
 
 		r.Get("/api/state", s.getState)
 		r.Post("/api/state", s.setState)
+		r.Delete("/api/state", s.resetStatePrefix)
 		r.Delete("/api/state/{key}", s.deleteState)
 
 		// Scenarios
@@ -1528,14 +1529,27 @@ func (s *Server) getState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.store.All())
 }
 
+// setState writes the given key/value pairs. An optional "?ttl=<duration>"
+// query param (e.g. "30s", "5m") applies the same expiry to every key set in
+// this request; omitted or "0" means the keys never expire (the default,
+// backward-compatible behaviour).
 func (s *Server) setState(w http.ResponseWriter, r *http.Request) {
 	var body map[string]string
 	if err := decodeBody(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	var ttl time.Duration
+	if ttlStr := r.URL.Query().Get("ttl"); ttlStr != "" {
+		d, err := time.ParseDuration(ttlStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid ttl: "+err.Error())
+			return
+		}
+		ttl = d
+	}
 	for k, v := range body {
-		s.store.Set(k, v)
+		s.store.SetTTL(k, v, ttl)
 	}
 	writeJSON(w, http.StatusOK, s.store.All())
 }
@@ -1544,6 +1558,17 @@ func (s *Server) deleteState(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	s.store.Delete(key)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": key})
+}
+
+// resetStatePrefix clears only state keys starting with "?prefix=...", e.g.
+// DELETE /api/state?prefix=login: — leaving all other keys untouched so
+// unrelated mocks/scenarios sharing the same store aren't affected. With no
+// prefix (or an empty one) it behaves like a full state wipe, equivalent to
+// the state portion of POST /api/reset.
+func (s *Server) resetStatePrefix(w http.ResponseWriter, r *http.Request) {
+	prefix := r.URL.Query().Get("prefix")
+	s.store.ResetPrefix(prefix)
+	writeJSON(w, http.StatusOK, map[string]string{"reset_prefix": prefix})
 }
 
 // ---------------------------------------------------------------------------

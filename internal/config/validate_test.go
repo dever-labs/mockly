@@ -50,6 +50,51 @@ func TestValidateDetectsInvalidPathRegex(t *testing.T) {
 	}
 }
 
+func TestValidateDetectsInvalidBase64MatchBinary(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.WebSocket = &WebSocketConfig{
+		Enabled: true,
+		Port:    8090,
+		Mocks: []WebSocketMock{
+			{
+				ID:   "bin",
+				Path: "/ws",
+				OnMessage: []WebSocketRule{
+					{MatchBinary: "not-valid-base64!!!"},
+				},
+			},
+		},
+	}
+	errs := Validate(&cfg)
+	if len(errs) != 1 {
+		t.Fatalf("expected exactly 1 invalid-base64 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "invalid base64") {
+		t.Fatalf("unexpected error message: %v", errs[0])
+	}
+}
+
+func TestValidateAllowsValidBase64BinaryFields(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.WebSocket = &WebSocketConfig{
+		Enabled: true,
+		Port:    8090,
+		Mocks: []WebSocketMock{
+			{
+				ID:        "bin",
+				Path:      "/ws",
+				OnConnect: &WebSocketAction{SendBinary: "AQID"},
+				OnMessage: []WebSocketRule{
+					{MatchBinary: "AQID", RespondBinary: "BAUG"},
+				},
+			},
+		},
+	}
+	if errs := Validate(&cfg); len(errs) != 0 {
+		t.Fatalf("expected no errors for valid base64, got %v", errs)
+	}
+}
+
 func TestValidateDetectsInvalidReprefixedRegex(t *testing.T) {
 	cfg := defaults()
 	cfg.Protocols.HTTP = &HTTPConfig{

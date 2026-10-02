@@ -279,15 +279,38 @@ type WebSocketMock struct {
 }
 
 type WebSocketAction struct {
-	Send  string   `yaml:"send,omitempty" json:"send,omitempty"`
-	Delay Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Send string `yaml:"send,omitempty" json:"send,omitempty"`
+
+	// SendBinary is base64-encoded bytes sent as a binary (opcode 0x2) frame
+	// instead of Send's text frame. Mutually exclusive with Send; if both are
+	// set, SendBinary takes precedence.
+	SendBinary string   `yaml:"send_binary,omitempty" json:"send_binary,omitempty"`
+	Delay      Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
 }
 
+// WebSocketRule matches an incoming message and optionally sends a response.
+//
+// Match/Respond operate on text (opcode 0x1) frames and work exactly as
+// before. MatchBinary/RespondBinary are additive: they hold base64-encoded
+// raw bytes and only apply to binary (opcode 0x2) frames, letting a rule
+// require a specific frame type in addition to (or instead of) matching
+// payload content. A rule with MatchBinary set only matches binary frames;
+// a rule with only Match set matches any frame's payload as text, same as
+// pre-existing behavior.
 type WebSocketRule struct {
-	Match   string   `yaml:"match" json:"match"`
-	Respond string   `yaml:"respond,omitempty" json:"respond,omitempty"`
-	Close   bool     `yaml:"close,omitempty" json:"close,omitempty"`
-	Delay   Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Match   string `yaml:"match" json:"match"`
+	Respond string `yaml:"respond,omitempty" json:"respond,omitempty"`
+
+	// MatchBinary is base64-encoded bytes to compare against an incoming
+	// binary frame's raw payload (exact match only; no wildcard/regex).
+	MatchBinary string `yaml:"match_binary,omitempty" json:"match_binary,omitempty"`
+
+	// RespondBinary is base64-encoded bytes sent as a binary frame response.
+	// Mutually exclusive with Respond; if both are set, RespondBinary takes
+	// precedence.
+	RespondBinary string   `yaml:"respond_binary,omitempty" json:"respond_binary,omitempty"`
+	Close         bool     `yaml:"close,omitempty" json:"close,omitempty"`
+	Delay         Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

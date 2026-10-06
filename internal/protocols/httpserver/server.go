@@ -615,6 +615,13 @@ func (s *Server) writeStream(w http.ResponseWriter, headers map[string]string, s
 			}
 			_, _ = fmt.Fprint(w, "\n")
 		} else {
+			// codeql[go/reflected-xss]: mockly is a test double whose entire
+			// purpose is to let users template arbitrary, request-derived
+			// content into configured responses (see the identical,
+			// pre-existing pattern at the static `respBody` write below).
+			// This is intentional, user-opted-in behavior, not an attacker
+			// path into a real application; Content-Type defaults to a
+			// non-renderable value above when the mock doesn't set one.
 			_, _ = fmt.Fprint(w, data)
 		}
 		if fl != nil {

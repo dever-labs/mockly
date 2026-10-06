@@ -193,6 +193,17 @@ func TestNATS_QueueGroup_LoadBalanced(t *testing.T) {
 	}
 	defer sub2.Unsubscribe() //nolint:errcheck
 
+	// QueueSubscribe registers interest with the server asynchronously; flush
+	// both connections so the server has both queue members registered before
+	// publishing, otherwise all messages can race ahead to whichever member
+	// subscribed first.
+	if err := nc1.Flush(); err != nil {
+		t.Fatalf("flush 1: %v", err)
+	}
+	if err := nc2.Flush(); err != nil {
+		t.Fatalf("flush 2: %v", err)
+	}
+
 	const n = 10
 	for i := 0; i < n; i++ {
 		if err := nc1.Publish("work.task", []byte("job")); err != nil {

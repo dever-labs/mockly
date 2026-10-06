@@ -19,6 +19,7 @@ import (
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/metrics"
 	"github.com/dever-labs/mockly/internal/protocols/mqttserver"
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
@@ -129,8 +130,17 @@ type Server struct {
 	stomp     STOMPProtocol
 	coap      CoAPProtocol
 	sip       SIPProtocol
+	metrics   *metrics.Registry
 	server    *http.Server
 	uiFiles   http.FileSystem
+}
+
+// SetMetrics attaches a metrics.Registry, enabling the GET /metrics route
+// (still gated by the api.metrics.enabled config flag). Optional — if never
+// called (or cfg.Mockly.API.Metrics.Enabled is false), /metrics is never
+// registered on the router.
+func (s *Server) SetMetrics(m *metrics.Registry) {
+	s.metrics = m
 }
 
 // New creates a management API Server.
@@ -246,12 +256,24 @@ func (s *Server) buildRouter() http.Handler {
 		}))
 	}
 
+	// Registered outside the JSON-content-type group below: Prometheus
+	// scrapers expect the text exposition format's own content type. The
+	// enabled/metrics-attached check happens per-request (not at router
+	// build time) so SetMetrics can be called at any point relative to
+	// Start.
+	r.Get("/metrics", func(w http.ResponseWriter, req *http.Request) {
+		if s.metrics == nil || s.cfg.Mockly.API.Metrics == nil || !s.cfg.Mockly.API.Metrics.Enabled {
+			http.NotFound(w, req)
+			return
+		}
+		s.metrics.Handler().ServeHTTP(w, req)
+	})
+
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
 
 		r.Get("/api/health", s.health)
 		r.Get("/api/protocols", s.listProtocols)
-
 		r.Get("/api/mocks/http", s.listHTTPMocks)
 		r.Post("/api/mocks/http", s.addHTTPMock)
 		r.Put("/api/mocks/http/{id}", s.updateHTTPMock)

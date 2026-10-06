@@ -708,6 +708,102 @@
           ]
         },
         {
+          "name": "NATS Mocks",
+          "description": "Manage NATS mock definitions and captured messages.",
+          "auth": { "type": "none", "config": {} },
+          "ssl": "inherit",
+          "requests": [
+            {
+              "name": "List NATS Mocks",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/mocks/nats",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all registered NATS mocks.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Create NATS Mock",
+              "method": "POST",
+              "url": "{{baseUrl}}/api/mocks/nats",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"id\": \"nats-order-ack\",\n  \"subject\": \"orders.created\",\n  \"response\": {\n    \"subject\": \"orders.ack\",\n    \"payload\": \"{\\\"received\\\":true}\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Creates a NATS mock. subject supports NATS wildcards: * (single token) and > (multi-token, must be last), plus {name} captures. Omit response.subject for request/reply (the caller's reply-to subject is used); set it for a pub/sub reaction.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Update NATS Mock",
+              "method": "PUT",
+              "url": "{{baseUrl}}/api/mocks/nats/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [
+                { "key": "Content-Type", "value": "application/json", "enabled": true }
+              ],
+              "bodyType": "json",
+              "bodyContent": "{\n  \"subject\": \"orders.created\",\n  \"response\": {\n    \"payload\": \"{\\\"received\\\":false}\"\n  }\n}",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Fully replaces a NATS mock.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Delete NATS Mock",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/mocks/nats/{{mockId}}",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Removes a NATS mock by ID.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "List Captured NATS Messages",
+              "method": "GET",
+              "url": "{{baseUrl}}/api/nats/messages",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Returns all NATS messages captured by Mockly's embedded server.",
+              "protocolConfig": {}
+            },
+            {
+              "name": "Clear NATS Messages",
+              "method": "DELETE",
+              "url": "{{baseUrl}}/api/nats/messages",
+              "protocol": "http",
+              "params": [],
+              "headers": [],
+              "bodyType": "none",
+              "bodyContent": "",
+              "auth": { "type": "inherit", "config": {} },
+              "ssl": "inherit",
+              "description": "Clears all captured NATS messages.",
+              "protocolConfig": {}
+            }
+          ]
+        },
+        {
           "name": "State",
           "description": "Shared key-value state used by state-conditional mocks.",
           "auth": { "type": "none", "config": {} },

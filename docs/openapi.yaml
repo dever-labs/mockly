@@ -31,6 +31,8 @@ tags:
     description: Manage SMTP rules and captured email inbox
   - name: MQTT Mocks
     description: Manage MQTT mock definitions and captured messages
+  - name: NATS Mocks
+    description: Manage NATS mock definitions and captured messages
   - name: SNMP Mocks
     description: Manage SNMP OID mock definitions and outbound TRAP configurations
   - name: DNS Mocks
@@ -949,6 +951,122 @@ paths:
       tags: [MQTT Mocks]
       operationId: clearMQTTMessages
       summary: Clear captured MQTT messages
+      responses:
+        "200":
+          description: Messages cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusMessage"
+
+  # ---------------------------------------------------------------------------
+  # NATS Mocks
+  # ---------------------------------------------------------------------------
+  /api/mocks/nats:
+    get:
+      tags: [NATS Mocks]
+      operationId: listNATSMocks
+      summary: List all NATS mocks
+      responses:
+        "200":
+          description: Array of NATS mocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NATSMock"
+    post:
+      tags: [NATS Mocks]
+      operationId: addNATSMock
+      summary: Create a NATS mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NATSMock"
+            examples:
+              pubsub:
+                summary: Pub/sub reaction
+                value:
+                  id: nats-order-ack
+                  subject: "orders.created"
+                  response:
+                    subject: "orders.ack"
+                    payload: '{"received":"{{ .body }}"}'
+              request_reply:
+                summary: Request/reply (no response.subject needed)
+                value:
+                  id: nats-ping
+                  subject: "svc.ping"
+                  response:
+                    payload: "pong"
+      responses:
+        "201":
+          description: Mock created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NATSMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/mocks/nats/{id}:
+    put:
+      tags: [NATS Mocks]
+      operationId: updateNATSMock
+      summary: Replace a NATS mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NATSMock"
+      responses:
+        "200":
+          description: Mock updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NATSMock"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [NATS Mocks]
+      operationId: deleteNATSMock
+      summary: Delete a NATS mock
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/nats/messages:
+    get:
+      tags: [NATS Mocks]
+      operationId: listNATSMessages
+      summary: List all captured NATS messages
+      responses:
+        "200":
+          description: Array of captured messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+    delete:
+      tags: [NATS Mocks]
+      operationId: clearNATSMessages
+      summary: Clear captured NATS messages
       responses:
         "200":
           description: Messages cleared
@@ -2485,7 +2603,7 @@ components:
       required: true
       schema:
         type: string
-        enum: [http, graphql, websocket, grpc, tcp, redis, mqtt, smtp, snmp, dns, amqp, kafka, ldap, imap, ftp, memcached, stomp, coap, sip]
+        enum: [http, graphql, websocket, grpc, tcp, redis, mqtt, nats, smtp, snmp, dns, amqp, kafka, ldap, imap, ftp, memcached, stomp, coap, sip]
       description: Protocol name
 
   responses:
@@ -2948,6 +3066,36 @@ components:
           description: MQTT topic pattern (supports + and # wildcards)
         response:
           $ref: "#/components/schemas/MQTTResponse"
+        state:
+          $ref: "#/components/schemas/StateCondition"
+
+    # ── NATS ──────────────────────────────────────────────────────────────────
+    NATSResponse:
+      type: object
+      required: [payload]
+      properties:
+        subject:
+          type: string
+          description: Publish subject for pub/sub reactions (ignored for request/reply — the caller's reply-to subject is used instead)
+        payload:
+          type: string
+        delay:
+          $ref: "#/components/schemas/Duration"
+
+    NATSMock:
+      type: object
+      required: [subject]
+      properties:
+        id:
+          type: string
+        subject:
+          type: string
+          description: NATS subject pattern (supports * and > wildcards, plus {name} captures)
+        queue_group:
+          type: string
+          description: Join this NATS queue group so only one group member answers each matching message
+        response:
+          $ref: "#/components/schemas/NATSResponse"
         state:
           $ref: "#/components/schemas/StateCondition"
 
@@ -3416,6 +3564,17 @@ components:
           minimum: 0
           maximum: 1
 
+    NATSFault:
+      type: object
+      properties:
+        delay:
+          $ref: "#/components/schemas/Duration"
+        error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
     SMTPFault:
       type: object
       properties:
@@ -3590,6 +3749,8 @@ components:
           $ref: "#/components/schemas/RedisFault"
         mqtt:
           $ref: "#/components/schemas/MQTTFault"
+        nats:
+          $ref: "#/components/schemas/NATSFault"
         smtp:
           $ref: "#/components/schemas/SMTPFault"
         snmp:

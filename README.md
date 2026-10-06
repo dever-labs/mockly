@@ -1511,6 +1511,7 @@ curl http://localhost:9091/api/fault/dns/effective
 | `stomp` | `message`, `delay`, `error_rate` | Sends STOMP ERROR frame |
 | `amqp` | `delay`, `error_rate` | Silently drops message delivery |
 | `mqtt` | `delay`, `error_rate` | Silently drops response publish |
+| `nats` | `delay`, `error_rate` | Silently drops mock response/reply |
 | `coap` | `code`, `delay`, `error_rate` | CoAP code: `4.01`, `4.03`, `4.04`, `5.00`, `5.03` (default `5.00`) |
 | `sip` | `status`, `reason`, `delay`, `error_rate` | SIP status: 404, 408, 486, 503 (default 503) |
 | `snmp` | `message`, `delay`, `error_rate` | Returns error from OID callback |

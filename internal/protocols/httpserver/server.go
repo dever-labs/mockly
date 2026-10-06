@@ -371,16 +371,15 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if stream != nil && len(stream.Events) > 0 && respHdrs["Content-Type"] == "" {
+	for k, v := range respHdrs {
+		w.Header().Set(k, v)
+	}
+	if stream != nil && len(stream.Events) > 0 && w.Header().Get("Content-Type") == "" {
 		// Guard against reflected XSS: streamed events may echo
 		// request-derived data via templating, so default to a
 		// non-renderable content type when the mock didn't specify one
 		// (mirrors truncateResponse's existing Content-Type default).
-		respHdrs["Content-Type"] = "application/octet-stream"
-	}
-
-	for k, v := range respHdrs {
-		w.Header().Set(k, v)
+		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	w.WriteHeader(status)
 
@@ -615,13 +614,6 @@ func (s *Server) writeStream(w http.ResponseWriter, headers map[string]string, s
 			}
 			_, _ = fmt.Fprint(w, "\n")
 		} else {
-			// codeql[go/reflected-xss]: mockly is a test double whose entire
-			// purpose is to let users template arbitrary, request-derived
-			// content into configured responses (see the identical,
-			// pre-existing pattern at the static `respBody` write below).
-			// This is intentional, user-opted-in behavior, not an attacker
-			// path into a real application; Content-Type defaults to a
-			// non-renderable value above when the mock doesn't set one.
 			_, _ = fmt.Fprint(w, data)
 		}
 		if fl != nil {

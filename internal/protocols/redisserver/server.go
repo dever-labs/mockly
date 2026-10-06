@@ -26,6 +26,11 @@ type Server struct {
 
 	mu    sync.RWMutex
 	mocks []config.RedisMock
+
+	// data backs the optional "stateful" mode (cfg.Mode == "stateful"),
+	// giving SET/GET/DEL/EXPIRE/TTL/INCR/DECR and basic hash/list commands
+	// real round-tripping semantics instead of purely static mocks.
+	data *dataStore
 }
 
 // New creates a Server.
@@ -36,7 +41,21 @@ func New(cfg *config.RedisConfig, store *state.Store, sc *scenarios.Store, log *
 		scenarios: sc,
 		log:       log,
 		mocks:     append([]config.RedisMock(nil), cfg.Mocks...),
+		data:      newDataStore(),
 	}
+}
+
+// ResetData clears the in-memory stateful datastore (no-op if stateful mode
+// isn't enabled). Called on a full server reset so stateful keys don't leak
+// between test runs.
+func (s *Server) ResetData() {
+	s.data.Flush()
+}
+
+// statefulEnabled reports whether cfg.Mode opts into the real in-memory
+// datastore (case-insensitive, so "Stateful"/"STATEFUL" also work).
+func (s *Server) statefulEnabled() bool {
+	return strings.EqualFold(s.cfg.Mode, "stateful")
 }
 
 func (s *Server) SetMocks(mocks []config.RedisMock) {
@@ -117,6 +136,9 @@ func (s *Server) handleCommand(conn redcon.Conn, cmd redcon.Command) {
 			writeFault()
 			return
 		}
+		if command != "SELECT" && s.statefulEnabled() {
+			s.data.Flush()
+		}
 		conn.WriteString("OK")
 		return
 	case "COMMAND":
@@ -125,6 +147,22 @@ func (s *Server) handleCommand(conn redcon.Conn, cmd redcon.Command) {
 			return
 		}
 		conn.WriteString("OK")
+		return
+	}
+
+	// Stateful mode: a bounded set of real data commands (SET/GET/DEL/
+	// EXPIRE/TTL/INCR/DECR and basic hash/list ops) are always handled
+	// against the real in-memory datastore, taking priority over static
+	// mocks for those commands specifically — mirroring how PING/SELECT/
+	// etc. above are always-handled built-ins. Anything outside this set
+	// still falls through to static mock matching below, so existing
+	// configs keep working unchanged.
+	if s.statefulEnabled() && statefulCommands[command] {
+		if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+			writeFault()
+			return
+		}
+		s.handleStateful(conn, command, cmd.Args[1:])
 		return
 	}
 

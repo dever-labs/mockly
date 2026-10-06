@@ -1,9 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <!-- Strip any pre-release suffix before parsing, then add newer TFMs when SDK supports them -->
+    <_SdkMajorVersion>$(NETCoreSdkVersion.Split('-')[0].Split('.')[0])</_SdkMajorVersion>
+    <TargetFrameworks Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(_SdkMajorVersion).0', '10.0'))">$(TargetFrameworks);net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(_SdkMajorVersion).0', '11.0'))">$(TargetFrameworks);net11.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />

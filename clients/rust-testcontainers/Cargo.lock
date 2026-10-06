@@ -1190,7 +1190,7 @@ dependencies = [
 
 [[package]]
 name = "mockly-driver"
-version = "0.12.4"
+version = "0.13.1"
 dependencies = [
  "reqwest 0.13.4",
  "serde",
@@ -1200,7 +1200,7 @@ dependencies = [
 
 [[package]]
 name = "mockly-testcontainers"
-version = "0.12.4"
+version = "0.13.1"
 dependencies = [
  "mockly-driver",
  "reqwest 0.12.28",
@@ -1801,9 +1801,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.41"
+version = "0.23.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b92b125634d9b795e7beca796cc790df15a7fb38323bf3196fda83292d06b1f"
+checksum = "0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06"
 dependencies = [
  "aws-lc-rs",
  "log",

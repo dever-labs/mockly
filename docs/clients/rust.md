@@ -302,7 +302,7 @@ Use it instead of the driver when you want Docker-managed lifecycle, no local bi
 [dev-dependencies]
 mockly-testcontainers = "0.14.0" # x-release-please-version
 reqwest = { version = "0.12", features = ["blocking"] }
-testcontainers = { version = "0.27", features = ["blocking", "http_wait"] }
+testcontainers = { version = "0.28", features = ["blocking", "http_wait"] }
 ```
 
 ### Example

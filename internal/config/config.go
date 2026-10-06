@@ -257,6 +257,41 @@ type HTTPResponse struct {
 	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 	Body    string            `yaml:"body,omitempty" json:"body,omitempty"`
 	Delay   Duration          `yaml:"delay,omitempty" json:"delay,omitempty"`
+
+	// Stream, when set, turns this response into a streamed sequence of
+	// flushed events instead of a single static Body write — e.g. for
+	// Server-Sent Events (text/event-stream) or plain chunked/flushed
+	// streaming. Mutually exclusive with Body (Stream takes precedence);
+	// not combined with Sequence/scenario patches/faults, which still take
+	// priority and fall back to a normal static response when they fire.
+	Stream *HTTPStream `yaml:"stream,omitempty" json:"stream,omitempty"`
+}
+
+// HTTPStream configures a mock HTTP response as a sequence of flushed
+// events written over time instead of one static body.
+type HTTPStream struct {
+	Events []HTTPStreamEvent `yaml:"events" json:"events"`
+}
+
+// HTTPStreamEvent is a single flushed chunk of a streamed response.
+//
+// When the response's Content-Type header contains "text/event-stream",
+// each event is framed as a Server-Sent Event: optional "event: <Event>"
+// and "id: <ID>" lines, one "data: <line>" line per line of Data (per the
+// SSE spec, allowing multi-line payloads), followed by a blank line.
+// Otherwise (plain chunked/flushed streaming) Data is written and flushed
+// as-is, with no SSE framing.
+type HTTPStreamEvent struct {
+	// Data is rendered as a Go template (same {{ }} syntax as Body) before
+	// being written.
+	Data string `yaml:"data" json:"data"`
+
+	// Event and ID set the optional SSE "event:"/"id:" fields (SSE mode only).
+	Event string `yaml:"event,omitempty" json:"event,omitempty"`
+	ID    string `yaml:"id,omitempty" json:"id,omitempty"`
+
+	// Delay is slept before writing and flushing this event.
+	Delay Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

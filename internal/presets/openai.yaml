@@ -108,8 +108,9 @@ protocols:
             }
 
       # ── Chat Completions — streaming (SSE) ────────────────────────────────
-      # Note: Real streaming uses SSE chunks. This mock returns the done sentinel.
-      # For real streaming tests, use the logger's SSE support or a WebSocket mock.
+      # Real streaming: each event is flushed individually as a Server-Sent
+      # Event, so clients using an SSE/streaming parser against this mock
+      # behave the same way they would against the real OpenAI API.
       - id: chat-completions-stream
         request:
           method: POST
@@ -120,14 +121,15 @@ protocols:
           headers:
             Content-Type: text/event-stream
             Cache-Control: no-cache
-          body: |
-            data: {"id":"chatcmpl-mockly002","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"This "},"finish_reason":null}]}
-
-            data: {"id":"chatcmpl-mockly002","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"is a mock response."},"finish_reason":null}]}
-
-            data: {"id":"chatcmpl-mockly002","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
-
-            data: [DONE]
+          stream:
+            events:
+              - data: '{"id":"chatcmpl-mockly002","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"This "},"finish_reason":null}]}'
+                delay: 100ms
+              - data: '{"id":"chatcmpl-mockly002","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"is a mock response."},"finish_reason":null}]}'
+                delay: 100ms
+              - data: '{"id":"chatcmpl-mockly002","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+                delay: 100ms
+              - data: "[DONE]"
 
       # ── Embeddings ────────────────────────────────────────────────────────
       - id: embeddings

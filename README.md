@@ -433,6 +433,42 @@ Return a different response on each successive call. Useful for simulating trans
 | `loop` | Restart from the first entry |
 | `not_found` | Return 404 |
 
+#### Streaming responses (SSE / chunked)
+
+Set `response.stream.events` to turn a mock into a sequence of flushed
+events instead of one static body — for Server-Sent Events
+(`text/event-stream`) or plain chunked/flushed streaming. Each event's
+`data` is rendered as a template (same `{{ }}` syntax as `body`), and its
+optional `delay` is slept before that event is written and flushed.
+
+```yaml
+      - id: chat-stream
+        request:
+          method: POST
+          path: /v1/chat/completions
+        response:
+          status: 200
+          headers:
+            Content-Type: text/event-stream
+          stream:
+            events:
+              - data: '{"chunk":"Hello"}'
+                delay: 100ms
+              - data: '{"chunk":" world"}'
+                delay: 100ms
+              - data: "[DONE]"
+```
+
+When `Content-Type` contains `text/event-stream`, each event is framed as
+an SSE message: optional `event:`/`id:` lines, one `data:` line per line
+of `data` (multi-line payloads are supported per the SSE spec), then a
+blank line. Without that content type, `data` is written and flushed
+as-is — no SSE framing — for plain chunked streaming.
+
+`stream` is not combined with `sequence`, scenario patches, or fault
+injection: if any of those fire for a given call, that call falls back to
+a normal static response instead of streaming.
+
 #### Per-mock fault injection
 
 Every HTTP mock can have its own `fault:` block — independently of protocol-level faults. This is useful for targeted latency tests or intermittent failures on one endpoint without affecting the rest of the protocol server.

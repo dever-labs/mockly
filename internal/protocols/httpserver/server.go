@@ -166,6 +166,8 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	respHdrs := map[string]string{"Content-Type": "application/json"}
 	matchedID := ""
 	delay := time.Duration(0)
+	var stream *config.HTTPStream
+	var reqCtx engine.RequestContext
 
 	// Opt-in near-miss diagnostics: only computed (and only changes the
 	// response) when explicitly requested, so normal 404 behavior for real
@@ -189,8 +191,9 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		respHdrs = result.Headers
 		matchedID = result.MockID
 		delay = result.Delay
+		stream = result.Stream
 
-		reqCtx := engine.RequestContext{
+		reqCtx = engine.RequestContext{
 			Method:     r.Method,
 			Path:       r.URL.Path,
 			Query:      querySingle,
@@ -223,6 +226,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if matchedMock != nil && len(matchedMock.Sequence) > 0 {
+			stream = nil
 			idx := int(callN) - 1 // 0-based
 			seq := matchedMock.Sequence
 			switch {
@@ -284,6 +288,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 		// Apply the first active scenario patch for this mock (if any).
 		if patch := s.scenarios.PatchFor(matchedID); patch != nil {
+			stream = nil
 			if patch.Disabled {
 				status = http.StatusNotFound
 				respBody = `{"error":"mock disabled by active scenario"}`
@@ -312,6 +317,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				delay += mf.Delay.Duration
 			}
 			if mf.StatusOverride != 0 && s.scenarios.ShouldFault(mf.ErrorRate) {
+				stream = nil
 				status = mf.StatusOverride
 				if mf.Body != "" {
 					respBody = mf.Body
@@ -333,6 +339,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		(fault.Abort || fault.TruncateBody > 0 || fault.Status != 0 || fault.Body != "")
 
 	if faultFires && !fault.Abort {
+		stream = nil
 		// Apply status/body/header overrides regardless of truncate; truncate uses them.
 		if fault.Status != 0 || fault.Body != "" {
 			status = fault.Status
@@ -368,7 +375,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(k, v)
 	}
 	w.WriteHeader(status)
-	_, _ = fmt.Fprint(w, respBody)
+
+	if stream != nil && len(stream.Events) > 0 {
+		s.writeStream(w, respHdrs, stream, reqCtx)
+	} else {
+		_, _ = fmt.Fprint(w, respBody)
+	}
 
 	s.log.Log(logger.Entry{
 		Protocol:   "http",
@@ -563,3 +575,43 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 	}
 	_ = conn.Close()
 }
+
+// writeStream writes a config.HTTPStream as a sequence of flushed events,
+// sleeping each event's Delay beforehand. When the response's Content-Type
+// header contains "text/event-stream" each event is framed as a Server-Sent
+// Event (optional "event:"/"id:" lines, one "data:" line per line of
+// rendered Data, then a blank line); otherwise the rendered Data is written
+// and flushed as-is (plain chunked/flushed streaming, no SSE framing).
+//
+// If the ResponseWriter doesn't support http.Flusher (shouldn't happen with
+// the standard net/http server used here), events are still written, just
+// without incremental flushing.
+func (s *Server) writeStream(w http.ResponseWriter, headers map[string]string, stream *config.HTTPStream, reqCtx engine.RequestContext) {
+	fl, _ := w.(http.Flusher)
+	isSSE := strings.Contains(strings.ToLower(headers["Content-Type"]), "text/event-stream")
+
+	for _, ev := range stream.Events {
+		if ev.Delay.Duration > 0 {
+			time.Sleep(ev.Delay.Duration)
+		}
+		data := engine.Render(ev.Data, reqCtx)
+		if isSSE {
+			if ev.Event != "" {
+				_, _ = fmt.Fprintf(w, "event: %s\n", ev.Event)
+			}
+			if ev.ID != "" {
+				_, _ = fmt.Fprintf(w, "id: %s\n", ev.ID)
+			}
+			for _, line := range strings.Split(data, "\n") {
+				_, _ = fmt.Fprintf(w, "data: %s\n", line)
+			}
+			_, _ = fmt.Fprint(w, "\n")
+		} else {
+			_, _ = fmt.Fprint(w, data)
+		}
+		if fl != nil {
+			fl.Flush()
+		}
+	}
+}
+

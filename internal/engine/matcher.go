@@ -67,6 +67,7 @@ type MatchResult struct {
 	Status     int
 	Delay      time.Duration
 	Fault      *config.MockFault
+	Stream     *config.HTTPStream
 	PathParams map[string]string // named path parameter captures (e.g. {region} → "fr-par")
 }
 
@@ -159,6 +160,7 @@ func HTTPMatch(
 			Status:     status,
 			Delay:      m.Response.Delay.Duration,
 			Fault:      m.Fault,
+			Stream:     m.Response.Stream,
 			PathParams: pathParams,
 		}, true
 	}

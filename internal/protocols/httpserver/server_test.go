@@ -961,6 +961,36 @@ func TestHTTPServer_Stream_IgnoredWhenSequenceConfigured(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_Stream_DefaultsContentTypeWhenUnset(t *testing.T) {
+	// Guards against reflected XSS: a plain (non-SSE) stream with templated,
+	// request-derived data must not be served with a browser-sniffable
+	// Content-Type when the mock didn't set one explicitly.
+	mocks := []config.HTTPMock{{
+		ID:      "chunked-no-ct",
+		Request: config.HTTPRequest{Method: "GET", Path: "/chunked-no-ct"},
+		Response: config.HTTPResponse{
+			Status: 200,
+			Stream: &config.HTTPStream{
+				Events: []config.HTTPStreamEvent{{Data: "raw-chunk"}},
+			},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/chunked-no-ct")
+	if err != nil {
+		t.Fatalf("GET /chunked-no-ct: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if ct := resp.Header.Get("Content-Type"); ct != "application/octet-stream" {
+		t.Errorf("want default Content-Type application/octet-stream, got %q", ct)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "raw-chunk" {
+		t.Errorf("want raw-chunk, got %q", body)
+	}
+}
+
 func TestHTTPServer_PerMockFault(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "fragile",

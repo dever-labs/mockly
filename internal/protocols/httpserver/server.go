@@ -371,6 +371,14 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if stream != nil && len(stream.Events) > 0 && respHdrs["Content-Type"] == "" {
+		// Guard against reflected XSS: streamed events may echo
+		// request-derived data via templating, so default to a
+		// non-renderable content type when the mock didn't specify one
+		// (mirrors truncateResponse's existing Content-Type default).
+		respHdrs["Content-Type"] = "application/octet-stream"
+	}
+
 	for k, v := range respHdrs {
 		w.Header().Set(k, v)
 	}

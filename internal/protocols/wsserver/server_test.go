@@ -2,8 +2,10 @@
 package wsserver_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"sync"
@@ -168,6 +170,101 @@ func TestWSServer_OnMessage_RespondTemplate(t *testing.T) {
 	}
 	if string(reply) != `{"echo":"hello"}` {
 		t.Errorf("want templated echo response, got %q", reply)
+	}
+}
+
+func TestWSServer_OnConnect_SendBinary(t *testing.T) {
+	payload := []byte{0x01, 0x02, 0x03, 0xFF}
+	mocks := []config.WebSocketMock{{
+		ID:   "binary-connect",
+		Path: "/ws",
+		OnConnect: &config.WebSocketAction{
+			SendBinary: base64.StdEncoding.EncodeToString(payload),
+		},
+	}}
+	base := newWSServer(t, mocks, nil)
+
+	conn := dialWS(t, base+"/ws", nil)
+	defer conn.Close() //nolint:errcheck
+
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck
+	frameType, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("ReadMessage (on_connect): %v", err)
+	}
+	if frameType != websocket.BinaryMessage {
+		t.Errorf("want BinaryMessage frame type, got %d", frameType)
+	}
+	if !bytes.Equal(msg, payload) {
+		t.Errorf("on_connect binary: want %v, got %v", payload, msg)
+	}
+}
+
+func TestWSServer_OnMessage_MatchBinary_RespondBinary(t *testing.T) {
+	reqPayload := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+	respPayload := []byte{0xCA, 0xFE}
+	mocks := []config.WebSocketMock{{
+		ID:   "binary-echo",
+		Path: "/ws",
+		OnMessage: []config.WebSocketRule{{
+			MatchBinary:   base64.StdEncoding.EncodeToString(reqPayload),
+			RespondBinary: base64.StdEncoding.EncodeToString(respPayload),
+		}},
+	}}
+	base := newWSServer(t, mocks, nil)
+
+	conn := dialWS(t, base+"/ws", nil)
+	defer conn.Close() //nolint:errcheck
+
+	if err := conn.WriteMessage(websocket.BinaryMessage, reqPayload); err != nil {
+		t.Fatalf("WriteMessage: %v", err)
+	}
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck
+	frameType, reply, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("ReadMessage (response): %v", err)
+	}
+	if frameType != websocket.BinaryMessage {
+		t.Errorf("want BinaryMessage frame type, got %d", frameType)
+	}
+	if !bytes.Equal(reply, respPayload) {
+		t.Errorf("on_message binary: want %v, got %v", respPayload, reply)
+	}
+}
+
+func TestWSServer_OnMessage_MatchBinary_IgnoresTextFrameWithSameBytes(t *testing.T) {
+	reqPayload := []byte("hello")
+	mocks := []config.WebSocketMock{{
+		ID:   "binary-only",
+		Path: "/ws",
+		OnMessage: []config.WebSocketRule{{
+			MatchBinary:   base64.StdEncoding.EncodeToString(reqPayload),
+			RespondBinary: base64.StdEncoding.EncodeToString([]byte("matched")),
+		}, {
+			Match:   "hello",
+			Respond: "text-fallback",
+		}},
+	}}
+	base := newWSServer(t, mocks, nil)
+
+	conn := dialWS(t, base+"/ws", nil)
+	defer conn.Close() //nolint:errcheck
+
+	// A text frame with the same bytes must not trigger the binary-only
+	// rule; it should fall through to the text rule instead.
+	if err := conn.WriteMessage(websocket.TextMessage, reqPayload); err != nil {
+		t.Fatalf("WriteMessage: %v", err)
+	}
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck
+	frameType, reply, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("ReadMessage (response): %v", err)
+	}
+	if frameType != websocket.TextMessage {
+		t.Errorf("want TextMessage frame type, got %d", frameType)
+	}
+	if string(reply) != "text-fallback" {
+		t.Errorf("want 'text-fallback', got %q", reply)
 	}
 }
 

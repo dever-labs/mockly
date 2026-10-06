@@ -701,6 +701,20 @@ protocols:
             respond: '{"event":"pong","echo":"{{.request.body}}"}'
 ```
 
+#### Binary frames
+
+`match_binary`/`respond_binary` (and `on_connect.send_binary`) hold base64-encoded raw bytes and operate on binary (opcode `0x2`) WebSocket frames — useful for Protobuf/MessagePack-framed APIs or other binary protocols. A rule with `match_binary` only matches binary frames and compares the decoded bytes exactly (no wildcard/regex); plain `match`/`respond` rules are unaffected and keep working exactly as before (including against binary frames, matched as text, for backward compatibility).
+
+```yaml
+      - id: binary-echo
+        path: /ws/binary
+        on_connect:
+          send_binary: "AQIDBA=="   # base64 for 0x01 0x02 0x03 0x04
+        on_message:
+          - match_binary: "3q2+7w==" # base64 for 0xDE 0xAD 0xBE 0xEF
+            respond_binary: "yv4="  # base64 for 0xCA 0xFE
+```
+
 ### gRPC
 
 Dynamic gRPC mocking — no compiled `.proto` files needed. Uses a raw codec to intercept any service/method call.

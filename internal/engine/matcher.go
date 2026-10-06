@@ -356,9 +356,46 @@ func firstFailingQuery(want map[string]string, got map[string][]string) string {
 }
 
 // WSMatch finds the first WebSocketRule matching the given message text.
+//
+// Deprecated: kept for backward compatibility; prefer WSMatchFrame, which is
+// opcode-aware and also supports binary frame matching.
 func WSMatch(rules []config.WebSocketRule, message string) (config.WebSocketRule, bool) {
 	for _, r := range rules {
 		if matchPattern(r.Match, message) {
+			return r, true
+		}
+	}
+	return config.WebSocketRule{}, false
+}
+
+// WSMatchFrame finds the first WebSocketRule matching the given frame.
+// isBinary indicates whether the frame was a binary (opcode 0x2) frame as
+// opposed to a text (opcode 0x1) frame.
+//
+// A rule with MatchBinary set only matches binary frames, comparing the raw
+// payload bytes against the base64-decoded MatchBinary value exactly (no
+// wildcard/regex support, matching real binary-protocol testing needs); it
+// is skipped entirely for text frames or when the bytes don't match. A rule
+// without MatchBinary falls back to Match, evaluated against the frame's
+// payload as text regardless of opcode — identical to the pre-existing
+// WSMatch behavior (including an empty Match acting as a match-any
+// wildcard), so existing text-only configs are unaffected.
+func WSMatchFrame(rules []config.WebSocketRule, isBinary bool, data []byte) (config.WebSocketRule, bool) {
+	for _, r := range rules {
+		if r.MatchBinary != "" {
+			if !isBinary {
+				continue
+			}
+			want, err := base64.StdEncoding.DecodeString(r.MatchBinary)
+			if err != nil {
+				continue
+			}
+			if bytes.Equal(data, want) {
+				return r, true
+			}
+			continue
+		}
+		if matchPattern(r.Match, string(data)) {
 			return r, true
 		}
 	}

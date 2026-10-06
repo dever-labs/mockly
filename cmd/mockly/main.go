@@ -30,6 +30,7 @@ import (
 	"github.com/dever-labs/mockly/internal/protocols/ldapserver"
 	"github.com/dever-labs/mockly/internal/protocols/memcachedserver"
 	"github.com/dever-labs/mockly/internal/protocols/mqttserver"
+	"github.com/dever-labs/mockly/internal/protocols/natsserver"
 	"github.com/dever-labs/mockly/internal/protocols/redisserver"
 	"github.com/dever-labs/mockly/internal/protocols/sipserver"
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
@@ -53,7 +54,7 @@ func main() {
 		Use:   "mockly",
 		Short: "Mockly — cross-platform multi-protocol mock server",
 		Long: `Mockly is a fast, cross-platform mock server that supports HTTP,
-WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP, DNS, AMQP, Kafka,
+WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, NATS, SNMP, DNS, AMQP, Kafka,
 LDAP, IMAP, FTP, Memcached, STOMP, CoAP, and SIP protocols in a single
 binary with a built-in web UI and REST management API.`,
 	}
@@ -128,6 +129,7 @@ func runServers(cfg *config.Config) error {
 	var redisSrv api.RedisProtocol
 	var smtpSrv api.SMTPProtocol
 	var mqttSrv api.MQTTProtocol
+	var natsSrv api.NATSProtocol
 	var snmpSrv api.SNMPProtocol
 	var dnsSrv api.DNSProtocol
 	var amqpSrv api.AMQPProtocol
@@ -194,6 +196,13 @@ func runServers(cfg *config.Config) error {
 		mqttSrv = srv
 		go func() { errCh <- srv.Start(ctx) }()
 		fmt.Printf("→ MQTT broker       on :%d\n", cfg.Protocols.MQTT.Port)
+	}
+
+	if cfg.Protocols.NATS != nil && cfg.Protocols.NATS.Enabled {
+		srv := natsserver.New(cfg.Protocols.NATS, store, sc, log)
+		natsSrv = srv
+		go func() { errCh <- srv.Start(ctx) }()
+		fmt.Printf("→ NATS server       on :%d\n", cfg.Protocols.NATS.Port)
 	}
 
 	if cfg.Protocols.SNMP != nil && cfg.Protocols.SNMP.Enabled {
@@ -273,7 +282,7 @@ func runServers(cfg *config.Config) error {
 		fmt.Printf("→ SIP server        on :%d\n", cfg.Protocols.SIP.Port)
 	}
 
-	apiSrv := api.New(cfg, store, sc, log, wh, httpSrv, wsSrv, grpcSrv, graphqlSrv, tcpSrv, redisSrv, smtpSrv, mqttSrv, snmpSrv, dnsSrv, amqpSrv, kafkaSrv, ldapSrv, imapSrv, ftpSrv, memcachedSrv, stompSrv, coapSrv, sipSrv)
+	apiSrv := api.New(cfg, store, sc, log, wh, httpSrv, wsSrv, grpcSrv, graphqlSrv, tcpSrv, redisSrv, smtpSrv, mqttSrv, natsSrv, snmpSrv, dnsSrv, amqpSrv, kafkaSrv, ldapSrv, imapSrv, ftpSrv, memcachedSrv, stompSrv, coapSrv, sipSrv)
 
 	if cfg.Mockly.API.Metrics != nil && cfg.Mockly.API.Metrics.Enabled {
 		metricsReg := metrics.New(func() float64 {

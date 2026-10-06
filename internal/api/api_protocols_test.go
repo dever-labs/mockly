@@ -16,6 +16,7 @@ import (
 	"github.com/dever-labs/mockly/internal/protocols/amqpserver"
 	"github.com/dever-labs/mockly/internal/protocols/kafkaserver"
 	"github.com/dever-labs/mockly/internal/protocols/mqttserver"
+	"github.com/dever-labs/mockly/internal/protocols/natsserver"
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
 	"github.com/dever-labs/mockly/internal/protocols/stompserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
@@ -189,6 +190,7 @@ func startAPIFull(t *testing.T) (string, *fullAPIStubs) {
 		&stubRedis{},
 		&stubSMTP{inbox: smtpserver.NewInbox(50)},
 		&stubMQTT{ms: mqttserver.NewMessageStore(50)},
+		&stubNATS{ms: natsserver.NewMessageStore(50)},
 		&stubSNMP{},
 		stubs.dns,
 		stubs.amqp,

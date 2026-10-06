@@ -21,6 +21,7 @@ import (
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/metrics"
 	"github.com/dever-labs/mockly/internal/protocols/mqttserver"
+	"github.com/dever-labs/mockly/internal/protocols/natsserver"
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
@@ -95,6 +96,14 @@ type MQTTProtocol interface {
 	GetMessageStore() *mqttserver.MessageStore
 }
 
+// NATSProtocol is the subset of natsserver.Server used by the API.
+type NATSProtocol interface {
+	ProtocolServer
+	GetMocks() []config.NATSMock
+	SetMocks([]config.NATSMock)
+	GetMessageStore() *natsserver.MessageStore
+}
+
 // SNMPProtocol is the subset of snmpserver.Server used by the API.
 type SNMPProtocol interface {
 	ProtocolServer
@@ -120,6 +129,7 @@ type Server struct {
 	redis     RedisProtocol
 	smtp      SMTPProtocol
 	mqtt      MQTTProtocol
+	nats      NATSProtocol
 	snmp      SNMPProtocol
 	dns       DNSProtocol
 	amqp      AMQPProtocol
@@ -159,6 +169,7 @@ func New(
 	redisSrv RedisProtocol,
 	smtpSrv SMTPProtocol,
 	mqttSrv MQTTProtocol,
+	natsSrv NATSProtocol,
 	snmpSrv SNMPProtocol,
 	dnsSrv DNSProtocol,
 	amqpSrv AMQPProtocol,
@@ -185,6 +196,7 @@ func New(
 		redis:     redisSrv,
 		smtp:      smtpSrv,
 		mqtt:      mqttSrv,
+		nats:      natsSrv,
 		snmp:      snmpSrv,
 		dns:       dnsSrv,
 		amqp:      amqpSrv,
@@ -329,6 +341,12 @@ func (s *Server) buildRouter() http.Handler {
 		r.Delete("/api/mocks/mqtt/{id}", s.deleteMQTTMock)
 		r.Get("/api/mqtt/messages", s.listMQTTMessages)
 		r.Delete("/api/mqtt/messages", s.clearMQTTMessages)
+		r.Get("/api/mocks/nats", s.listNATSMocks)
+		r.Post("/api/mocks/nats", s.addNATSMock)
+		r.Put("/api/mocks/nats/{id}", s.updateNATSMock)
+		r.Delete("/api/mocks/nats/{id}", s.deleteNATSMock)
+		r.Get("/api/nats/messages", s.listNATSMessages)
+		r.Delete("/api/nats/messages", s.clearNATSMessages)
 
 		// SNMP mocks + traps
 		r.Get("/api/mocks/snmp", s.listSNMPMocks)
@@ -460,7 +478,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listProtocols(w http.ResponseWriter, r *http.Request) {
 	var protocols []map[string]interface{}
-	for _, p := range []ProtocolServer{s.http, s.ws, s.grpc, s.graphql, s.tcp, s.redis, s.smtp, s.mqtt, s.snmp, s.dns, s.amqp, s.kafka, s.ldap, s.imap, s.ftp, s.memcached, s.stomp, s.coap, s.sip} {
+	for _, p := range []ProtocolServer{s.http, s.ws, s.grpc, s.graphql, s.tcp, s.redis, s.smtp, s.mqtt, s.nats, s.snmp, s.dns, s.amqp, s.kafka, s.ldap, s.imap, s.ftp, s.memcached, s.stomp, s.coap, s.sip} {
 		if p != nil {
 			protocols = append(protocols, p.StatusInfo())
 		}
@@ -1434,6 +1452,98 @@ func (s *Server) clearMQTTMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
+// NATS mocks + captured messages
+// ---------------------------------------------------------------------------
+
+func (s *Server) listNATSMocks(w http.ResponseWriter, r *http.Request) {
+	if s.nats == nil {
+		writeJSON(w, http.StatusOK, []config.NATSMock{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.nats.GetMocks())
+}
+
+func (s *Server) addNATSMock(w http.ResponseWriter, r *http.Request) {
+	if s.nats == nil {
+		writeError(w, http.StatusServiceUnavailable, "nats protocol not enabled")
+		return
+	}
+	var m config.NATSMock
+	if err := decodeBody(r, &m); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if m.ID == "" {
+		m.ID = fmt.Sprintf("nats-%d", time.Now().UnixNano())
+	}
+	s.nats.SetMocks(append(s.nats.GetMocks(), m))
+	writeJSON(w, http.StatusCreated, m)
+}
+
+func (s *Server) updateNATSMock(w http.ResponseWriter, r *http.Request) {
+	if s.nats == nil {
+		writeError(w, http.StatusServiceUnavailable, "nats protocol not enabled")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var updated config.NATSMock
+	if err := decodeBody(r, &updated); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated.ID = id
+	mocks := s.nats.GetMocks()
+	for i, m := range mocks {
+		if m.ID == id {
+			mocks[i] = updated
+			s.nats.SetMocks(mocks)
+			writeJSON(w, http.StatusOK, updated)
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "mock not found")
+}
+
+func (s *Server) deleteNATSMock(w http.ResponseWriter, r *http.Request) {
+	if s.nats == nil {
+		writeError(w, http.StatusServiceUnavailable, "nats protocol not enabled")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	mocks := s.nats.GetMocks()
+	filtered := make([]config.NATSMock, 0, len(mocks))
+	found := false
+	for _, m := range mocks {
+		if m.ID == id {
+			found = true
+		} else {
+			filtered = append(filtered, m)
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "mock not found")
+		return
+	}
+	s.nats.SetMocks(filtered)
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+func (s *Server) listNATSMessages(w http.ResponseWriter, r *http.Request) {
+	if s.nats == nil {
+		writeJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.nats.GetMessageStore().All())
+}
+
+func (s *Server) clearNATSMessages(w http.ResponseWriter, r *http.Request) {
+	if s.nats != nil {
+		s.nats.GetMessageStore().Clear()
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+// ---------------------------------------------------------------------------
 // SNMP mocks + traps
 // ---------------------------------------------------------------------------
 
@@ -1709,6 +1819,14 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 		}
 		s.mqtt.SetMocks(mocks)
 		s.mqtt.GetMessageStore().Clear()
+	}
+	if s.nats != nil {
+		var mocks []config.NATSMock
+		if s.cfg.Protocols.NATS != nil {
+			mocks = s.cfg.Protocols.NATS.Mocks
+		}
+		s.nats.SetMocks(mocks)
+		s.nats.GetMessageStore().Clear()
 	}
 	if s.snmp != nil {
 		var mocks []config.SNMPMock

@@ -16,6 +16,7 @@ import (
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/protocols/mqttserver"
+	"github.com/dever-labs/mockly/internal/protocols/natsserver"
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
@@ -116,6 +117,18 @@ func (s *stubMQTT) GetMocks() []config.MQTTMock               { return s.mocks }
 func (s *stubMQTT) SetMocks(m []config.MQTTMock)              { s.mocks = m }
 func (s *stubMQTT) GetMessageStore() *mqttserver.MessageStore { return s.ms }
 
+type stubNATS struct {
+	ms    *natsserver.MessageStore
+	mocks []config.NATSMock
+}
+
+func (s *stubNATS) StatusInfo() map[string]interface{} {
+	return map[string]interface{}{"protocol": "nats"}
+}
+func (s *stubNATS) GetMocks() []config.NATSMock               { return s.mocks }
+func (s *stubNATS) SetMocks(m []config.NATSMock)              { s.mocks = m }
+func (s *stubNATS) GetMessageStore() *natsserver.MessageStore { return s.ms }
+
 type stubSNMP struct {
 	mocks    []config.SNMPMock
 	traps    []config.SNMPTrap
@@ -164,6 +177,7 @@ func startAPIWithLogger(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenari
 	graphqlStub := &stubGraphQL{}
 	smtpStub := &stubSMTP{inbox: smtpserver.NewInbox(50)}
 	mqttStub := &stubMQTT{ms: mqttserver.NewMessageStore(50)}
+	natsStub := &stubNATS{ms: natsserver.NewMessageStore(50)}
 	snmpStub := &stubSNMP{}
 
 	srv := api.New(
@@ -176,6 +190,7 @@ func startAPIWithLogger(t *testing.T) (string, *stubHTTP, *stubGraphQL, *scenari
 		&stubRedis{},
 		smtpStub,
 		mqttStub,
+		natsStub,
 		snmpStub,
 		nil,
 		nil,

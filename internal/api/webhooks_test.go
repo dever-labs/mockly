@@ -15,6 +15,7 @@ import (
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/protocols/mqttserver"
+	"github.com/dever-labs/mockly/internal/protocols/natsserver"
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
@@ -46,6 +47,7 @@ func startAPIWithWebhooks(t *testing.T, wh *webhook.Sender) string {
 		&stubRedis{},
 		&stubSMTP{inbox: smtpserver.NewInbox(50)},
 		&stubMQTT{ms: mqttserver.NewMessageStore(50)},
+		&stubNATS{ms: natsserver.NewMessageStore(50)},
 		&stubSNMP{},
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)

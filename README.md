@@ -1792,7 +1792,7 @@ Mockly ships official clients for both native-process and Docker-backed test set
 | **Java** | `io.github.dever-labs:mockly-driver` | `io.github.dever-labs:mockly-testcontainers` | See Maven/Gradle below |
 | **.NET / C#** | `Mockly.Driver` | `Testcontainers.Mockly` | `dotnet add package Mockly.Driver` or `dotnet add package Testcontainers.Mockly` |
 | **Python** | `mockly-driver` | `mockly-testcontainers` | `pip install mockly-driver` or `pip install mockly-testcontainers` |
-| **Rust** | `mockly-driver` | `mockly-testcontainers` | `mockly-driver = "0.13.1"` <!-- x-release-please-version --> or `mockly-testcontainers = "0.12.4"` in `[dev-dependencies]` |
+| **Rust** | `mockly-driver` | `mockly-testcontainers` | `mockly-driver = "0.13.1"` <!-- x-release-please-version --> or `mockly-testcontainers = "0.13.1"` <!-- x-release-please-version --> in `[dev-dependencies]` |
 
 Driver clients:
 - Automatically find or install the Mockly binary for the current platform
@@ -1845,7 +1845,8 @@ await server.stop()
 <dependency>
   <groupId>io.github.dever-labs</groupId>
   <artifactId>mockly-driver</artifactId>
-  <version>0.13.1</version> <!-- x-release-please-version -->  <scope>test</scope>
+  <version>0.13.1</version> <!-- x-release-please-version -->
+  <scope>test</scope>
 </dependency>
 ```
 
@@ -1904,7 +1905,8 @@ server.stop()
 
 ```toml
 [dev-dependencies]
-mockly-driver = "0.13.1" # x-release-please-version```
+mockly-driver = "0.13.1" # x-release-please-version
+```
 
 ```rust
 let mut server = MocklyServer::ensure(ServerOptions::default(), Default::default()).unwrap();

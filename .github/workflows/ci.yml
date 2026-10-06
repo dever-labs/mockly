@@ -37,6 +37,9 @@ jobs:
           go test $(go list ./internal/... | grep -v snmpserver) -race
           go test ./internal/protocols/snmpserver/...
 
+      - name: Check documented dependency versions
+        run: ./scripts/check-doc-versions.sh
+
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           java-version: '21'

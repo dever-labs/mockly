@@ -16,6 +16,8 @@ mockly:
     #   allowed_origins: ["http://localhost:3000"]  # Restrict to specific origins
     #   allowed_methods: ["GET","POST","PUT","DELETE","OPTIONS"]
     #   allowed_headers: ["Content-Type","Authorization"]
+    # metrics:       # Opt-in Prometheus /metrics endpoint (disabled by default)
+    #   enabled: true
 
 protocols:
 
@@ -334,6 +336,11 @@ protocols:
   redis:
     enabled: true
     port: 6379
+    # mode: stateful # opt-in: enables a real in-memory datastore for SET/GET/
+    #   DEL/EXISTS/EXPIRE/TTL/PERSIST/INCR/DECR/INCRBY/DECRBY/APPEND/HSET/HGET/
+    #   HGETALL/HDEL/HEXISTS/LPUSH/RPUSH/LRANGE/LLEN, so values actually
+    #   round-trip instead of only matching static mocks below. Commands not
+    #   in that list still fall back to the static mocks configured here.
     mocks:
       - id: get-session
         command: GET

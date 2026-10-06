@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -19,7 +20,54 @@ func Validate(cfg *Config) []error {
 	var errs []error
 	errs = append(errs, validateDuplicateIDs(cfg)...)
 	errs = append(errs, validateRegexes(cfg)...)
+	errs = append(errs, validateBase64Fields(cfg)...)
 	return errs
+}
+
+// validateBase64Fields recursively walks the entire Config looking for
+// fields literally named with a "Binary" suffix (e.g. MatchBinary,
+// RespondBinary, SendBinary) and reports any whose value fails to decode as
+// standard base64, since protocol servers decode these lazily on the hot
+// path and would otherwise silently skip a misconfigured rule.
+func validateBase64Fields(cfg *Config) []error {
+	var errs []error
+	walkBase64Fields(reflect.ValueOf(cfg), "", "config", &errs)
+	return errs
+}
+
+func walkBase64Fields(v reflect.Value, fieldName, path string, errs *[]error) {
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Interface:
+		if v.IsNil() {
+			return
+		}
+		walkBase64Fields(v.Elem(), fieldName, path, errs)
+	case reflect.Struct:
+		t := v.Type()
+		for i := 0; i < v.NumField(); i++ {
+			f := t.Field(i)
+			if f.PkgPath != "" { // unexported
+				continue
+			}
+			walkBase64Fields(v.Field(i), f.Name, path+"."+f.Name, errs)
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			walkBase64Fields(v.Index(i), fieldName, fmt.Sprintf("%s[%d]", path, i), errs)
+		}
+	case reflect.Map:
+		for _, k := range v.MapKeys() {
+			walkBase64Fields(v.MapIndex(k), fieldName, fmt.Sprintf("%s[%v]", path, k.Interface()), errs)
+		}
+	case reflect.String:
+		s := v.String()
+		if s == "" || !strings.HasSuffix(fieldName, "Binary") {
+			return
+		}
+		if _, err := base64.StdEncoding.DecodeString(s); err != nil {
+			*errs = append(*errs, fmt.Errorf("%s: invalid base64 %q: %w", path, s, err))
+		}
+	}
 }
 
 // validateDuplicateIDs walks every protocol's `Mocks` slice (found generically

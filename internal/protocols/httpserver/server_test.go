@@ -1971,3 +1971,190 @@ func TestHTTPServer_NTLMDoesNotHijackBearerRequests(t *testing.T) {
 		t.Errorf("expected bearer mock response, got: %s", body)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Delay jitter (delay_range) and rate_limit fault modes — issue #216
+// ---------------------------------------------------------------------------
+
+func TestHTTPServer_GlobalFault_DelayRange(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "fast",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/fast"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		DelayRange: &config.DelayRange{
+			Min: config.Duration{Duration: 80 * time.Millisecond},
+			Max: config.Duration{Duration: 150 * time.Millisecond},
+		},
+	}})
+	defer sc.ClearDirectFaults()
+
+	for i := 0; i < 3; i++ {
+		t0 := time.Now()
+		resp, err := http.Get(base + "/fast")
+		if err != nil {
+			t.Fatalf("GET /fast: %v", err)
+		}
+		_ = resp.Body.Close()
+		elapsed := time.Since(t0)
+		if elapsed < 60*time.Millisecond {
+			t.Errorf("request %d: expected >=~80ms jittered delay, got %v", i, elapsed)
+		}
+	}
+}
+
+func TestHTTPServer_PerMockFault_DelayRange(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "slow",
+		Request: config.HTTPRequest{Method: "GET", Path: "/slow"},
+		Response: config.HTTPResponse{
+			Status: 200,
+		},
+		Fault: &config.MockFault{
+			DelayRange: &config.DelayRange{
+				Min: config.Duration{Duration: 80 * time.Millisecond},
+				Max: config.Duration{Duration: 150 * time.Millisecond},
+			},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	t0 := time.Now()
+	resp, err := http.Get(base + "/slow")
+	if err != nil {
+		t.Fatalf("GET /slow: %v", err)
+	}
+	_ = resp.Body.Close()
+	elapsed := time.Since(t0)
+	if elapsed < 60*time.Millisecond {
+		t.Errorf("expected >=~80ms jittered delay, got %v", elapsed)
+	}
+}
+
+func TestHTTPServer_GlobalFault_RateLimit(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "ok",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		RateLimit: &config.RateLimitFault{RequestsPerSecond: 2},
+	}})
+	defer sc.ClearDirectFaults()
+
+	var statuses []int
+	for i := 0; i < 3; i++ {
+		resp, err := http.Get(base + "/ok")
+		if err != nil {
+			t.Fatalf("GET /ok (request %d): %v", i, err)
+		}
+		statuses = append(statuses, resp.StatusCode)
+		_ = resp.Body.Close()
+	}
+
+	if statuses[0] != 200 || statuses[1] != 200 {
+		t.Errorf("first 2 requests within limit should be 200, got %v", statuses)
+	}
+	if statuses[2] != http.StatusTooManyRequests {
+		t.Errorf("3rd request beyond rate limit should be 429, got %d", statuses[2])
+	}
+}
+
+func TestHTTPServer_GlobalFault_RateLimit_CustomStatusAndBody(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "ok",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		RateLimit: &config.RateLimitFault{
+			RequestsPerSecond: 1,
+			OverLimitStatus:   503,
+			Body:              `{"error":"slow_down"}`,
+		},
+	}})
+	defer sc.ClearDirectFaults()
+
+	http.Get(base + "/ok") //nolint:errcheck
+
+	resp, err := http.Get(base + "/ok")
+	if err != nil {
+		t.Fatalf("GET /ok: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 503 {
+		t.Errorf("expected custom over-limit status 503, got %d", resp.StatusCode)
+	}
+	if !strings.Contains(string(body), "slow_down") {
+		t.Errorf("expected custom rate-limit body, got: %s", body)
+	}
+}
+
+func TestHTTPServer_PerMockFault_RateLimit(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:       "limited",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/limited"},
+		Response: config.HTTPResponse{Status: 200},
+		Fault: &config.MockFault{
+			RateLimit: &config.RateLimitFault{RequestsPerSecond: 1},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp1, _ := http.Get(base + "/limited")
+	_ = resp1.Body.Close()
+	resp2, _ := http.Get(base + "/limited")
+	_ = resp2.Body.Close()
+
+	if resp1.StatusCode != 200 {
+		t.Errorf("first request within limit should be 200, got %d", resp1.StatusCode)
+	}
+	if resp2.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("second request beyond limit should be 429, got %d", resp2.StatusCode)
+	}
+}
+
+func TestHTTPServer_PerMockFault_RateLimit_IndependentPerMock(t *testing.T) {
+	mocks := []config.HTTPMock{
+		{
+			ID:       "limited-a",
+			Request:  config.HTTPRequest{Method: "GET", Path: "/a"},
+			Response: config.HTTPResponse{Status: 200},
+			Fault:    &config.MockFault{RateLimit: &config.RateLimitFault{RequestsPerSecond: 1}},
+		},
+		{
+			ID:       "limited-b",
+			Request:  config.HTTPRequest{Method: "GET", Path: "/b"},
+			Response: config.HTTPResponse{Status: 200},
+			Fault:    &config.MockFault{RateLimit: &config.RateLimitFault{RequestsPerSecond: 1}},
+		},
+	}
+	base := startTestServer(t, mocks, nil)
+
+	// Exhaust mock a's limit.
+	respA1, _ := http.Get(base + "/a")
+	_ = respA1.Body.Close()
+	respA2, _ := http.Get(base + "/a")
+	_ = respA2.Body.Close()
+	if respA2.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("mock a's 2nd request should be rate limited, got %d", respA2.StatusCode)
+	}
+
+	// Mock b should be unaffected — independent rate-limit window.
+	respB1, _ := http.Get(base + "/b")
+	_ = respB1.Body.Close()
+	if respB1.StatusCode != 200 {
+		t.Errorf("mock b's first request should not be rate limited (independent from mock a), got %d", respB1.StatusCode)
+	}
+}

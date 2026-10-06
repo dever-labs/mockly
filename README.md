@@ -21,6 +21,7 @@
 - [Preset Configs](#preset-configs)
 - [CLI Reference](#cli-reference)
 - [Management API Reference](#management-api-reference)
+- [Observability](#observability)
 - [Client Libraries](#client-libraries)
   - [Testcontainers](#testcontainers)
 - [CI Integration](#ci-integration)
@@ -36,14 +37,14 @@
 | Feature | Details |
 |---|---|
 | **Protocols** | HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, SIP |
-| **Request matching** | Method + path (exact / wildcard / named params / regex), headers (with `re:` pattern support), query params (exact / wildcard / regex / absence / repeated-value), JSON body fields, authentication |
+| **Request matching** | Method + path (exact / wildcard / named params / regex), headers (with `re:` pattern support), query params (exact / wildcard / regex / absence / repeated-value), JSON/multipart/XML body fields, authentication |
 | **Response sequences** | Return a different response on each successive call — loop, hold last, or 404 when exhausted |
 | **Response control** | Status code, headers, body, artificial delay |
 | **Template responses** | Go template syntax in response bodies and headers (`{{now}}`, `{{.request.params.id}}`, `{{.request.body.foo}}`, etc.) |
 | **State conditions** | Fire a mock only when a runtime state variable matches |
 | **Scenarios** | Named sets of mock patches — activate/deactivate atomically via API or CLI |
 | **Per-protocol fault injection** | Each protocol exposes its own native fault fields (DNS rcode, gRPC status code, Kafka error code, etc.) — activate via API or bundled inside a scenario |
-| **Per-mock fault injection** | Fault fields on individual HTTP mocks with independent delay, status/body override, and error rate |
+| **Per-mock fault injection** | Fault fields on individual HTTP mocks with independent delay (fixed or jittered range), status/body override, error rate, and rate limiting |
 | **Call verification** | Track how many times each mock was hit; block until an expected count is reached |
 | **Outbound webhooks** | Any HTTP mock can fire a templated outbound callback (server-initiated notification) when matched — with delay, retries, and a searchable attempt history |
 | **Log filtering** | Filter logs and log counts by matched mock ID via `/api/logs` and `/api/logs/count` |
@@ -52,6 +53,7 @@
 | **Web UI** | Served from the binary itself — no separate install |
 | **Management API** | 60+ REST endpoints covering all protocols, scenarios, fault, state, logs, webhooks, and call counts |
 | **Live request log** | SSE-streamed in real time to the UI |
+| **Observability** | Opt-in Prometheus `/metrics` endpoint — request-rate, latency histograms, and active-mock count |
 | **CI-friendly** | Zero dependencies, single binary, YAML config, Docker image |
 
 ---
@@ -344,7 +346,7 @@ protocols:
 
 ### HTTP
 
-Full HTTP mock server. Matching on method + path (exact/wildcard/named params/regex), optional query params, header match (with `re:` / `*` pattern support), JSON body field match, authentication, and state condition.
+Full HTTP mock server. Matching on method + path (exact/wildcard/named params/regex), optional query params, header match (with `re:` / `*` pattern support), JSON/multipart/XML body field match, authentication, and state condition.
 
 ```yaml
 protocols:
@@ -403,6 +405,44 @@ Use dot-notation paths to match fields anywhere in a JSON body:
         response:
           status: 200
           body: '{"ok":true}'
+```
+
+#### Multipart and XML body field matching
+
+For `multipart/form-data` requests (e.g. file uploads), `body_multipart`
+matches individual form fields by name. Text fields are matched by value;
+file parts are matched via `<field>.filename`/`<field>.content_type`:
+
+```yaml
+      - id: avatar-upload
+        request:
+          method: POST
+          path: /profile/avatar
+          body_multipart:
+            "name": "Alice"              # text field, exact match
+            "avatar.filename": "*"       # asserts a file was uploaded
+            "avatar.content_type": "image/png"
+        response:
+          status: 200
+          body: '{"ok":true}'
+```
+
+For XML bodies (SOAP, legacy enterprise APIs), `body_xml` matches
+element text and attributes using the same dot-notation style as
+`body_json`; a leading `@` segment matches an attribute instead of
+descending into a child element:
+
+```yaml
+      - id: soap-login
+        request:
+          method: POST
+          path: /soap
+          body_xml:
+            "user.role": admin     # <user><role>admin</role></user>
+            "user.@id": "*"        # <user id="...">
+        response:
+          status: 200
+          body: '<ok/>'
 ```
 
 #### Response sequences
@@ -486,6 +526,31 @@ Every HTTP mock can have its own `fault:` block — independently of protocol-le
           body: '[]'
 ```
 
+Instead of (or in addition to) a fixed `delay`, use `delay_range` for a
+uniform-random jittered delay per request — more realistic than one constant
+value for testing timeout/retry/loading-state handling:
+
+```yaml
+        fault:
+          delay_range:
+            min: 150ms
+            max: 400ms
+```
+
+Use `rate_limit` to simulate a throttled API: once more than
+`requests_per_second` requests are observed in the trailing one-second
+window, `over_limit_status` (default 429) is returned instead of the normal
+response. Each mock with a `rate_limit` fault tracks its own independent
+window.
+
+```yaml
+        fault:
+          rate_limit:
+            requests_per_second: 5
+            over_limit_status: 429     # default 429
+            body: '{"error":"rate limit exceeded"}'
+```
+
 #### Near-miss diagnostics for unmatched requests
 
 By default, a request that matches no mock returns a plain
@@ -507,8 +572,9 @@ curl "http://localhost:8080/orders?order_id=bad-id&debug=true"
 ```
 
 Up to 3 of the closest candidates are reported (mocks that passed the
-most checks — method, path, headers, query, body, `body_json`, state,
-auth — before failing), ranked closest-first. Near-miss info is also
+most checks — method, path, headers, query, body, `body_json`,
+`body_multipart`, `body_xml`, state, auth — before failing), ranked
+closest-first. Near-miss info is also
 included in the mock's request log entry whenever diagnostics were
 requested, so it shows up in the management UI's live log stream too.
 
@@ -671,6 +737,20 @@ protocols:
             respond: '{"event":"pong","echo":"{{.request.body}}"}'
 ```
 
+#### Binary frames
+
+`match_binary`/`respond_binary` (and `on_connect.send_binary`) hold base64-encoded raw bytes and operate on binary (opcode `0x2`) WebSocket frames — useful for Protobuf/MessagePack-framed APIs or other binary protocols. A rule with `match_binary` only matches binary frames and compares the decoded bytes exactly (no wildcard/regex); plain `match`/`respond` rules are unaffected and keep working exactly as before (including against binary frames, matched as text, for backward compatibility).
+
+```yaml
+      - id: binary-echo
+        path: /ws/binary
+        on_connect:
+          send_binary: "AQIDBA=="   # base64 for 0x01 0x02 0x03 0x04
+        on_message:
+          - match_binary: "3q2+7w==" # base64 for 0xDE 0xAD 0xBE 0xEF
+            respond_binary: "yv4="  # base64 for 0xCA 0xFE
+```
+
 ### gRPC
 
 Dynamic gRPC mocking — no compiled `.proto` files needed. Uses a raw codec to intercept any service/method call.
@@ -752,6 +832,28 @@ protocols:
           value: "abc123"
           delay: 5ms
 ```
+
+#### Stateful mode
+
+By default the Redis mock only matches static mocks — `SET`/`GET` don't actually round-trip data. Set `mode: stateful` to enable a real in-memory datastore:
+
+```yaml
+protocols:
+  redis:
+    enabled: true
+    port: 6379
+    mode: stateful
+    mocks: []   # still used as a fallback for commands not listed below
+```
+
+In stateful mode these commands are backed by a real per-connection-shared datastore with Redis-compatible semantics (including `WRONGTYPE` errors when a key holds the wrong type):
+
+- **Strings**: `SET` (with optional `EX seconds` / `PX milliseconds`), `GET`, `APPEND`, `INCR`, `DECR`, `INCRBY`, `DECRBY`
+- **Keys**: `DEL`, `EXISTS`, `EXPIRE`, `TTL`, `PERSIST`
+- **Hashes**: `HSET`, `HGET`, `HGETALL`, `HDEL`, `HEXISTS`
+- **Lists**: `LPUSH`, `RPUSH`, `LRANGE`, `LLEN`
+
+`FLUSHDB`/`FLUSHALL` clear the stateful datastore too, and `POST /api/reset` wipes it along with the rest of mock state. Any command not in the list above (e.g. `TYPE`, `SCAN`) still falls back to the static mocks configured for that server.
 
 ### SMTP
 
@@ -1281,14 +1383,17 @@ Kafka, etc.), use the [Management API](#via-api) below.
 # Add 500ms latency to every HTTP request
 mockly fault set --delay 500ms
 
+# Add jittery 150ms-400ms latency to every HTTP request
+mockly fault set --delay-min 150ms --delay-max 400ms
+
 # Return 503 for every HTTP request
 mockly fault set --status 503 --body '{"error":"service_unavailable"}'
 
 # Return 429 for 30% of HTTP requests
 mockly fault set --status 429 --error-rate 0.3
 
-# Combine: 200ms latency + 500 errors 10% of the time
-mockly fault set --delay 200ms --status 500 --error-rate 0.1
+# Return 429 once more than 5 requests/sec are received
+mockly fault set --rate-limit 5
 
 # Show the current global fault configuration
 mockly fault status
@@ -1328,7 +1433,8 @@ curl http://localhost:9091/api/fault/dns/effective
 
 | Protocol | Fields | Values / notes |
 |---|---|---|
-| `http` / `graphql` | `status`, `body`, `delay`, `error_rate` | HTTP status code (default 503) |
+| `http` | `status`, `body`, `delay`, `delay_range`, `error_rate`, `rate_limit` | HTTP status code (default 503); `delay_range: {min, max}` jitters the delay instead of a fixed value; `rate_limit: {requests_per_second, over_limit_status, body}` returns `over_limit_status` (default 429) once the trailing 1s window is exceeded |
+| `graphql` | `status`, `body`, `delay`, `error_rate` | HTTP status code (default 503) |
 | `websocket` | `close_code`, `message`, `delay`, `error_rate` | WS close code (default 1011) |
 | `grpc` | `code`, `message`, `delay`, `error_rate` | `UNAVAILABLE` \| `NOT_FOUND` \| `DEADLINE_EXCEEDED` \| `PERMISSION_DENIED` \| `RESOURCE_EXHAUSTED` \| `INTERNAL` |
 | `tcp` | `response`, `delay`, `error_rate` | Send `response` bytes then close (default: just close) |
@@ -1420,7 +1526,7 @@ mockly status
 mockly reset
 mockly preset      list | show <name> | use <name>
 mockly scenario    list | active | activate <id> | deactivate <id>
-mockly fault       set [--status <n>] [--delay <d>] [--body <s>] [--error-rate <f>] | clear | status
+mockly fault       set [--status <n>] [--delay <d>] [--delay-min <d>] [--delay-max <d>] [--body <s>] [--error-rate <f>] [--rate-limit <n>] [--rate-limit-status <n>] | clear | status
 ```
 
 > The `fault` CLI subcommand only controls the **HTTP** protocol's direct
@@ -1545,9 +1651,18 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/state` | Get all state keys |
+| `GET` | `/api/state` | Get all (non-expired) state keys |
 | `POST` | `/api/state` | Set state keys (JSON object) |
-| `DELETE` | `/api/state/{key}` | Delete a state key |
+| `POST` | `/api/state?ttl=<duration>` | Set state keys that auto-expire after `<duration>` (e.g. `30s`, `5m`); omitted = no expiry |
+| `DELETE` | `/api/state/{key}` | Delete a single state key |
+| `DELETE` | `/api/state?prefix=<prefix>` | Delete only keys starting with `<prefix>`, leaving others untouched; omitted/empty prefix clears all state |
+
+State keys never persist across restarts (in-memory only). TTL expiry is
+checked lazily (on read), so an expired key simply disappears the next time
+it's fetched — there's no background sweep. To avoid unrelated mocks or
+parallel test runs clobbering each other's state, namespace your keys by
+convention (e.g. `"login:session"`, `"cart:items"`) and use the prefix-scoped
+delete above to reset just one namespace instead of wiping everything.
 
 ### Logs
 
@@ -1565,6 +1680,35 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/reset` | Reset all mocks/state/logs/fault/scenarios to config defaults |
+
+---
+
+## Observability
+
+### Prometheus metrics
+
+Enable an opt-in `GET /metrics` endpoint (Prometheus text exposition format)
+on the management API for scraping request-rate, latency, and error-rate
+metrics into Grafana/Alertmanager or any Prometheus-compatible stack — handy
+when Mockly runs as a long-lived shared mock service in CI.
+
+```yaml
+mockly:
+  api:
+    port: 9091
+    metrics:
+      enabled: true   # disabled by default
+```
+
+```sh
+curl http://localhost:9091/metrics
+```
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `mockly_http_requests_total` | counter | `mock_id`, `method`, `status` | Total HTTP mock requests handled. Unmatched requests are labeled `mock_id="unmatched"`. |
+| `mockly_http_request_duration_seconds` | histogram | `mock_id` | HTTP mock request handling duration, in seconds. |
+| `mockly_active_mocks` | gauge | — | Number of currently configured HTTP mocks. |
 
 ---
 

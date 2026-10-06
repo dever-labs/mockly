@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"testing"
@@ -333,6 +334,75 @@ func TestWSMatch(t *testing.T) {
 	_, ok3 := engine.WSMatch(rules, "hello")
 	if ok3 {
 		t.Fatal("expected no match")
+	}
+}
+
+func TestWSMatchFrame_TextRuleMatchesTextFrame(t *testing.T) {
+	rules := []config.WebSocketRule{
+		{Match: "ping", Respond: "pong"},
+	}
+	r, ok := engine.WSMatchFrame(rules, false, []byte("ping"))
+	if !ok || r.Respond != "pong" {
+		t.Fatalf("expected pong rule, got %+v ok=%v", r, ok)
+	}
+}
+
+func TestWSMatchFrame_TextRuleAlsoMatchesBinaryFrame(t *testing.T) {
+	// Preserves pre-existing WSMatch behavior: a text-only rule is
+	// opcode-agnostic, matching binary frame payloads as text too.
+	rules := []config.WebSocketRule{
+		{Match: "ping", Respond: "pong"},
+	}
+	r, ok := engine.WSMatchFrame(rules, true, []byte("ping"))
+	if !ok || r.Respond != "pong" {
+		t.Fatalf("expected pong rule, got %+v ok=%v", r, ok)
+	}
+}
+
+func TestWSMatchFrame_BinaryRuleMatchesExactBytes(t *testing.T) {
+	payload := []byte{0x01, 0x02, 0x03, 0xFF}
+	rules := []config.WebSocketRule{
+		{MatchBinary: base64.StdEncoding.EncodeToString(payload), RespondBinary: base64.StdEncoding.EncodeToString([]byte{0xAA})},
+	}
+
+	r, ok := engine.WSMatchFrame(rules, true, payload)
+	if !ok || r.RespondBinary == "" {
+		t.Fatalf("expected binary rule match, got %+v ok=%v", r, ok)
+	}
+}
+
+func TestWSMatchFrame_BinaryRuleDoesNotMatchTextFrame(t *testing.T) {
+	payload := []byte("hello")
+	rules := []config.WebSocketRule{
+		{MatchBinary: base64.StdEncoding.EncodeToString(payload)},
+	}
+
+	_, ok := engine.WSMatchFrame(rules, false, payload)
+	if ok {
+		t.Fatal("expected binary-only rule not to match a text frame even with identical bytes")
+	}
+}
+
+func TestWSMatchFrame_BinaryRuleMismatchedBytes(t *testing.T) {
+	rules := []config.WebSocketRule{
+		{MatchBinary: base64.StdEncoding.EncodeToString([]byte{0x01, 0x02})},
+	}
+
+	_, ok := engine.WSMatchFrame(rules, true, []byte{0x01, 0x03})
+	if ok {
+		t.Fatal("expected no match for differing binary payload")
+	}
+}
+
+func TestWSMatchFrame_InvalidBase64RuleSkipped(t *testing.T) {
+	rules := []config.WebSocketRule{
+		{MatchBinary: "not-valid-base64!!!"},
+		{Match: "fallback", Respond: "ok"},
+	}
+
+	r, ok := engine.WSMatchFrame(rules, true, []byte("fallback"))
+	if !ok || r.Respond != "ok" {
+		t.Fatalf("expected fallback rule after skipping invalid base64 rule, got %+v ok=%v", r, ok)
 	}
 }
 

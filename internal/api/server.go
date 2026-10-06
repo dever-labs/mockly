@@ -19,6 +19,7 @@ import (
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
+	"github.com/dever-labs/mockly/internal/metrics"
 	"github.com/dever-labs/mockly/internal/protocols/mqttserver"
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
@@ -75,6 +76,7 @@ type RedisProtocol interface {
 	ProtocolServer
 	GetMocks() []config.RedisMock
 	SetMocks([]config.RedisMock)
+	ResetData()
 }
 
 // SMTPProtocol is the subset of smtpserver.Server used by the API.
@@ -129,8 +131,17 @@ type Server struct {
 	stomp     STOMPProtocol
 	coap      CoAPProtocol
 	sip       SIPProtocol
+	metrics   *metrics.Registry
 	server    *http.Server
 	uiFiles   http.FileSystem
+}
+
+// SetMetrics attaches a metrics.Registry, enabling the GET /metrics route
+// (still gated by the api.metrics.enabled config flag). Optional — if never
+// called (or cfg.Mockly.API.Metrics.Enabled is false), /metrics is never
+// registered on the router.
+func (s *Server) SetMetrics(m *metrics.Registry) {
+	s.metrics = m
 }
 
 // New creates a management API Server.
@@ -246,12 +257,24 @@ func (s *Server) buildRouter() http.Handler {
 		}))
 	}
 
+	// Registered outside the JSON-content-type group below: Prometheus
+	// scrapers expect the text exposition format's own content type. The
+	// enabled/metrics-attached check happens per-request (not at router
+	// build time) so SetMetrics can be called at any point relative to
+	// Start.
+	r.Get("/metrics", func(w http.ResponseWriter, req *http.Request) {
+		if s.metrics == nil || s.cfg.Mockly.API.Metrics == nil || !s.cfg.Mockly.API.Metrics.Enabled {
+			http.NotFound(w, req)
+			return
+		}
+		s.metrics.Handler().ServeHTTP(w, req)
+	})
+
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
 
 		r.Get("/api/health", s.health)
 		r.Get("/api/protocols", s.listProtocols)
-
 		r.Get("/api/mocks/http", s.listHTTPMocks)
 		r.Post("/api/mocks/http", s.addHTTPMock)
 		r.Put("/api/mocks/http/{id}", s.updateHTTPMock)
@@ -374,6 +397,7 @@ func (s *Server) buildRouter() http.Handler {
 
 		r.Get("/api/state", s.getState)
 		r.Post("/api/state", s.setState)
+		r.Delete("/api/state", s.resetStatePrefix)
 		r.Delete("/api/state/{key}", s.deleteState)
 
 		// Scenarios
@@ -1528,14 +1552,27 @@ func (s *Server) getState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.store.All())
 }
 
+// setState writes the given key/value pairs. An optional "?ttl=<duration>"
+// query param (e.g. "30s", "5m") applies the same expiry to every key set in
+// this request; omitted or "0" means the keys never expire (the default,
+// backward-compatible behaviour).
 func (s *Server) setState(w http.ResponseWriter, r *http.Request) {
 	var body map[string]string
 	if err := decodeBody(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	var ttl time.Duration
+	if ttlStr := r.URL.Query().Get("ttl"); ttlStr != "" {
+		d, err := time.ParseDuration(ttlStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid ttl: "+err.Error())
+			return
+		}
+		ttl = d
+	}
 	for k, v := range body {
-		s.store.Set(k, v)
+		s.store.SetTTL(k, v, ttl)
 	}
 	writeJSON(w, http.StatusOK, s.store.All())
 }
@@ -1544,6 +1581,17 @@ func (s *Server) deleteState(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	s.store.Delete(key)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": key})
+}
+
+// resetStatePrefix clears only state keys starting with "?prefix=...", e.g.
+// DELETE /api/state?prefix=login: — leaving all other keys untouched so
+// unrelated mocks/scenarios sharing the same store aren't affected. With no
+// prefix (or an empty one) it behaves like a full state wipe, equivalent to
+// the state portion of POST /api/reset.
+func (s *Server) resetStatePrefix(w http.ResponseWriter, r *http.Request) {
+	prefix := r.URL.Query().Get("prefix")
+	s.store.ResetPrefix(prefix)
+	writeJSON(w, http.StatusOK, map[string]string{"reset_prefix": prefix})
 }
 
 // ---------------------------------------------------------------------------
@@ -1644,6 +1692,7 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 			mocks = s.cfg.Protocols.Redis.Mocks
 		}
 		s.redis.SetMocks(mocks)
+		s.redis.ResetData()
 	}
 	if s.smtp != nil {
 		var rules []config.SMTPRule

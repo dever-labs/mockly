@@ -3,6 +3,7 @@ package wsserver
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/http"
@@ -134,7 +135,11 @@ func (s *Server) handleConn(w http.ResponseWriter, r *http.Request, mock *config
 		if mock.OnConnect.Delay.Duration > 0 {
 			time.Sleep(mock.OnConnect.Delay.Duration)
 		}
-		if mock.OnConnect.Send != "" {
+		if mock.OnConnect.SendBinary != "" {
+			if data, err := base64.StdEncoding.DecodeString(mock.OnConnect.SendBinary); err == nil {
+				_ = conn.WriteMessage(websocket.BinaryMessage, data)
+			}
+		} else if mock.OnConnect.Send != "" {
 			connCtx := engine.RequestContext{Path: r.URL.Path}
 			_ = conn.WriteMessage(websocket.TextMessage, []byte(engine.Render(mock.OnConnect.Send, connCtx)))
 		}
@@ -148,11 +153,12 @@ func (s *Server) handleConn(w http.ResponseWriter, r *http.Request, mock *config
 	})
 
 	for {
-		_, msg, err := conn.ReadMessage()
+		frameType, msg, err := conn.ReadMessage()
 		if err != nil {
 			break
 		}
 
+		isBinary := frameType == websocket.BinaryMessage
 		text := string(msg)
 
 		fault := s.scenarios.EffectiveWebSocketFault()
@@ -160,7 +166,7 @@ func (s *Server) handleConn(w http.ResponseWriter, r *http.Request, mock *config
 			time.Sleep(fault.Delay.Duration)
 		}
 
-		rule, ok := engine.WSMatch(mock.OnMessage, text)
+		rule, ok := engine.WSMatchFrame(mock.OnMessage, isBinary, msg)
 		if !ok {
 			continue
 		}
@@ -187,7 +193,11 @@ func (s *Server) handleConn(w http.ResponseWriter, r *http.Request, mock *config
 			break
 		}
 
-		if rule.Respond != "" {
+		if rule.RespondBinary != "" {
+			if data, derr := base64.StdEncoding.DecodeString(rule.RespondBinary); derr == nil {
+				_ = conn.WriteMessage(websocket.BinaryMessage, data)
+			}
+		} else if rule.Respond != "" {
 			msgCtx := engine.RequestContext{Path: r.URL.Path, Body: text}
 			_ = conn.WriteMessage(websocket.TextMessage, []byte(engine.Render(rule.Respond, msgCtx)))
 		}

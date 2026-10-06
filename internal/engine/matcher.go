@@ -6,7 +6,11 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"regexp"
 	"sort"
@@ -117,6 +121,12 @@ func HTTPMatch(
 		if len(m.Request.BodyJSON) > 0 && !matchBodyJSON(m.Request.BodyJSON, body) {
 			continue
 		}
+		if len(m.Request.BodyMultipart) > 0 && !matchBodyMultipart(m.Request.BodyMultipart, body, headers) {
+			continue
+		}
+		if len(m.Request.BodyXML) > 0 && !matchBodyXML(m.Request.BodyXML, body) {
+			continue
+		}
 		if !matchState(m.State, store) {
 			continue
 		}
@@ -180,7 +190,8 @@ const httpDiagnoseTopN = 3
 
 // HTTPDiagnose re-evaluates every mock against a request that failed to
 // match anything, and reports the first check that rejected each one
-// (method → path → headers → query → body → body_json → state → auth),
+// (method → path → headers → query → body → body_json → body_multipart →
+// body_xml → state → auth),
 // ranked by how many checks each mock passed before failing (closest
 // candidates first). It is intended for opt-in debugging only (e.g. behind
 // a "?debug=true" request flag) and is not used on the normal hot path, so
@@ -254,6 +265,18 @@ func HTTPDiagnose(
 
 			if len(m.Request.BodyJSON) > 0 && !matchBodyJSON(m.Request.BodyJSON, body) {
 				reason = "body_json field(s) did not match"
+				break evaluate
+			}
+			depth++
+
+			if len(m.Request.BodyMultipart) > 0 && !matchBodyMultipart(m.Request.BodyMultipart, body, headers) {
+				reason = "body_multipart field(s) did not match"
+				break evaluate
+			}
+			depth++
+
+			if len(m.Request.BodyXML) > 0 && !matchBodyXML(m.Request.BodyXML, body) {
+				reason = "body_xml field(s) did not match"
 				break evaluate
 			}
 			depth++
@@ -335,9 +358,46 @@ func firstFailingQuery(want map[string]string, got map[string][]string) string {
 }
 
 // WSMatch finds the first WebSocketRule matching the given message text.
+//
+// Deprecated: kept for backward compatibility; prefer WSMatchFrame, which is
+// opcode-aware and also supports binary frame matching.
 func WSMatch(rules []config.WebSocketRule, message string) (config.WebSocketRule, bool) {
 	for _, r := range rules {
 		if matchPattern(r.Match, message) {
+			return r, true
+		}
+	}
+	return config.WebSocketRule{}, false
+}
+
+// WSMatchFrame finds the first WebSocketRule matching the given frame.
+// isBinary indicates whether the frame was a binary (opcode 0x2) frame as
+// opposed to a text (opcode 0x1) frame.
+//
+// A rule with MatchBinary set only matches binary frames, comparing the raw
+// payload bytes against the base64-decoded MatchBinary value exactly (no
+// wildcard/regex support, matching real binary-protocol testing needs); it
+// is skipped entirely for text frames or when the bytes don't match. A rule
+// without MatchBinary falls back to Match, evaluated against the frame's
+// payload as text regardless of opcode — identical to the pre-existing
+// WSMatch behavior (including an empty Match acting as a match-any
+// wildcard), so existing text-only configs are unaffected.
+func WSMatchFrame(rules []config.WebSocketRule, isBinary bool, data []byte) (config.WebSocketRule, bool) {
+	for _, r := range rules {
+		if r.MatchBinary != "" {
+			if !isBinary {
+				continue
+			}
+			want, err := base64.StdEncoding.DecodeString(r.MatchBinary)
+			if err != nil {
+				continue
+			}
+			if bytes.Equal(data, want) {
+				return r, true
+			}
+			continue
+		}
+		if matchPattern(r.Match, string(data)) {
 			return r, true
 		}
 	}
@@ -588,6 +648,174 @@ func jsonValueString(v interface{}) string {
 		b, _ := json.Marshal(t)
 		return string(b)
 	}
+}
+
+// matchBodyMultipart checks that the named fields/metadata in want are
+// present (and, unless "*", equal) in a multipart/form-data request body.
+// Text fields are keyed by their form field name (e.g. "name": "Alice").
+// File parts are matched via "<field>.filename" and "<field>.content_type"
+// (e.g. "avatar.filename": "*" asserts a file was uploaded under "avatar").
+func matchBodyMultipart(want map[string]string, body string, headers map[string]string) bool {
+	if body == "" {
+		return false
+	}
+	contentType, ok := headers["Content-Type"]
+	if !ok {
+		contentType, ok = headers[http.CanonicalHeaderKey("content-type")]
+	}
+	if !ok {
+		return false
+	}
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	boundary, ok := params["boundary"]
+	if !ok {
+		return false
+	}
+
+	fields := map[string]string{}
+	mr := multipart.NewReader(strings.NewReader(body), boundary)
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return false
+		}
+		name := part.FormName()
+		if name == "" {
+			continue
+		}
+		if filename := part.FileName(); filename != "" {
+			fields[name+".filename"] = filename
+			fields[name+".content_type"] = part.Header.Get("Content-Type")
+		} else {
+			data, rerr := io.ReadAll(part)
+			if rerr != nil {
+				return false
+			}
+			fields[name] = string(data)
+		}
+	}
+
+	for key, expected := range want {
+		actual, ok := fields[key]
+		if !ok {
+			return false
+		}
+		if expected == "*" {
+			continue
+		}
+		if actual != expected {
+			return false
+		}
+	}
+	return true
+}
+
+// xmlNode is a minimal in-memory representation of a decoded XML element,
+// used by matchBodyXML to resolve body_xml dot-notation paths.
+type xmlNode struct {
+	Attrs    map[string]string
+	Text     string
+	Children map[string]*xmlNode
+}
+
+// parseXMLBody decodes an XML document into a tree of xmlNode. Sibling
+// elements that share a name overwrite one another (last one wins); only the
+// first match per name is addressable via dot-notation paths, which is
+// sufficient for the simple element/attribute assertions body_xml targets.
+func parseXMLBody(body string) (*xmlNode, error) {
+	dec := xml.NewDecoder(strings.NewReader(body))
+	var root *xmlNode
+	var stack []*xmlNode
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			node := &xmlNode{Attrs: map[string]string{}, Children: map[string]*xmlNode{}}
+			for _, a := range t.Attr {
+				node.Attrs[a.Name.Local] = a.Value
+			}
+			if len(stack) == 0 {
+				root = node
+			} else {
+				stack[len(stack)-1].Children[t.Name.Local] = node
+			}
+			stack = append(stack, node)
+		case xml.CharData:
+			if len(stack) > 0 {
+				if text := strings.TrimSpace(string(t)); text != "" {
+					stack[len(stack)-1].Text += text
+				}
+			}
+		case xml.EndElement:
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
+		}
+	}
+	if root == nil {
+		return nil, fmt.Errorf("no XML root element found")
+	}
+	return root, nil
+}
+
+// xmlPathGet resolves a dot-notation path (mirroring jsonPathGet) against a
+// decoded XML tree. A segment prefixed with "@" resolves to an attribute on
+// the current element instead of descending into a child element, and must
+// be the final segment in the path.
+func xmlPathGet(node *xmlNode, path []string) (string, bool) {
+	cur := node
+	for i, seg := range path {
+		if strings.HasPrefix(seg, "@") {
+			v, ok := cur.Attrs[strings.TrimPrefix(seg, "@")]
+			return v, ok
+		}
+		child, ok := cur.Children[seg]
+		if !ok {
+			return "", false
+		}
+		cur = child
+		if i == len(path)-1 {
+			return cur.Text, true
+		}
+	}
+	return "", false
+}
+
+// matchBodyXML checks that dot-notation paths in want resolve to the
+// expected text/attribute values in the XML body, mirroring matchBodyJSON.
+func matchBodyXML(want map[string]string, body string) bool {
+	if body == "" {
+		return false
+	}
+	root, err := parseXMLBody(body)
+	if err != nil {
+		return false
+	}
+	for dotPath, expected := range want {
+		actual, ok := xmlPathGet(root, strings.Split(dotPath, "."))
+		if !ok {
+			return false
+		}
+		if expected == "*" {
+			continue
+		}
+		if actual != expected {
+			return false
+		}
+	}
+	return true
 }
 
 func matchState(cond *config.StateCondition, store *state.Store) bool {

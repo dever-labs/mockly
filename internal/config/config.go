@@ -59,6 +59,17 @@ type APIConfig struct {
 	// as a local mock tool. Set Enabled: false to strip the CORS middleware
 	// entirely (useful when running behind a reverse proxy that handles CORS).
 	CORS *CORSConfig `yaml:"cors,omitempty" json:"cors,omitempty"`
+	// Metrics configures the optional Prometheus-format /metrics endpoint.
+	// Disabled by default (opt-in) to keep the management API surface
+	// minimal for users who don't need it.
+	Metrics *MetricsConfig `yaml:"metrics,omitempty" json:"metrics,omitempty"`
+}
+
+// MetricsConfig controls the optional Prometheus /metrics endpoint exposed
+// on the management API.
+type MetricsConfig struct {
+	// Enabled turns on GET /metrics (Prometheus text exposition format).
+	Enabled bool `yaml:"enabled" json:"enabled"`
 }
 
 // CORSConfig controls the CORS middleware on the management API server.
@@ -150,10 +161,33 @@ type HTTPMock struct {
 // MockFault injects latency or error responses for a specific mock.
 type MockFault struct {
 	Delay          Duration          `yaml:"delay,omitempty" json:"delay,omitempty"`
+	DelayRange     *DelayRange       `yaml:"delay_range,omitempty" json:"delay_range,omitempty"`
 	StatusOverride int               `yaml:"status_override,omitempty" json:"status_override,omitempty"`
 	Body           string            `yaml:"body,omitempty" json:"body,omitempty"`
 	Headers        map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"` // Extra response headers
 	ErrorRate      float64           `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+	// RateLimit, if set, returns OverLimitStatus once RequestsPerSecond is
+	// exceeded for this mock, simulating throttling instead of a random
+	// error rate.
+	RateLimit *RateLimitFault `yaml:"rate_limit,omitempty" json:"rate_limit,omitempty"`
+}
+
+// DelayRange configures a uniform-random delay between Min and Max,
+// simulating jittery real-world latency instead of one fixed value. It is a
+// sibling to the existing Delay field on MockFault/HTTPFault: when set (and
+// Max > 0), it takes precedence over Delay for that fault.
+type DelayRange struct {
+	Min Duration `yaml:"min" json:"min"`
+	Max Duration `yaml:"max" json:"max"`
+}
+
+// RateLimitFault simulates a throttled API: once more than
+// RequestsPerSecond requests are observed in the trailing one-second window,
+// OverLimitStatus (default 429) is returned instead of the normal response.
+type RateLimitFault struct {
+	RequestsPerSecond int    `yaml:"requests_per_second" json:"requests_per_second"`
+	OverLimitStatus   int    `yaml:"over_limit_status,omitempty" json:"over_limit_status,omitempty"` // default 429
+	Body              string `yaml:"body,omitempty" json:"body,omitempty"`
 }
 
 // Webhook defines an outbound HTTP call fired asynchronously when the mock it
@@ -204,6 +238,19 @@ type HTTPRequest struct {
 	// BodyJSON matches fields in a JSON request body using dot-notation paths.
 	// Example: {"user.role": "admin"} matches {"user":{"role":"admin"}}.
 	BodyJSON map[string]string `yaml:"body_json,omitempty" json:"body_json,omitempty"`
+
+	// BodyMultipart matches fields in a multipart/form-data request body.
+	// Keys are the form field name for text parts (e.g. "name": "Alice"),
+	// or "<field>.filename"/"<field>.content_type" for file parts (e.g.
+	// "avatar.filename": "*" asserts a file was uploaded under "avatar").
+	// All values support the "*" wildcard (field/attribute present, any value).
+	BodyMultipart map[string]string `yaml:"body_multipart,omitempty" json:"body_multipart,omitempty"`
+
+	// BodyXML matches elements/attributes in an XML request body using
+	// dot-notation paths, mirroring BodyJSON. "user.role" resolves to the
+	// text content of <user><role>...</role></user>; a leading "@" segment
+	// resolves to an attribute (e.g. "user.@id" matches <user id="...">).
+	BodyXML map[string]string `yaml:"body_xml,omitempty" json:"body_xml,omitempty"`
 
 	// Auth requires the incoming request to carry valid credentials.
 	// When set, the mock is skipped if authentication fails — add a fallback
@@ -314,15 +361,38 @@ type WebSocketMock struct {
 }
 
 type WebSocketAction struct {
-	Send  string   `yaml:"send,omitempty" json:"send,omitempty"`
-	Delay Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Send string `yaml:"send,omitempty" json:"send,omitempty"`
+
+	// SendBinary is base64-encoded bytes sent as a binary (opcode 0x2) frame
+	// instead of Send's text frame. Mutually exclusive with Send; if both are
+	// set, SendBinary takes precedence.
+	SendBinary string   `yaml:"send_binary,omitempty" json:"send_binary,omitempty"`
+	Delay      Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
 }
 
+// WebSocketRule matches an incoming message and optionally sends a response.
+//
+// Match/Respond operate on text (opcode 0x1) frames and work exactly as
+// before. MatchBinary/RespondBinary are additive: they hold base64-encoded
+// raw bytes and only apply to binary (opcode 0x2) frames, letting a rule
+// require a specific frame type in addition to (or instead of) matching
+// payload content. A rule with MatchBinary set only matches binary frames;
+// a rule with only Match set matches any frame's payload as text, same as
+// pre-existing behavior.
 type WebSocketRule struct {
-	Match   string   `yaml:"match" json:"match"`
-	Respond string   `yaml:"respond,omitempty" json:"respond,omitempty"`
-	Close   bool     `yaml:"close,omitempty" json:"close,omitempty"`
-	Delay   Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Match   string `yaml:"match" json:"match"`
+	Respond string `yaml:"respond,omitempty" json:"respond,omitempty"`
+
+	// MatchBinary is base64-encoded bytes to compare against an incoming
+	// binary frame's raw payload (exact match only; no wildcard/regex).
+	MatchBinary string `yaml:"match_binary,omitempty" json:"match_binary,omitempty"`
+
+	// RespondBinary is base64-encoded bytes sent as a binary frame response.
+	// Mutually exclusive with Respond; if both are set, RespondBinary takes
+	// precedence.
+	RespondBinary string   `yaml:"respond_binary,omitempty" json:"respond_binary,omitempty"`
+	Close         bool     `yaml:"close,omitempty" json:"close,omitempty"`
+	Delay         Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -413,6 +483,16 @@ type RedisConfig struct {
 	Enabled bool        `yaml:"enabled" json:"enabled"`
 	Port    int         `yaml:"port" json:"port"`
 	Mocks   []RedisMock `yaml:"mocks" json:"mocks"`
+
+	// Mode selects how commands are resolved:
+	//   ""          (default) — static mocks only, exactly as before.
+	//   "stateful"  — a real in-memory key/value datastore backs
+	//                 SET/GET/DEL/EXPIRE/TTL/INCR/DECR and basic hash/list
+	//                 commands, so writes actually round-trip on reads.
+	//                 Commands not covered by the datastore still fall
+	//                 back to static mock matching, so existing configs
+	//                 keep working unchanged.
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
 }
 
 // RedisMock matches an incoming Redis command and returns a configured response.
@@ -873,16 +953,20 @@ type GRPCFault struct {
 }
 
 type HTTPFault struct {
-	Delay     Duration          `yaml:"delay,omitempty" json:"delay,omitempty"`
-	Status    int               `yaml:"status,omitempty" json:"status,omitempty"` // HTTP status code (default 503 when non-zero status/body is set)
-	Body      string            `yaml:"body,omitempty" json:"body,omitempty"`
-	Headers   map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"` // Extra response headers (e.g. Retry-After)
-	ErrorRate float64           `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+	Delay      Duration          `yaml:"delay,omitempty" json:"delay,omitempty"`
+	DelayRange *DelayRange       `yaml:"delay_range,omitempty" json:"delay_range,omitempty"`
+	Status     int               `yaml:"status,omitempty" json:"status,omitempty"` // HTTP status code (default 503 when non-zero status/body is set)
+	Body       string            `yaml:"body,omitempty" json:"body,omitempty"`
+	Headers    map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"` // Extra response headers (e.g. Retry-After)
+	ErrorRate  float64           `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
 	// Abort closes the connection immediately with a TCP reset — no response is sent.
 	Abort bool `yaml:"abort,omitempty" json:"abort,omitempty"`
 	// TruncateBody sends only the first N bytes of the response body then abruptly
 	// closes the connection, simulating a mid-transfer server crash.
 	TruncateBody int `yaml:"truncate_body,omitempty" json:"truncate_body,omitempty"`
+	// RateLimit, if set, returns OverLimitStatus once RequestsPerSecond is
+	// exceeded, simulating an API throttling clients.
+	RateLimit *RateLimitFault `yaml:"rate_limit,omitempty" json:"rate_limit,omitempty"`
 }
 
 type WebSocketFault struct {

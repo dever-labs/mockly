@@ -13,19 +13,28 @@ import (
 // Store holds scenario definitions, tracks which are active, and manages the
 // direct fault configuration used for chaos/latency injection.
 type Store struct {
-	mu        sync.RWMutex
-	scenarios map[string]config.Scenario
-	active    map[string]bool
-	direct    config.ProtocolFaults
-	rng       *rand.Rand
+	mu          sync.RWMutex
+	scenarios   map[string]config.Scenario
+	active      map[string]bool
+	direct      config.ProtocolFaults
+	rng         *rand.Rand
+	rateWindows map[string]*rateWindow // rate_limit fault sliding window, keyed by fault owner
+}
+
+// rateWindow tracks how many requests have been observed in the current
+// trailing one-second window for a rate_limit fault.
+type rateWindow struct {
+	start time.Time
+	count int
 }
 
 // New creates a Store pre-loaded with the given scenario definitions.
 func New(initial []config.Scenario) *Store {
 	s := &Store{
-		scenarios: make(map[string]config.Scenario),
-		active:    make(map[string]bool),
-		rng:       rand.New(rand.NewSource(time.Now().UnixNano())), // #nosec G404 -- error rate RNG does not need crypto randomness
+		scenarios:   make(map[string]config.Scenario),
+		active:      make(map[string]bool),
+		rng:         rand.New(rand.NewSource(time.Now().UnixNano())), // #nosec G404 -- error rate RNG does not need crypto randomness
+		rateWindows: make(map[string]*rateWindow),
 	}
 	for _, sc := range initial {
 		if sc.ID == "" {
@@ -174,4 +183,48 @@ func (s *Store) RollFault(rate float64) bool {
 // ShouldFault returns true if a fault with the given error rate should apply.
 func (s *Store) ShouldFault(rate float64) bool {
 	return s.RollFault(rate)
+}
+
+// ResolveDelay picks the delay to apply for a fault/mock. If rng is non-nil
+// and specifies a valid range (Max > 0), a uniform-random duration in
+// [Min, Max] is returned (Min/Max swapped if given in the wrong order);
+// otherwise the fixed duration is returned unchanged. This lets a single
+// fixed delay (e.g. delay: 200ms) keep working exactly as before, while
+// delay_range simulates jittery real-world latency instead of one constant
+// value.
+func (s *Store) ResolveDelay(fixed time.Duration, rng *config.DelayRange) time.Duration {
+	if rng == nil || rng.Max.Duration <= 0 {
+		return fixed
+	}
+	minD, maxD := rng.Min.Duration, rng.Max.Duration
+	if maxD < minD {
+		minD, maxD = maxD, minD
+	}
+	if maxD == minD {
+		return minD
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return minD + time.Duration(s.rng.Int63n(int64(maxD-minD)))
+}
+
+// RateLimited reports whether a rate_limit fault should trigger for key
+// (typically "http:global" for the direct/global fault, or
+// "http:mock:<id>" for a per-mock fault), based on requests observed in the
+// trailing one-second window. A requestsPerSecond of 0 or less disables
+// rate limiting (always returns false).
+func (s *Store) RateLimited(key string, requestsPerSecond int) bool {
+	if requestsPerSecond <= 0 {
+		return false
+	}
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	w, ok := s.rateWindows[key]
+	if !ok || now.Sub(w.start) >= time.Second {
+		w = &rateWindow{start: now}
+		s.rateWindows[key] = w
+	}
+	w.count++
+	return w.count > requestsPerSecond
 }

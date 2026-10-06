@@ -219,6 +219,118 @@ func TestStore_FaultRoll(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// ResolveDelay — fixed delay vs. jittered delay_range
+// ---------------------------------------------------------------------------
+
+func TestStore_ResolveDelay_NoRangeReturnsFixed(t *testing.T) {
+	s := scenarios.New(nil)
+	got := s.ResolveDelay(200*time.Millisecond, nil)
+	if got != 200*time.Millisecond {
+		t.Errorf("got %v, want 200ms", got)
+	}
+}
+
+func TestStore_ResolveDelay_RangeZeroMaxReturnsFixed(t *testing.T) {
+	s := scenarios.New(nil)
+	got := s.ResolveDelay(50*time.Millisecond, &config.DelayRange{})
+	if got != 50*time.Millisecond {
+		t.Errorf("got %v, want 50ms (fixed fallback for zero-max range)", got)
+	}
+}
+
+func TestStore_ResolveDelay_RangeUniformWithinBounds(t *testing.T) {
+	s := scenarios.New(nil)
+	rng := &config.DelayRange{
+		Min: config.Duration{Duration: 150 * time.Millisecond},
+		Max: config.Duration{Duration: 400 * time.Millisecond},
+	}
+	for i := 0; i < 200; i++ {
+		got := s.ResolveDelay(0, rng)
+		if got < 150*time.Millisecond || got >= 400*time.Millisecond {
+			t.Fatalf("delay %v out of [150ms,400ms) range", got)
+		}
+	}
+}
+
+func TestStore_ResolveDelay_RangeEqualMinMax(t *testing.T) {
+	s := scenarios.New(nil)
+	rng := &config.DelayRange{
+		Min: config.Duration{Duration: 200 * time.Millisecond},
+		Max: config.Duration{Duration: 200 * time.Millisecond},
+	}
+	got := s.ResolveDelay(0, rng)
+	if got != 200*time.Millisecond {
+		t.Errorf("got %v, want 200ms", got)
+	}
+}
+
+func TestStore_ResolveDelay_RangeSwappedMinMax(t *testing.T) {
+	s := scenarios.New(nil)
+	// Min > Max: should be treated as swapped, not panic or return a
+	// negative/zero range.
+	rng := &config.DelayRange{
+		Min: config.Duration{Duration: 400 * time.Millisecond},
+		Max: config.Duration{Duration: 150 * time.Millisecond},
+	}
+	got := s.ResolveDelay(0, rng)
+	if got < 150*time.Millisecond || got >= 400*time.Millisecond {
+		t.Errorf("delay %v out of [150ms,400ms) range after swap", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RateLimited — sliding one-second window
+// ---------------------------------------------------------------------------
+
+func TestStore_RateLimited_DisabledWhenZero(t *testing.T) {
+	s := scenarios.New(nil)
+	for i := 0; i < 10; i++ {
+		if s.RateLimited("k", 0) {
+			t.Fatal("requestsPerSecond=0 should never rate limit")
+		}
+	}
+}
+
+func TestStore_RateLimited_TriggersAfterThreshold(t *testing.T) {
+	s := scenarios.New(nil)
+	const limit = 3
+	for i := 1; i <= limit; i++ {
+		if s.RateLimited("k", limit) {
+			t.Errorf("request %d should be within limit %d", i, limit)
+		}
+	}
+	if !s.RateLimited("k", limit) {
+		t.Error("request beyond limit should be rate limited")
+	}
+}
+
+func TestStore_RateLimited_KeysAreIndependent(t *testing.T) {
+	s := scenarios.New(nil)
+	const limit = 1
+	if s.RateLimited("a", limit) {
+		t.Fatal("first request for key a should not be limited")
+	}
+	if s.RateLimited("b", limit) {
+		t.Fatal("first request for key b should not be limited (independent window)")
+	}
+}
+
+func TestStore_RateLimited_WindowResets(t *testing.T) {
+	s := scenarios.New(nil)
+	const limit = 1
+	if s.RateLimited("k", limit) {
+		t.Fatal("first request should not be limited")
+	}
+	if !s.RateLimited("k", limit) {
+		t.Fatal("second request within the same window should be limited")
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if s.RateLimited("k", limit) {
+		t.Error("request after window reset should not be limited")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // New — auto-ID generation when scenario has no ID
 // ---------------------------------------------------------------------------
 

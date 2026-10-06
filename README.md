@@ -37,7 +37,7 @@
 | Feature | Details |
 |---|---|
 | **Protocols** | HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, SIP |
-| **Request matching** | Method + path (exact / wildcard / named params / regex), headers (with `re:` pattern support), query params (exact / wildcard / regex / absence / repeated-value), JSON body fields, authentication |
+| **Request matching** | Method + path (exact / wildcard / named params / regex), headers (with `re:` pattern support), query params (exact / wildcard / regex / absence / repeated-value), JSON/multipart/XML body fields, authentication |
 | **Response sequences** | Return a different response on each successive call — loop, hold last, or 404 when exhausted |
 | **Response control** | Status code, headers, body, artificial delay |
 | **Template responses** | Go template syntax in response bodies and headers (`{{now}}`, `{{.request.params.id}}`, `{{.request.body.foo}}`, etc.) |
@@ -346,7 +346,7 @@ protocols:
 
 ### HTTP
 
-Full HTTP mock server. Matching on method + path (exact/wildcard/named params/regex), optional query params, header match (with `re:` / `*` pattern support), JSON body field match, authentication, and state condition.
+Full HTTP mock server. Matching on method + path (exact/wildcard/named params/regex), optional query params, header match (with `re:` / `*` pattern support), JSON/multipart/XML body field match, authentication, and state condition.
 
 ```yaml
 protocols:
@@ -405,6 +405,44 @@ Use dot-notation paths to match fields anywhere in a JSON body:
         response:
           status: 200
           body: '{"ok":true}'
+```
+
+#### Multipart and XML body field matching
+
+For `multipart/form-data` requests (e.g. file uploads), `body_multipart`
+matches individual form fields by name. Text fields are matched by value;
+file parts are matched via `<field>.filename`/`<field>.content_type`:
+
+```yaml
+      - id: avatar-upload
+        request:
+          method: POST
+          path: /profile/avatar
+          body_multipart:
+            "name": "Alice"              # text field, exact match
+            "avatar.filename": "*"       # asserts a file was uploaded
+            "avatar.content_type": "image/png"
+        response:
+          status: 200
+          body: '{"ok":true}'
+```
+
+For XML bodies (SOAP, legacy enterprise APIs), `body_xml` matches
+element text and attributes using the same dot-notation style as
+`body_json`; a leading `@` segment matches an attribute instead of
+descending into a child element:
+
+```yaml
+      - id: soap-login
+        request:
+          method: POST
+          path: /soap
+          body_xml:
+            "user.role": admin     # <user><role>admin</role></user>
+            "user.@id": "*"        # <user id="...">
+        response:
+          status: 200
+          body: '<ok/>'
 ```
 
 #### Response sequences
@@ -498,8 +536,9 @@ curl "http://localhost:8080/orders?order_id=bad-id&debug=true"
 ```
 
 Up to 3 of the closest candidates are reported (mocks that passed the
-most checks — method, path, headers, query, body, `body_json`, state,
-auth — before failing), ranked closest-first. Near-miss info is also
+most checks — method, path, headers, query, body, `body_json`,
+`body_multipart`, `body_xml`, state, auth — before failing), ranked
+closest-first. Near-miss info is also
 included in the mock's request log entry whenever diagnostics were
 requested, so it shows up in the management UI's live log stream too.
 

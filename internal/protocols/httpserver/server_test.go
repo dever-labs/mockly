@@ -777,6 +777,220 @@ func TestHTTPServer_Sequence_Loop(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_Stream_SSE(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "sse",
+		Request: config.HTTPRequest{Method: "GET", Path: "/stream"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "text/event-stream"},
+			Stream: &config.HTTPStream{
+				Events: []config.HTTPStreamEvent{
+					{Event: "chunk", ID: "1", Data: `{"chunk":"Hello"}`},
+					{Event: "chunk", ID: "2", Data: `{"chunk":" world"}`},
+					{Data: "[DONE]"},
+				},
+			},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/stream")
+	if err != nil {
+		t.Fatalf("GET /stream: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("want Content-Type text/event-stream, got %q", ct)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading body: %v", err)
+	}
+	want := "event: chunk\nid: 1\ndata: {\"chunk\":\"Hello\"}\n\n" +
+		"event: chunk\nid: 2\ndata: {\"chunk\":\" world\"}\n\n" +
+		"data: [DONE]\n\n"
+	if string(body) != want {
+		t.Errorf("want SSE body:\n%q\ngot:\n%q", want, body)
+	}
+}
+
+func TestHTTPServer_Stream_SSE_MultilineData(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "sse-multiline",
+		Request: config.HTTPRequest{Method: "GET", Path: "/stream-ml"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "text/event-stream"},
+			Stream: &config.HTTPStream{
+				Events: []config.HTTPStreamEvent{
+					{Data: "line1\nline2"},
+				},
+			},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/stream-ml")
+	if err != nil {
+		t.Fatalf("GET /stream-ml: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, _ := io.ReadAll(resp.Body)
+	want := "data: line1\ndata: line2\n\n"
+	if string(body) != want {
+		t.Errorf("want multi-line SSE framing:\n%q\ngot:\n%q", want, body)
+	}
+}
+
+func TestHTTPServer_Stream_PlainChunked(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "chunked",
+		Request: config.HTTPRequest{Method: "GET", Path: "/chunked"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "text/plain"},
+			Stream: &config.HTTPStream{
+				Events: []config.HTTPStreamEvent{
+					{Data: "chunk1-"},
+					{Data: "chunk2-"},
+					{Data: "chunk3"},
+				},
+			},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/chunked")
+	if err != nil {
+		t.Fatalf("GET /chunked: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "chunk1-chunk2-chunk3" {
+		t.Errorf("want concatenated raw chunks, got %q", body)
+	}
+}
+
+func TestHTTPServer_Stream_TemplateRendering(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "sse-template",
+		Request: config.HTTPRequest{Method: "GET", Path: "/stream-tpl/{room}"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "text/event-stream"},
+			Stream: &config.HTTPStream{
+				Events: []config.HTTPStreamEvent{
+					{Data: `{"room":"{{.request.params.room}}"}`},
+				},
+			},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/stream-tpl/lobby")
+	if err != nil {
+		t.Fatalf("GET /stream-tpl/lobby: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, _ := io.ReadAll(resp.Body)
+	want := `data: {"room":"lobby"}` + "\n\n"
+	if string(body) != want {
+		t.Errorf("want templated SSE data, got %q", body)
+	}
+}
+
+func TestHTTPServer_Stream_EventDelays(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "sse-delay",
+		Request: config.HTTPRequest{Method: "GET", Path: "/stream-delay"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "text/event-stream"},
+			Stream: &config.HTTPStream{
+				Events: []config.HTTPStreamEvent{
+					{Data: "a", Delay: config.Duration{Duration: 30 * time.Millisecond}},
+					{Data: "b", Delay: config.Duration{Duration: 30 * time.Millisecond}},
+				},
+			},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	start := time.Now()
+	resp, err := http.Get(base + "/stream-delay")
+	if err != nil {
+		t.Fatalf("GET /stream-delay: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	_, _ = io.ReadAll(resp.Body)
+	elapsed := time.Since(start)
+	if elapsed < 50*time.Millisecond {
+		t.Errorf("expected at least ~60ms of cumulative event delay, took %v", elapsed)
+	}
+}
+
+func TestHTTPServer_Stream_IgnoredWhenSequenceConfigured(t *testing.T) {
+	// Sequence takes priority over Stream when both are configured on the
+	// base response (streaming is an alternative to Sequence, not combined).
+	mocks := []config.HTTPMock{{
+		ID:      "seq-and-stream",
+		Request: config.HTTPRequest{Method: "GET", Path: "/seq-stream"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "text/event-stream"},
+			Stream: &config.HTTPStream{
+				Events: []config.HTTPStreamEvent{{Data: "should-not-appear"}},
+			},
+		},
+		Sequence: []config.HTTPResponse{
+			{Status: 200, Body: "static-sequence-body"},
+		},
+		SequenceExhausted: "hold_last",
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/seq-stream")
+	if err != nil {
+		t.Fatalf("GET /seq-stream: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "static-sequence-body" {
+		t.Errorf("want sequence body to take priority over stream, got %q", body)
+	}
+}
+
+func TestHTTPServer_Stream_DefaultsContentTypeWhenUnset(t *testing.T) {
+	// Guards against reflected XSS: a plain (non-SSE) stream with templated,
+	// request-derived data must not be served with a browser-sniffable
+	// Content-Type when the mock didn't set one explicitly.
+	mocks := []config.HTTPMock{{
+		ID:      "chunked-no-ct",
+		Request: config.HTTPRequest{Method: "GET", Path: "/chunked-no-ct"},
+		Response: config.HTTPResponse{
+			Status: 200,
+			Stream: &config.HTTPStream{
+				Events: []config.HTTPStreamEvent{{Data: "raw-chunk"}},
+			},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/chunked-no-ct")
+	if err != nil {
+		t.Fatalf("GET /chunked-no-ct: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if ct := resp.Header.Get("Content-Type"); ct != "application/octet-stream" {
+		t.Errorf("want default Content-Type application/octet-stream, got %q", ct)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "raw-chunk" {
+		t.Errorf("want raw-chunk, got %q", body)
+	}
+}
+
 func TestHTTPServer_PerMockFault(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "fragile",

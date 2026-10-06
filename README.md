@@ -1579,9 +1579,18 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/state` | Get all state keys |
+| `GET` | `/api/state` | Get all (non-expired) state keys |
 | `POST` | `/api/state` | Set state keys (JSON object) |
-| `DELETE` | `/api/state/{key}` | Delete a state key |
+| `POST` | `/api/state?ttl=<duration>` | Set state keys that auto-expire after `<duration>` (e.g. `30s`, `5m`); omitted = no expiry |
+| `DELETE` | `/api/state/{key}` | Delete a single state key |
+| `DELETE` | `/api/state?prefix=<prefix>` | Delete only keys starting with `<prefix>`, leaving others untouched; omitted/empty prefix clears all state |
+
+State keys never persist across restarts (in-memory only). TTL expiry is
+checked lazily (on read), so an expired key simply disappears the next time
+it's fetched — there's no background sweep. To avoid unrelated mocks or
+parallel test runs clobbering each other's state, namespace your keys by
+convention (e.g. `"login:session"`, `"cart:items"`) and use the prefix-scoped
+delete above to reset just one namespace instead of wiping everything.
 
 ### Logs
 

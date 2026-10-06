@@ -66,6 +66,10 @@ func (s *Store) EffectiveMQTTFault() *config.MQTTFault {
 	return effectiveFault(s, func(f *config.ProtocolFaults) *config.MQTTFault { return f.MQTT })
 }
 
+func (s *Store) EffectiveNATSFault() *config.NATSFault {
+	return effectiveFault(s, func(f *config.ProtocolFaults) *config.NATSFault { return f.NATS })
+}
+
 func (s *Store) EffectiveSMTPFault() *config.SMTPFault {
 	return effectiveFault(s, func(f *config.ProtocolFaults) *config.SMTPFault { return f.SMTP })
 }
@@ -130,6 +134,8 @@ func (s *Store) GetDirectProtocolFault(protocol string) (interface{}, bool) {
 		return s.direct.Redis, true
 	case "mqtt":
 		return s.direct.MQTT, true
+	case "nats":
+		return s.direct.NATS, true
 	case "smtp":
 		return s.direct.SMTP, true
 	case "snmp":
@@ -176,6 +182,8 @@ func (s *Store) GetEffectiveProtocolFault(protocol string) (interface{}, bool) {
 		return s.EffectiveRedisFault(), true
 	case "mqtt":
 		return s.EffectiveMQTTFault(), true
+	case "nats":
+		return s.EffectiveNATSFault(), true
 	case "smtp":
 		return s.EffectiveSMTPFault(), true
 	case "snmp":
@@ -264,6 +272,14 @@ func (s *Store) SetDirectProtocolFaultJSON(protocol string, data []byte) error {
 				return err
 			}
 			s.direct.MQTT = &f
+		}
+	case "nats":
+		{
+			var f config.NATSFault
+			if err := json.Unmarshal(data, &f); err != nil {
+				return err
+			}
+			s.direct.NATS = &f
 		}
 	case "smtp":
 		{
@@ -387,6 +403,8 @@ func (s *Store) ClearDirectProtocolFault(protocol string) bool {
 		s.direct.Redis = nil
 	case "mqtt":
 		s.direct.MQTT = nil
+	case "nats":
+		s.direct.NATS = nil
 	case "smtp":
 		s.direct.SMTP = nil
 	case "snmp":

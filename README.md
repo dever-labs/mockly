@@ -1,6 +1,6 @@
 # Mockly
 
-**Cross-platform, multi-protocol mock server** — HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, and SIP in a single binary with a built-in web UI, REST management API, scenario system, and fault injection.
+**Cross-platform, multi-protocol mock server** — HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, NATS, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, and SIP in a single binary with a built-in web UI, REST management API, scenario system, and fault injection.
 
 [![CI](https://github.com/dever-labs/mockly/actions/workflows/ci.yml/badge.svg)](https://github.com/dever-labs/mockly/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/dever-labs/mockly)](https://github.com/dever-labs/mockly/releases/latest)
@@ -36,7 +36,7 @@
 
 | Feature | Details |
 |---|---|
-| **Protocols** | HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, SIP |
+| **Protocols** | HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, NATS, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, SIP |
 | **Request matching** | Method + path (exact / wildcard / named params / regex), headers (with `re:` pattern support), query params (exact / wildcard / regex / absence / repeated-value), JSON/multipart/XML body fields, authentication |
 | **Response sequences** | Return a different response on each successive call — loop, hold last, or 404 when exhausted |
 | **Response control** | Status code, headers, body, artificial delay |
@@ -906,6 +906,68 @@ Topic wildcards: `+` matches a single segment, `#` matches everything below. `{n
 
 ---
 
+### NATS
+
+Mockly embeds the real [nats-server](https://github.com/nats-io/nats-server) in-process (the same way MQTT embeds mochi-mqtt), so any real `nats.go` / JetStream / KV client can connect and use the full protocol: core pub/sub, subject wildcards, request/reply, and queue groups. On top of that, Mockly offers an optional declarative `mocks` auto-responder layer for the no-client-code fake-service use case.
+
+```yaml
+protocols:
+  nats:
+    enabled: true
+    port: 4222
+    mocks:
+      - id: order-ack
+        subject: "orders.created"
+        response:
+          subject: "orders.ack"
+          payload: '{"received":"{{ .body }}"}'
+```
+
+Subject wildcards: `*` matches a single token, `>` matches the remainder (must be last), and `{name}` captures a single token for use in response templates and logs — e.g. `orders.{id}.created`.
+
+For request/reply (`nats.Request(...)`), omit `response.subject`: Mockly replies directly on the caller's reply-to subject.
+
+```yaml
+      - id: ping
+        subject: "svc.ping"
+        response:
+          payload: "pong"
+```
+
+Set `queue_group` to have the mock join a real NATS queue group, so only one member of the group (Mockly or one of your app's own instances) answers each matching message:
+
+```yaml
+      - id: worker
+        subject: "work.task"
+        queue_group: workers
+        response:
+          payload: '{"status":"done"}'
+```
+
+#### JetStream
+
+Enable JetStream to get real streams, consumers, and KV/Object Store, backed by an on-disk (or ephemeral temp-dir) store:
+
+```yaml
+protocols:
+  nats:
+    enabled: true
+    jetstream:
+      enabled: true
+      # store_dir: /var/lib/mockly/jetstream   # omit for an ephemeral temp dir
+      streams:
+        - name: EVENTS
+          subjects: ["events.>"]
+      kv_buckets:
+        - bucket: config
+```
+
+`streams`/`kv_buckets` are an optional convenience for a ready-to-use demo config — any real client can also create streams, consumers, and KV buckets itself via the standard JetStream management API.
+
+Captured messages are visible at `GET /api/nats/messages`; mocks can be managed live at `GET/POST /api/mocks/nats` and `PUT/DELETE /api/mocks/nats/{id}`.
+
+---
+
 ### SNMP
 
 Full SNMP agent (powered by GoSNMPServer) that responds to GET, GETNEXT, GETBULK, and SET requests. Supports SNMPv1, v2c, and v3 (USM with MD5/SHA auth and DES/AES privacy). Can also send outbound TRAPs to any target host via the management API.
@@ -1565,7 +1627,7 @@ Base URL: `http://localhost:9091`
 | `PATCH` | `/api/mocks/http/{id}` | Partial update HTTP mock |
 | `DELETE` | `/api/mocks/http/{id}` | Delete HTTP mock |
 
-Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), GraphQL (`/api/mocks/graphql`), TCP (`/api/mocks/tcp`), Redis (`/api/mocks/redis`), SMTP (`/api/mocks/smtp`), MQTT (`/api/mocks/mqtt`), SNMP (`/api/mocks/snmp`), DNS (`/api/mocks/dns`), AMQP (`/api/mocks/amqp`), Kafka (`/api/mocks/kafka`), LDAP (`/api/mocks/ldap`), IMAP (`/api/mocks/imap`), FTP (`/api/mocks/ftp`), Memcached (`/api/mocks/memcached`), STOMP (`/api/mocks/stomp`), CoAP (`/api/mocks/coap`), and SIP (`/api/mocks/sip`).
+Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), GraphQL (`/api/mocks/graphql`), TCP (`/api/mocks/tcp`), Redis (`/api/mocks/redis`), SMTP (`/api/mocks/smtp`), MQTT (`/api/mocks/mqtt`), NATS (`/api/mocks/nats`), SNMP (`/api/mocks/snmp`), DNS (`/api/mocks/dns`), AMQP (`/api/mocks/amqp`), Kafka (`/api/mocks/kafka`), LDAP (`/api/mocks/ldap`), IMAP (`/api/mocks/imap`), FTP (`/api/mocks/ftp`), Memcached (`/api/mocks/memcached`), STOMP (`/api/mocks/stomp`), CoAP (`/api/mocks/coap`), and SIP (`/api/mocks/sip`).
 
 ### Call Verification (HTTP)
 
@@ -1597,6 +1659,13 @@ Similarly for WebSocket (`/api/mocks/websocket`), gRPC (`/api/mocks/grpc`), Grap
 |---|---|---|
 | `GET` | `/api/mqtt/messages` | List captured MQTT messages |
 | `DELETE` | `/api/mqtt/messages` | Clear message store |
+
+### NATS messages
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/nats/messages` | List captured NATS messages |
+| `DELETE` | `/api/nats/messages` | Clear message store |
 
 ### Message stores (AMQP, Kafka, STOMP)
 

@@ -380,6 +380,44 @@ protocols:
           payload: '{"ok":true}'
           qos: 1
 
+  # ─── NATS ───────────────────────────────────────────────────────────────────
+  # Mockly embeds the real nats-server, so any nats.go / JetStream / KV
+  # client can connect and use the full protocol (core pub/sub, wildcards,
+  # request/reply, queue groups). The "mocks" below are an optional
+  # declarative auto-responder layer on top, for the no-client-code
+  # fake-service use case.
+  nats:
+    enabled: true
+    port: 4222
+    jetstream:
+      enabled: true
+      # store_dir: /var/lib/mockly/jetstream   # omit for an ephemeral temp dir
+      streams:
+        - name: EVENTS
+          subjects: ["events.>"]
+      kv_buckets:
+        - bucket: config
+    mocks:
+      # Pub/sub reaction: publish an ack on a different subject.
+      - id: order-ack
+        subject: "orders.created"
+        response:
+          subject: "orders.ack"
+          payload: '{"received":"{{ .body }}"}'
+      # Request/reply: no response.subject needed — Mockly replies on the
+      # caller's reply-to subject (nats.Request semantics).
+      - id: ping
+        subject: "svc.ping"
+        response:
+          payload: "pong"
+      # Queue group: joins a real queue group so only one member (which may
+      # be Mockly or one of your real app instances) answers each message.
+      - id: worker
+        subject: "work.task"
+        queue_group: workers
+        response:
+          payload: '{"status":"done"}'
+
   # ─── SNMP ───────────────────────────────────────────────────────────────────
   snmp:
     enabled: true

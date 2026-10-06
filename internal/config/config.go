@@ -94,6 +94,7 @@ type ProtocolsConfig struct {
 	Redis     *RedisConfig     `yaml:"redis,omitempty" json:"redis,omitempty"`
 	SMTP      *SMTPConfig      `yaml:"smtp,omitempty" json:"smtp,omitempty"`
 	MQTT      *MQTTConfig      `yaml:"mqtt,omitempty" json:"mqtt,omitempty"`
+	NATS      *NATSConfig      `yaml:"nats,omitempty" json:"nats,omitempty"`
 	SNMP      *SNMPConfig      `yaml:"snmp,omitempty" json:"snmp,omitempty"`
 	DNS       *DNSConfig       `yaml:"dns,omitempty" json:"dns,omitempty"`
 	AMQP      *AMQPConfig      `yaml:"amqp,omitempty" json:"amqp,omitempty"`
@@ -577,6 +578,77 @@ type MQTTResponse struct {
 }
 
 // ---------------------------------------------------------------------------
+// NATS
+// ---------------------------------------------------------------------------
+
+// NATSConfig runs a real, embedded NATS server (core pub/sub + request/reply
+// + queue groups), optionally with JetStream (streams/consumers, which also
+// backs KV and Object Store) enabled. Because this embeds the official
+// nats-server library, any real nats.go/JetStream/KV client can connect and
+// use the full protocol — Mocks below are an optional declarative
+// auto-responder layer on top, for the no-client-code "fake service" use case.
+type NATSConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	Port    int  `yaml:"port" json:"port"`
+	// JetStream enables NATS JetStream (streams/consumers/KV/Object Store).
+	// Disabled by default to keep core-only setups lightweight.
+	JetStream *NATSJetStreamConfig `yaml:"jetstream,omitempty" json:"jetstream,omitempty"`
+	Mocks     []NATSMock           `yaml:"mocks,omitempty" json:"mocks,omitempty"`
+}
+
+// NATSJetStreamConfig enables JetStream on the embedded server.
+type NATSJetStreamConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// StoreDir is the on-disk directory JetStream uses for file-backed
+	// streams. Empty = a fresh temp directory (ephemeral, cleared on
+	// restart) — the common case for a mock/test server.
+	StoreDir string `yaml:"store_dir,omitempty" json:"store_dir,omitempty"`
+	// Streams optionally pre-creates JetStream streams at startup, so a
+	// client can start publishing/consuming immediately without first
+	// calling the JetStream management API itself. Entirely optional —
+	// any real client can create streams/consumers/KV buckets on its own.
+	Streams []NATSStreamConfig `yaml:"streams,omitempty" json:"streams,omitempty"`
+	// KVBuckets optionally pre-creates JetStream-backed KV buckets at
+	// startup (same rationale as Streams).
+	KVBuckets []NATSKVBucketConfig `yaml:"kv_buckets,omitempty" json:"kv_buckets,omitempty"`
+}
+
+// NATSStreamConfig declaratively pre-provisions a JetStream stream.
+type NATSStreamConfig struct {
+	Name     string   `yaml:"name" json:"name"`
+	Subjects []string `yaml:"subjects" json:"subjects"`
+}
+
+// NATSKVBucketConfig declaratively pre-provisions a JetStream KV bucket.
+type NATSKVBucketConfig struct {
+	Bucket string `yaml:"bucket" json:"bucket"`
+}
+
+// NATSMock subscribes to a subject pattern (core NATS wildcards: "*" for a
+// single token, ">" for the remainder, must be last). When a matching
+// message arrives: if it carries a reply-to subject (i.e. it was sent via
+// nats.Request), Mockly answers there directly (request/reply); otherwise,
+// if Response.Subject is set, Mockly publishes the response there
+// (pub/sub reaction). QueueGroup, if set, makes this mock join a NATS queue
+// group so only one member of the group receives each matching message.
+type NATSMock struct {
+	ID         string          `yaml:"id" json:"id"`
+	Subject    string          `yaml:"subject" json:"subject"`
+	QueueGroup string          `yaml:"queue_group,omitempty" json:"queue_group,omitempty"`
+	Response   *NATSResponse   `yaml:"response,omitempty" json:"response,omitempty"`
+	State      *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+}
+
+type NATSResponse struct {
+	// Subject to publish the response on for plain pub/sub reactions.
+	// Ignored for request/reply (the incoming message's reply-to subject is
+	// used instead, matching real NATS request/reply semantics).
+	Subject string   `yaml:"subject,omitempty" json:"subject,omitempty"`
+	Payload string   `yaml:"payload" json:"payload"`
+	Delay   Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
 // SNMP
 // ---------------------------------------------------------------------------
 
@@ -994,6 +1066,12 @@ type MQTTFault struct {
 	// When injected: response publish is silently dropped
 }
 
+type NATSFault struct {
+	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
+	ErrorRate float64  `yaml:"error_rate,omitempty" json:"error_rate,omitempty"`
+	// When injected: the mock response/reply is silently dropped.
+}
+
 type SMTPFault struct {
 	Delay     Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
 	Code      int      `yaml:"code,omitempty" json:"code,omitempty"` // SMTP error code: 421|450|550 (default 421)
@@ -1076,6 +1154,7 @@ type ProtocolFaults struct {
 	TCP       *TCPFault       `yaml:"tcp,omitempty" json:"tcp,omitempty"`
 	Redis     *RedisFault     `yaml:"redis,omitempty" json:"redis,omitempty"`
 	MQTT      *MQTTFault      `yaml:"mqtt,omitempty" json:"mqtt,omitempty"`
+	NATS      *NATSFault      `yaml:"nats,omitempty" json:"nats,omitempty"`
 	SMTP      *SMTPFault      `yaml:"smtp,omitempty" json:"smtp,omitempty"`
 	SNMP      *SNMPFault      `yaml:"snmp,omitempty" json:"snmp,omitempty"`
 	DNS       *DNSFault       `yaml:"dns,omitempty" json:"dns,omitempty"`
@@ -1260,6 +1339,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Protocols.MQTT != nil && cfg.Protocols.MQTT.Port == 0 {
 		cfg.Protocols.MQTT.Port = 1883
+	}
+	if cfg.Protocols.NATS != nil && cfg.Protocols.NATS.Port == 0 {
+		cfg.Protocols.NATS.Port = 4222
 	}
 	if cfg.Protocols.SNMP != nil {
 		if cfg.Protocols.SNMP.Port == 0 {

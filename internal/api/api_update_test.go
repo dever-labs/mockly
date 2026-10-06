@@ -298,7 +298,10 @@ func TestAPI_NilServer_DNS_Add(t *testing.T) {
 
 func TestAPI_NilServer_DNS_List(t *testing.T) {
 	base, _, _, _, _ := startAPI(t)
-	resp, _ := http.Get(base + "/api/mocks/dns")
+	resp, err := http.Get(base + "/api/mocks/dns")
+	if err != nil {
+		t.Fatalf("get /api/mocks/dns: %v", err)
+	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("GET /api/mocks/dns with nil server: want 200, got %d", resp.StatusCode)

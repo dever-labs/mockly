@@ -115,7 +115,7 @@ func TestGRPCServer_MockedMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("grpc.NewClient: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	var resp []byte
 	err = conn.Invoke(context.Background(), "/example.UserService/GetUser", []byte(`{}`), &resp)
@@ -139,7 +139,7 @@ func TestGRPCServer_UnmockedMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("grpc.NewClient: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	var resp []byte
 	err = conn.Invoke(context.Background(), "/svc/UnknownMethod", []byte(`{}`), &resp)
@@ -164,7 +164,7 @@ func TestGRPCServer_WildcardMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("grpc.NewClient: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	var resp []byte
 	if err := conn.Invoke(context.Background(), "/any.Service/AnyMethod", []byte(`{}`), &resp); err != nil {
@@ -184,7 +184,7 @@ func TestGRPCServer_ErrorMock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("grpc.NewClient: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	var resp []byte
 	err = conn.Invoke(context.Background(), "/svc/FailMethod", []byte(`{}`), &resp)
@@ -214,7 +214,7 @@ func TestGRPCServer_ErrorMock_OutOfRangeCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("grpc.NewClient: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	var resp []byte
 	err = conn.Invoke(context.Background(), "/svc/BadCode", []byte(`{}`), &resp)
@@ -240,7 +240,7 @@ func TestGRPCServer_ErrorMock_NegativeCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("grpc.NewClient: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	var resp []byte
 	err = conn.Invoke(context.Background(), "/svc/NegCode", []byte(`{}`), &resp)
@@ -268,7 +268,7 @@ func TestGRPCServer_DelayMock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("grpc.NewClient: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	start := time.Now()
 	var resp []byte
@@ -287,7 +287,7 @@ func TestGRPCServer_SetMocks_LiveUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("grpc.NewClient: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	// Initially unmocked → Unimplemented.
 	var resp []byte
@@ -359,7 +359,7 @@ func waitForGRPC(t *testing.T, addr string, timeout time.Duration) {
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			return
 		}
 		time.Sleep(20 * time.Millisecond)

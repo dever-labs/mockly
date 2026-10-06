@@ -111,7 +111,7 @@ func TestFTPServer_GlobalFault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial FTP: %v", err)
 	}
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	reader := bufio.NewReader(conn)
 	loginFTP(t, conn, reader)
 	faultResp := sendFTPCommand(t, conn, reader, "RETR /test.txt")
@@ -127,7 +127,7 @@ func TestFTPServer_GlobalFault(t *testing.T) {
 		t.Fatalf("dial FTP normal: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	reader = bufio.NewReader(conn)
 	loginFTP(t, conn, reader)
 	pasvResp := sendFTPCommand(t, conn, reader, "PASV")
@@ -138,7 +138,7 @@ func TestFTPServer_GlobalFault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial PASV data connection: %v", err)
 	}
-	dataConn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = dataConn.SetDeadline(time.Now().Add(2 * time.Second))
 	defer dataConn.Close() //nolint:errcheck
 	if _, err := io.WriteString(conn, "RETR /test.txt\r\n"); err != nil {
 		t.Fatalf("write RETR: %v", err)
@@ -169,7 +169,7 @@ func TestFTPServer_FTPFault_CustomCode(t *testing.T) {
 		t.Fatalf("dial FTP: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	reader := bufio.NewReader(conn)
 	loginFTP(t, conn, reader)
 	resp := sendFTPCommand(t, conn, reader, "LIST")

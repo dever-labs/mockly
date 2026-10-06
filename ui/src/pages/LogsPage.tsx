@@ -25,7 +25,14 @@ export function LogsPage() {
   const [live, setLive] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => { setEntries(initial) }, [initial])
+  // Sync local state from the query's initial data during render (React's
+  // recommended pattern) rather than in an effect, to avoid the cascading
+  // re-render that a setState-in-effect would trigger.
+  const [prevInitial, setPrevInitial] = useState(initial)
+  if (initial !== prevInitial) {
+    setPrevInitial(initial)
+    setEntries(initial)
+  }
 
   useEffect(() => {
     if (!live) return

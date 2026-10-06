@@ -85,7 +85,7 @@ func TestIMAPServer_GlobalFault(t *testing.T) {
 		t.Fatalf("dial IMAP: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	reader := bufio.NewReader(conn)
 	banner, err := reader.ReadString('\n')
 	if err != nil {
@@ -127,7 +127,7 @@ func TestIMAPServer_IMAPFault_BadResponse(t *testing.T) {
 		t.Fatalf("dial IMAP: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	reader := bufio.NewReader(conn)
 	_, _ = reader.ReadString('\n')
 	_ = sendIMAP(t, conn, reader, "a1 LOGIN user pass\r\n", "a1")

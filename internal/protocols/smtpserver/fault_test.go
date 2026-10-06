@@ -65,7 +65,7 @@ func smtpTransaction(t *testing.T, addr string) (net.Conn, *bufio.Reader) {
 	if err != nil {
 		t.Fatalf("dial SMTP: %v", err)
 	}
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	reader := bufio.NewReader(conn)
 	if resp := readSMTPResponse(t, reader); !strings.HasPrefix(resp, "220 ") {
 		t.Fatalf("banner = %q, want 220", resp)

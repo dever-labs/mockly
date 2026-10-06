@@ -196,7 +196,7 @@ func (s *Server) maybeInjectFault(conn net.Conn) bool {
 		if msg == "" {
 			msg = "fault injected"
 		}
-		_, _ = conn.Write([]byte(fmt.Sprintf("%s %s\r\n", errType, msg)))
+		_, _ = fmt.Fprintf(conn, "%s %s\r\n", errType, msg)
 		return true
 	}
 	return false

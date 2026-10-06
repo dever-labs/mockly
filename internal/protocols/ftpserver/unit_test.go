@@ -274,7 +274,7 @@ func ftpConn(t *testing.T, addr string) (net.Conn, *bufio.Reader) {
 		t.Fatalf("dial FTP: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	r := bufio.NewReader(conn)
 	// Read the 220 banner.
 	line, err := r.ReadString('\n')
@@ -521,8 +521,8 @@ func parsePASVAddr(t *testing.T, resp string) string {
 		t.Fatalf("invalid PASV parts: %v", parts)
 	}
 	var p1, p2 int
-	fmt.Sscanf(parts[4], "%d", &p1)
-	fmt.Sscanf(parts[5], "%d", &p2)
+	_, _ = fmt.Sscanf(parts[4], "%d", &p1)
+	_, _ = fmt.Sscanf(parts[5], "%d", &p2)
 	port := p1*256 + p2
 	return fmt.Sprintf("127.0.0.1:%d", port)
 }

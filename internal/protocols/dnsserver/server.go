@@ -185,7 +185,7 @@ func buildRRs(name string, qtype uint16, mock config.DNSMock) []dns.RR {
 			pref := uint16(10)
 			target := record
 			if len(fields) >= 2 {
-				fmt.Sscanf(fields[0], "%d", &pref)
+				_, _ = fmt.Sscanf(fields[0], "%d", &pref)
 				target = fields[1]
 			}
 			out = append(out, &dns.MX{Hdr: hdr, Preference: pref, Mx: normalizeDNSName(target)})
@@ -198,9 +198,9 @@ func buildRRs(name string, qtype uint16, mock config.DNSMock) []dns.RR {
 			priority, weight, port := uint16(10), uint16(5), uint16(0)
 			target := record
 			if len(fields) >= 4 {
-				fmt.Sscanf(fields[0], "%d", &priority)
-				fmt.Sscanf(fields[1], "%d", &weight)
-				fmt.Sscanf(fields[2], "%d", &port)
+				_, _ = fmt.Sscanf(fields[0], "%d", &priority)
+				_, _ = fmt.Sscanf(fields[1], "%d", &weight)
+				_, _ = fmt.Sscanf(fields[2], "%d", &port)
 				target = fields[3]
 			}
 			out = append(out, &dns.SRV{Hdr: hdr, Priority: priority, Weight: weight, Port: port, Target: normalizeDNSName(target)})

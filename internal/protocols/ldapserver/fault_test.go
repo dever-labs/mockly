@@ -145,7 +145,7 @@ func TestLDAPServer_GlobalFault(t *testing.T) {
 		t.Fatalf("dial LDAP: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	if _, err := conn.Write(buildBindRequest(1)); err != nil {
 		t.Fatalf("write bind request: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestLDAPServer_LDAPFault_CustomResultCode(t *testing.T) {
 		t.Fatalf("dial LDAP: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	if _, err := conn.Write(buildBindRequest(1)); err != nil {
 		t.Fatalf("bind: %v", err)
 	}

@@ -52,7 +52,7 @@ func dialSTOMP(t *testing.T, addr string) (net.Conn, *bufio.Reader) {
 	if err != nil {
 		t.Fatalf("dial stomp: %v", err)
 	}
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	reader := bufio.NewReader(conn)
 	if _, err := io.WriteString(conn, "CONNECT\naccept-version:1.2\nhost:localhost\n\n\x00"); err != nil {
 		t.Fatalf("write CONNECT: %v", err)

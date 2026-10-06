@@ -42,7 +42,7 @@ func memcachedRequest(t *testing.T, addr string, payload string) string {
 		t.Fatalf("dial memcached: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(time.Second))
+	_ = conn.SetDeadline(time.Now().Add(time.Second))
 	if _, err := conn.Write([]byte(payload)); err != nil {
 		t.Fatalf("write memcached request: %v", err)
 	}

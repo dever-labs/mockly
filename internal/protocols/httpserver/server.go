@@ -452,8 +452,15 @@ func (s *Server) recordAndServe(w http.ResponseWriter, r *http.Request, hdrs map
 	}
 
 	mock := s.recorder.capture(r.Method, r.URL.Path, query, status, respHdrs, respBody)
+
 	s.mu.Lock()
-	s.mocks = append(s.mocks, mock)
+	// A concurrent request for the same not-yet-recorded endpoint may have
+	// already been proxied and appended its own mock while we were waiting
+	// on the upstream response above; skip appending a duplicate in that
+	// case so the recorded set (and save_to file) stays de-duplicated.
+	if !s.hasEquivalentMockLocked(mock.Request) {
+		s.mocks = append(s.mocks, mock)
+	}
 	s.mu.Unlock()
 
 	for k, v := range respHdrs {
@@ -473,6 +480,20 @@ func (s *Server) recordAndServe(w http.ResponseWriter, r *http.Request, hdrs map
 		MatchedID: mock.ID,
 	})
 	return true
+}
+
+// hasEquivalentMockLocked reports whether s.mocks already contains a mock
+// with the same method/path/query as req. Used by recordAndServe to avoid
+// appending a duplicate when a concurrent request for the same endpoint (or
+// a mock added via the Management API while the proxy call was in flight)
+// got there first. Must be called with s.mu held.
+func (s *Server) hasEquivalentMockLocked(req config.HTTPRequest) bool {
+	for _, m := range s.mocks {
+		if m.Request.Method == req.Method && m.Request.Path == req.Path && queryEqual(m.Request.Query, req.Query) {
+			return true
+		}
+	}
+	return false
 }
 
 // handleNTLM intercepts requests for mocks that require NTLM authentication and

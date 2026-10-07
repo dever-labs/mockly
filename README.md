@@ -46,11 +46,12 @@
 | **Per-protocol fault injection** | Each protocol exposes its own native fault fields (DNS rcode, gRPC status code, Kafka error code, etc.) — activate via API or bundled inside a scenario |
 | **Per-mock fault injection** | Fault fields on individual HTTP mocks with independent delay (fixed or jittered range), status/body override, error rate, and rate limiting |
 | **Call verification** | Track how many times each mock was hit; block until an expected count is reached |
+| **Record mode (HTTP)** | Proxy unmatched requests to a real upstream, relay the real response, and capture it as a new mock for instant replay — bootstrap a mock set without hand-authoring every response |
 | **Outbound webhooks** | Any HTTP mock can fire a templated outbound callback (server-initiated notification) when matched — with delay, retries, and a searchable attempt history |
 | **Log filtering** | Filter logs and log counts by matched mock ID via `/api/logs` and `/api/logs/count` |
 | **PATCH mocks** | Change only specific response fields at runtime without replacing the whole mock |
 | **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid, Anthropic, Resend, PagerDuty, AWS S3, NTLM, Nets/Nexi |
-| **OpenAPI mock generation** | `mockly generate openapi <spec>` turns an OpenAPI 3.x document into a ready-to-run config, one mock per operation |
+| **Spec-driven mock generation** | `mockly generate <spec>` turns an OpenAPI 3.x document, an AsyncAPI 2.x/3.x document, or a Protobuf (`.proto`) service definition into a ready-to-run config, auto-detecting which it is |
 | **Web UI** | Served from the binary itself — no separate install |
 | **Management API** | 60+ REST endpoints covering all protocols, scenarios, fault, state, logs, webhooks, and call counts |
 | **Live request log** | SSE-streamed in real time to the UI |
@@ -729,9 +730,9 @@ Every attempt (including retries) is recorded and available via the
 management API:
 
 ```sh
-curl http://localhost:9090/api/webhooks                 # attempt history
-curl -X DELETE http://localhost:9090/api/webhooks        # clear history
-curl -X POST http://localhost:9090/api/webhooks/send \
+curl http://localhost:9091/api/webhooks                 # attempt history
+curl -X DELETE http://localhost:9091/api/webhooks        # clear history
+curl -X POST http://localhost:9091/api/webhooks/send \
   -d '{"url":"https://example.com/hook","body":"{\"ping\":true}"}'  # send one ad hoc
 ```
 
@@ -1294,19 +1295,23 @@ Your test:
 // call the verification API to confirm your app called the right endpoints
 ```
 
-### Generating mocks from an OpenAPI spec
+### Generating mocks from an OpenAPI, AsyncAPI, or Protobuf spec
 
-If the dependency already publishes an OpenAPI 3.x document, skip hand-writing
-the happy-path mocks and generate them instead:
+If the dependency already publishes an OpenAPI 3.x document, an AsyncAPI
+2.x/3.x document, or a Protobuf (`.proto`) service definition, skip
+hand-writing the happy-path mocks and generate them instead. `mockly
+generate` auto-detects which kind of spec it's looking at (from the file's
+top-level `openapi:`/`asyncapi:` field, or a `.proto` extension / `syntax =
+"proto2|3";` declaration), so the same command works for all three:
 
 ```bash
-mockly generate openapi api.yaml -o mockly.yaml
+mockly generate api.yaml -o mockly.yaml
 mockly start -c mockly.yaml
 ```
 
-For every operation (path + method) in the spec, this picks a representative
-response (preferring `200`/`201`/`202`/`204`, then any other `2xx`) and builds
-its body from:
+**OpenAPI** → for every operation (path + method) in the spec, this picks a
+representative response (preferring `200`/`201`/`202`/`204`, then any other
+`2xx`) and builds its body from:
 
 1. the response's `example` or `examples`, if the spec defines one, or
 2. a value synthesised from the response's JSON schema — objects and arrays
@@ -1322,9 +1327,92 @@ Operations Mockly couldn't derive a usable response for (no response
 defined in the spec, or a binary content-type with no example) are skipped
 with a warning printed to stderr — generation still succeeds for the rest.
 
+**AsyncAPI** → channels/operations become Kafka, MQTT, AMQP, NATS and
+WebSocket mocks, depending on which protocol(s) the spec's `servers` use.
+Not every AsyncAPI direction has a Mockly equivalent:
+
+- **Kafka**: an operation where the application *emits* messages
+  (2.x `publish` / 3.x `action: send`) becomes a pre-seeded topic (data a
+  consumer can read immediately). The opposite direction (the app
+  *consuming* messages) has no static Mockly equivalent and is skipped.
+- **MQTT/AMQP/NATS**: an operation where the application *receives*
+  messages (2.x `subscribe` / 3.x `action: receive`) becomes a reactive
+  listener on that topic/routing-key/subject, optionally replying if the
+  operation declares a `reply` message (3.x only). The opposite direction
+  (the app spontaneously publishing) has no scheduled/spontaneous publish
+  mechanism in Mockly yet and is skipped — use the management API to
+  publish a message on demand instead.
+- **WebSocket**: a channel's `address` becomes the mock's `path`; a
+  `receive` operation becomes an `on_message` rule (replying if a `reply`
+  is declared), a `send` operation becomes an `on_connect` push.
+
+Skipped operations print a warning to stderr but don't fail generation, as
+long as at least one mock could be produced.
+
+**Protobuf** → for every unary RPC method in the spec's service(s), this
+builds a gRPC mock whose response body is synthesised from the method's
+output message type: scalar fields get a type-appropriate placeholder
+(64-bit integer kinds become JSON strings, per the standard proto3 JSON
+mapping), `repeated`/`map` fields get a single representative entry, nested
+messages recurse, and the handful of `google.protobuf.*` well-known types
+(`Timestamp`, `Duration`, `Empty`, the wrapper types, ...) get their
+JSON-mapped placeholder directly rather than being expanded field-by-field.
+Only one member of each real `oneof` is included (proto3 `optional` fields
+use a synthetic oneof under the hood and are unaffected).
+
+`import`s are resolved only from the spec file's own directory (no absolute
+paths, no `../` escaping it) plus the standard `google/protobuf/*.proto`
+well-known types — anything else is a hard error, not a skip, since an
+unresolvable type can't be faithfully represented at all. Streaming methods
+(client-streaming, server-streaming, bidirectional) have no Mockly
+equivalent — Mockly's gRPC mock reads at most one request and writes at
+most one response per call — and are skipped with a warning, as is any RPC
+method whose name collides with one already seen in a different service in
+the same file (Mockly matches gRPC calls by method name alone, not service,
+so a later duplicate would just shadow the first and never be reachable).
+
 The generated file is a complete, runnable config (management API/UI ports
 included), not a fragment — review it, add scenarios/faults/state as
 needed, and commit it like any other Mockly config.
+
+### Record mode (bootstrap mocks from a real backend)
+
+Hand-writing every mock is the biggest upfront cost of adopting a mock server. Record mode removes it: point Mockly at a real upstream, and any request that doesn't match an existing mock is transparently proxied there — the real response is both returned to the caller and saved as a new mock, so every subsequent identical request is replayed locally without hitting the upstream again.
+
+```yaml
+mockly:
+  api:
+    port: 9091
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    record:
+      enabled: true
+      target: https://api.example.com   # real upstream to proxy unmatched requests to
+      save_to: recorded-mocks.yaml      # optional: persist captured mocks for review
+    mocks: []                           # hand-written mocks still take precedence
+```
+
+```sh
+mockly start -c mockly.yaml
+
+# Run your test suite (or click around manually) against the real backend,
+# through Mockly, once — every response it returns gets captured.
+curl http://localhost:8080/v1/users/42
+
+# Recorded mocks are immediately visible like any other mock...
+curl http://localhost:9091/api/mocks/http
+
+# ...and, if save_to was set, written to disk so you can review and fold
+# them into your hand-written config:
+cat recorded-mocks.yaml
+```
+
+A few things worth knowing:
+- Hand-written mocks always take precedence — record mode only fires for requests that don't match anything already configured, so it's safe to mix recorded and hand-written mocks in the same file.
+- If the upstream is unreachable, Mockly falls back to the normal 404 "no mock matched" response rather than failing the request outright.
+- `save_to` is rewritten (not appended) after every new capture, and only ever contains recorded mocks — it won't clobber your hand-written config file.
 
 ### Call verification
 
@@ -1635,7 +1723,7 @@ mockly start --config keycloak.yaml
 mockly start       [--config <file>] [--ui-port <n>] [--api-port <n>]
 mockly apply       --config <file>
 mockly config      validate [file]
-mockly generate    openapi <spec-file> [-o <file>] [--port <n>]
+mockly generate    <spec-file> [-o <file>] [--http-port <n>]
 mockly list
 mockly add http    --method GET --path /foo --status 200 --body '{"ok":true}'
 mockly delete      <mock-id>
@@ -2091,7 +2179,7 @@ steps:
     with:
       version: v0.14.0         # x-release-please-version
       config: mockly.yaml      # path to your config
-      api-port: 9090           # management API port (default)
+      api-port: 9091           # management API port (default)
 
   - name: Run tests
     run: npm test
@@ -2133,7 +2221,7 @@ integration-tests:
       variables:
         # mount config via CI artifacts or inline
   variables:
-    MOCKLY_URL: http://mockly:9090
+    MOCKLY_URL: http://mockly:9091
   script:
     - apk add --no-cache curl
     - curl "$MOCKLY_URL/api/protocols"
@@ -2154,7 +2242,7 @@ MOCKLY_VERSION=v0.14.0 # x-release-please-version
 
 # Start in background and wait for ready
 mockly start -c mockly.yaml &
-until curl -sf http://localhost:9090/api/protocols; do sleep 1; done
+until curl -sf http://localhost:9091/api/protocols; do sleep 1; done
 ```
 
 Windows (PowerShell):
@@ -2176,7 +2264,7 @@ irm https://raw.githubusercontent.com/dever-labs/mockly/main/install.ps1 | iex
 # Run with your local config
 docker run --rm \
   -v "$PWD/mockly.yaml:/config/mockly.yaml:ro" \
-  -p 8080:8080 -p 9090:9090 \
+  -p 8080:8080 -p 9091:9091 \
   ghcr.io/dever-labs/mockly:latest
 
 # Or with docker compose

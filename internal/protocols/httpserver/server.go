@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,8 @@ type Server struct {
 	mocks      []config.HTTPMock
 	callCounts map[string]int64 // mock ID → total call count (for sequences + API)
 
+	recorder *recorder // non-nil when HTTP record mode is enabled
+
 	server *http.Server
 }
 
@@ -52,6 +55,9 @@ func New(cfg *config.HTTPConfig, store *state.Store, sc *scenarios.Store, log *l
 		webhooks:   wh,
 		mocks:      append([]config.HTTPMock(nil), cfg.Mocks...),
 		callCounts: make(map[string]int64),
+	}
+	if cfg.Record != nil && cfg.Record.Enabled {
+		s.recorder = newRecorder(cfg.Record)
 	}
 	return s
 }
@@ -169,6 +175,17 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, matched := engine.HTTPMatch(mocks, r.Method, r.URL.Path, queryValues, hdrs, string(body), s.store)
+
+	// Record mode: an unmatched request is transparently proxied to the
+	// real upstream and captured as a new mock, so every subsequent
+	// identical request is replayed locally instead of reaching Target
+	// again. Falls through to the normal "no mock matched" response if the
+	// upstream can't be reached.
+	if !matched && s.recorder != nil {
+		if s.recordAndServe(w, r, hdrs, querySingle, body, start) {
+			return
+		}
+	}
 
 	status := http.StatusNotFound
 	respBody := `{"error":"no mock matched"}`
@@ -420,6 +437,63 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		PathParams: result.PathParams,
 		NearMisses: toLoggerNearMisses(nearMisses),
 	})
+}
+
+// recordAndServe proxies r to the recorder's Target, writes the real
+// response back to w, and captures it as a new mock appended to s.mocks so
+// subsequent identical requests are replayed without reaching Target again.
+// Returns false (writing nothing) if the upstream couldn't be reached, so
+// the caller can fall back to the normal "no mock matched" response.
+func (s *Server) recordAndServe(w http.ResponseWriter, r *http.Request, hdrs map[string]string, query map[string]string, body []byte, start time.Time) bool {
+	status, respHdrs, respBody, err := s.recorder.forward(r, body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warn: %v\n", err)
+		return false
+	}
+
+	mock := s.recorder.capture(r.Method, r.URL.Path, query, status, respHdrs, respBody)
+
+	s.mu.Lock()
+	// A concurrent request for the same not-yet-recorded endpoint may have
+	// already been proxied and appended its own mock while we were waiting
+	// on the upstream response above; skip appending a duplicate in that
+	// case so the recorded set (and save_to file) stays de-duplicated.
+	if !s.hasEquivalentMockLocked(mock.Request) {
+		s.mocks = append(s.mocks, mock)
+	}
+	s.mu.Unlock()
+
+	for k, v := range respHdrs {
+		w.Header().Set(k, v)
+	}
+	w.WriteHeader(status)
+	_, _ = w.Write(respBody)
+
+	s.log.Log(logger.Entry{
+		Protocol:  "http",
+		Method:    r.Method,
+		Path:      r.URL.Path,
+		Status:    status,
+		Duration:  time.Since(start).Milliseconds(),
+		Headers:   hdrs,
+		Body:      string(body),
+		MatchedID: mock.ID,
+	})
+	return true
+}
+
+// hasEquivalentMockLocked reports whether s.mocks already contains a mock
+// with the same method/path/query as req. Used by recordAndServe to avoid
+// appending a duplicate when a concurrent request for the same endpoint (or
+// a mock added via the Management API while the proxy call was in flight)
+// got there first. Must be called with s.mu held.
+func (s *Server) hasEquivalentMockLocked(req config.HTTPRequest) bool {
+	for _, m := range s.mocks {
+		if m.Request.Method == req.Method && m.Request.Path == req.Path && queryEqual(m.Request.Query, req.Query) {
+			return true
+		}
+	}
+	return false
 }
 
 // handleNTLM intercepts requests for mocks that require NTLM authentication and

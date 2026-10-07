@@ -140,6 +140,30 @@ type HTTPConfig struct {
 	// endpoints that accept large payloads (file uploads, bulk imports, etc.).
 	MaxBodyBytes int64      `yaml:"max_body_bytes,omitempty" json:"max_body_bytes,omitempty"`
 	Mocks        []HTTPMock `yaml:"mocks" json:"mocks"`
+
+	// Record enables "record mode": requests that don't match any existing
+	// mock are transparently proxied to Target, the real response is
+	// returned to the caller, and it's captured as a new mock so every
+	// subsequent identical request is replayed locally without hitting the
+	// upstream again. This bootstraps a component-test mock set from a real
+	// backend without hand-authoring every response up front.
+	Record *HTTPRecordConfig `yaml:"record,omitempty" json:"record,omitempty"`
+}
+
+// HTTPRecordConfig configures HTTP record mode (see HTTPConfig.Record).
+type HTTPRecordConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// Target is the base URL of the real upstream service to proxy
+	// unmatched requests to, e.g. "https://api.example.com".
+	Target string `yaml:"target" json:"target"`
+
+	// SaveTo, if set, persists every recorded mock as a YAML file
+	// (rewritten after each new capture) so it can be reviewed and folded
+	// into a hand-written config afterward. If empty, recorded mocks only
+	// live in memory for the life of this process (still visible via
+	// GET /api/mocks/http and `mockly list`).
+	SaveTo string `yaml:"save_to,omitempty" json:"save_to,omitempty"`
 }
 
 type HTTPMock struct {
@@ -1266,7 +1290,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config %q: %w", path, err)
 	}
 
-	applyDefaults(&cfg)
+	ApplyDefaults(&cfg)
 	return &cfg, nil
 }
 
@@ -1345,7 +1369,12 @@ func Save(path string, cfg *Config) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-func applyDefaults(cfg *Config) {
+// ApplyDefaults fills in zero-value ports/fields across cfg with Mockly's
+// documented per-protocol defaults, for any enabled protocol whose settings
+// weren't explicitly set. Exported so callers that build a Config
+// programmatically (e.g. the "generate" CLI commands) get the same
+// defaulting behavior as loading a YAML file through Load.
+func ApplyDefaults(cfg *Config) {
 	if cfg.Mockly.UI.Port == 0 {
 		cfg.Mockly.UI.Port = 9090
 	}

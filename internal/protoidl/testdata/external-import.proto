@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package external.v1;
+
+// Imports an absolute path outside the spec file's own directory tree —
+// should be rejected, not silently resolved.
+import "/etc/hostname.proto";
+
+service Bad {
+  rpc Get (GetRequest) returns (GetReply);
+}
+
+message GetRequest {}
+message GetReply {}

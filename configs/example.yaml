@@ -4,9 +4,9 @@
 mockly:
   ui:
     enabled: true
-    port: 9090       # The management UI is served here
+    port: 9090       # Reserved for a future standalone UI listener; currently has no effect
   api:
-    port: 9091       # The management REST API is served here (UI proxies /api → this port)
+    port: 9091       # The management REST API and Web UI are both served here
     # tls:           # Uncomment to enable HTTPS on the management API
     #   enabled: true
     #   cert_file: /path/to/cert.pem
@@ -30,6 +30,10 @@ protocols:
     #   enabled: true
     #   cert_file: /path/to/cert.pem
     #   key_file:  /path/to/key.pem
+    # record:        # Bootstrap mocks from a real backend instead of hand-authoring them.
+    #   enabled: true
+    #   target: https://api.example.com   # unmatched requests are proxied here and captured
+    #   save_to: recorded-mocks.yaml      # optional: persist captured mocks for review
     mocks:
 
       - id: get-users

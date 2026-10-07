@@ -10,7 +10,7 @@
 # Variables you can set per-job:
 #   MOCKLY_VERSION   - release tag to install (default: latest)
 #   MOCKLY_CONFIG    - path to config file     (default: mockly.yaml)
-#   MOCKLY_API_PORT  - management API port     (default: 9090)
+#   MOCKLY_API_PORT  - management API port     (default: 9091)
 
 # ── Install only ─────────────────────────────────────────────────────────────
 # Use when you want to manage start/stop yourself.
@@ -58,7 +58,7 @@
   variables:
     MOCKLY_VERSION: "latest"
     MOCKLY_CONFIG: "mockly.yaml"
-    MOCKLY_API_PORT: "9090"
+    MOCKLY_API_PORT: "9091"
   before_script:
     - !reference [.mockly-install, before_script]
     - |

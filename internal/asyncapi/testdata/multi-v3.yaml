@@ -1,0 +1,76 @@
+asyncapi: 3.0.0
+info:
+  title: Example Multi-Protocol Service (3.0)
+  version: 1.0.0
+servers:
+  mqttBroker:
+    host: mqtt.example.com:1883
+    protocol: mqtt
+  wsGateway:
+    host: ws.example.com
+    protocol: ws
+channels:
+  commands:
+    address: devices/{deviceId}/commands
+    servers:
+      - $ref: '#/servers/mqttBroker'
+    messages:
+      command:
+        payload:
+          type: object
+          properties:
+            action:
+              type: string
+              enum: [reboot, shutdown]
+  commandAcks:
+    address: devices/{deviceId}/acks
+    servers:
+      - $ref: '#/servers/mqttBroker'
+    messages:
+      ack:
+        payload:
+          type: object
+          properties:
+            status:
+              type: string
+              example: ok
+  notifications:
+    address: /ws/notifications
+    servers:
+      - $ref: '#/servers/wsGateway'
+    messages:
+      notification:
+        payload:
+          type: object
+          properties:
+            text:
+              type: string
+              example: hello
+  pings:
+    address: /ws/notifications
+    servers:
+      - $ref: '#/servers/wsGateway'
+    messages:
+      ping:
+        payload:
+          type: object
+          properties:
+            text:
+              type: string
+              example: pong
+operations:
+  receiveCommand:
+    action: receive
+    channel:
+      $ref: '#/channels/commands'
+    reply:
+      channel:
+        $ref: '#/channels/commandAcks'
+  sendNotification:
+    action: send
+    channel:
+      $ref: '#/channels/notifications'
+  receivePing:
+    action: receive
+    channel:
+      $ref: '#/channels/pings'

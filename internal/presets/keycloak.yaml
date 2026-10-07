@@ -72,11 +72,11 @@ protocols:
                   "kty": "RSA",
                   "alg": "RS256",
                   "use": "sig",
-                  "n": "mockly-public-key-modulus-placeholder",
+                  "n": "9JqJIxIz7YV_4kBtCNNuLWJw1SNeiv_7THIcYAXAuOWDBhBp0fh5br3xSysTqkdwGfW4gOngXgawaAuTdlHWxfTxIAAVWKSx3GfwYAL4PsNNY9xkl5RJS1f8A3qkCLCsc6MCTyBpL4s-Pc9JjBFfYTaAg-OntmTOEb_g-YtORFca4RK8gZvg5bgzCcUdDo2oflbT_9leg1n8hC0sORNbYUvZU0q-YffSAnUDFs1l62PR6V467zdnFtLmAudM2F16AeFa5hqaMFsQagDprfjNeLGmCkZ8vgOSMhRKlqi1_FEJRIYy3baG6Zi1uDMTMWYB0MB_21aJHZbAFrqX4BLm8w",
                   "e": "AQAB",
-                  "x5c": ["mockly-x509-certificate-placeholder"],
-                  "x5t": "mockly-thumbprint",
-                  "x5t#S256": "mockly-thumbprint-s256"
+                  "x5c": ["MIIDITCCAgmgAwIBAgIUSENA5FYX7LMECIvd5AI8u9xN/bMwDQYJKoZIhvcNAQELBQAwHzEdMBsGA1UEAwwUbW9ja2x5IHJlYWxtIG15cmVhbG0wIBcNMjYxMDA3MDkxNzAwWhgPMjEyNjA5MTMwOTE3MDBaMB8xHTAbBgNVBAMMFG1vY2tseSByZWFsbSBteXJlYWxtMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9JqJIxIz7YV/4kBtCNNuLWJw1SNeiv/7THIcYAXAuOWDBhBp0fh5br3xSysTqkdwGfW4gOngXgawaAuTdlHWxfTxIAAVWKSx3GfwYAL4PsNNY9xkl5RJS1f8A3qkCLCsc6MCTyBpL4s+Pc9JjBFfYTaAg+OntmTOEb/g+YtORFca4RK8gZvg5bgzCcUdDo2oflbT/9leg1n8hC0sORNbYUvZU0q+YffSAnUDFs1l62PR6V467zdnFtLmAudM2F16AeFa5hqaMFsQagDprfjNeLGmCkZ8vgOSMhRKlqi1/FEJRIYy3baG6Zi1uDMTMWYB0MB/21aJHZbAFrqX4BLm8wIDAQABo1MwUTAdBgNVHQ4EFgQUiM3kL8OnnsCQbDQdiGavtoG3kCUwHwYDVR0jBBgwFoAUiM3kL8OnnsCQbDQdiGavtoG3kCUwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAcAbvbR5hkb8C9RsTXGZkzd9tm9pcqmSoMdiY+A9wQ6PA0r68vGrvFSYpTLxHWR1zoTKex4EDlBd9XsmgfJQG2wy1hKZVNW1QC/aJ+sfhkjLQIaIN7xgyXKj1MFSMopSlMm6YT+RRTiTaxAQKZHm1YLoePY2+7ap56GiVlwlbCo3QjiDzVjjr+mH2cxW7lpWXeadIjySaL8ZslD5VyeOeHE8RFz+7afCqiEFd7ud7S0NZOYJV0dKrCaJnDwgSguIfYSulG43joYhkZdoZAc6nVO90Smcdmh/A6miSBssyZJ2DW/rh3TbhULYaxvOipu22fn5clm3CE7jJyV7WZBQ/vA=="],
+                  "x5t": "QmZoG0-aroHmFy2ggp-i9ZJEsLY",
+                  "x5t#S256": "xXKBJBFWwPmsLwHHdDcqZX3UjTcSNmPoDju5gXJVxNY"
                 }
               ]
             }
@@ -92,10 +92,11 @@ protocols:
             Content-Type: application/json
           body: |
             {
-              "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJtb2NrbHkta2V5LTEifQ.eyJzdWIiOiJ1c2VyLTEyMzQ1NiIsImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA4MC9yZWFsbXMvbXlyZWFsbSIsImF1ZCI6WyJteS1hcHAiLCJhY2NvdW50Il0sImV4cCI6OTk5OTk5OTk5OSwiaWF0IjoxNzAwMDAwMDAwLCJqdGkiOiJtb2NrLWp0aS0wMDEiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJteS1hcHAiLCJzZXNzaW9uX3N0YXRlIjoibW9jay1zZXNzaW9uLTAwMSIsImFjciI6IjEiLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsib2ZmbGluZV9hY2Nlc3MiLCJ1bWFfYXV0aG9yaXphdGlvbiIsImRlZmF1bHQtcm9sZXMtbXlyZWFsbSIsInVzZXIiXX0sInNjb3BlIjoib3BlbmlkIGVtYWlsIHByb2ZpbGUiLCJzaWQiOiJtb2NrLXNlc3Npb24tMDAxIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsIm5hbWUiOiJBbGljZSBFeGFtcGxlIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiYWxpY2UiLCJnaXZlbl9uYW1lIjoiQWxpY2UiLCJmYW1pbHlfbmFtZSI6IkV4YW1wbGUiLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIn0.mock-signature",
+              "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJtb2NrbHkta2V5LTEifQ.eyJzdWIiOiJ1c2VyLTEyMzQ1NiIsImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA4MC9yZWFsbXMvbXlyZWFsbSIsImF1ZCI6WyJteS1hcHAiLCJhY2NvdW50Il0sImV4cCI6OTk5OTk5OTk5OSwiaWF0IjoxNzAwMDAwMDAwLCJqdGkiOiJtb2NrLWp0aS0wMDEiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJteS1hcHAiLCJzZXNzaW9uX3N0YXRlIjoibW9jay1zZXNzaW9uLTAwMSIsImFjciI6IjEiLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsib2ZmbGluZV9hY2Nlc3MiLCJ1bWFfYXV0aG9yaXphdGlvbiIsImRlZmF1bHQtcm9sZXMtbXlyZWFsbSIsInVzZXIiXX0sInNjb3BlIjoib3BlbmlkIGVtYWlsIHByb2ZpbGUiLCJzaWQiOiJtb2NrLXNlc3Npb24tMDAxIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsIm5hbWUiOiJBbGljZSBFeGFtcGxlIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiYWxpY2UiLCJnaXZlbl9uYW1lIjoiQWxpY2UiLCJmYW1pbHlfbmFtZSI6IkV4YW1wbGUiLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIn0.pUwTZ6NHb95px1lNsm0604RJFMcZgOIQ9Hs4f66oaWegRjt0krr-yM4HG8Rb0KfevBlDxnxZ8pkonjZwNLuIW6RZx4-1ywoNv9k1zkwhkCK9uXxw3UFNtkS2WYnqUFQ8c7dR5MrV_MLqbwrI7px9eQouAhGZc2yVHRUwvqIr0aGg3KXkWtbkdvzC_YATvYFW6MXijRdQ7iWegBTH7xqVeZ56U1C_-LjJWt7NrtCz1jwlDKCDJL4gbey96JZCMi0A49UE9M2DbIuk6q9VTqK_AGQOctVeCjmezxCL222YnoB_2r_t8-4YCipo_jIg97v4X0V1FCns8rDn2ddSxROkLg",
               "expires_in": 300,
               "refresh_expires_in": 1800,
               "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJtb2NrbHktcmVmcmVzaC1rZXkifQ.eyJzdWIiOiJ1c2VyLTEyMzQ1NiIsInNpZCI6Im1vY2stc2Vzc2lvbi0wMDEiLCJ0eXAiOiJSZWZyZXNoIn0.mock-refresh-signature",
+              "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Im1vY2tseS1rZXktMSJ9.eyJleHAiOjk5OTk5OTk5OTksImlhdCI6MTcwMDAwMDAwMCwiYXV0aF90aW1lIjoxNzAwMDAwMDAwLCJqdGkiOiJtb2NrLWp0aS1pZC0wMDEiLCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjgwODAvcmVhbG1zL215cmVhbG0iLCJhdWQiOiJteS1hcHAiLCJzdWIiOiJ1c2VyLTEyMzQ1NiIsInR5cCI6IklEIiwiYXpwIjoibXktYXBwIiwic2Vzc2lvbl9zdGF0ZSI6Im1vY2stc2Vzc2lvbi0wMDEiLCJzaWQiOiJtb2NrLXNlc3Npb24tMDAxIiwiYWNyIjoiMSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWxpY2UgRXhhbXBsZSIsInByZWZlcnJlZF91c2VybmFtZSI6ImFsaWNlIiwiZ2l2ZW5fbmFtZSI6IkFsaWNlIiwiZmFtaWx5X25hbWUiOiJFeGFtcGxlIiwiZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSJ9.8h65saN_4D161gU9qFwj8Pf326C4qTqoofiYL53_dE105gJLdSZRdiGnWLdNmFI-l69iMkpeE9OFIo22ktQdDTf2KzqbhOXGO3IygYEketRIy3ykwxXqH-whyQJ-uvFInzAWwPmBY-Gu660sUqVnDpfxOghEF76qVM8cJGTg_e56MM8lVBRHquGfXoBsTrsvtNN1JVVBWEWrx-sMdyvOAaP0H6fSqNfN6xfKTbsVqywRZb4XZ7ASMrM6rJxIq2mNgVyURlZmdjOKBagW88KoSocre1W8q5ZAqhRuLyLLcxZ_mxHbO9SKIMb1v2ojOmYUwVYRwyaI4RMKHV5_x6zClA",
               "token_type": "Bearer",
               "not-before-policy": 0,
               "session_state": "mock-session-001",
@@ -194,7 +195,7 @@ protocols:
           body: |
             {
               "realm": "myrealm",
-              "public_key": "mockly-public-key-placeholder",
+              "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9JqJIxIz7YV/4kBtCNNuLWJw1SNeiv/7THIcYAXAuOWDBhBp0fh5br3xSysTqkdwGfW4gOngXgawaAuTdlHWxfTxIAAVWKSx3GfwYAL4PsNNY9xkl5RJS1f8A3qkCLCsc6MCTyBpL4s+Pc9JjBFfYTaAg+OntmTOEb/g+YtORFca4RK8gZvg5bgzCcUdDo2oflbT/9leg1n8hC0sORNbYUvZU0q+YffSAnUDFs1l62PR6V467zdnFtLmAudM2F16AeFa5hqaMFsQagDprfjNeLGmCkZ8vgOSMhRKlqi1/FEJRIYy3baG6Zi1uDMTMWYB0MB/21aJHZbAFrqX4BLm8wIDAQAB",
               "token-service": "http://localhost:8080/realms/myrealm/protocol/openid-connect",
               "account-service": "http://localhost:8080/realms/myrealm/account",
               "tokens-not-before": 0

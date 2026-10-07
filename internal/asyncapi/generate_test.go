@@ -120,6 +120,43 @@ func TestGenerate_AmbiguousMultiServerIsSkipped(t *testing.T) {
 	}
 }
 
+func TestGenerate_DuplicateWebSocketSendWarnsAndKeepsLastPayload(t *testing.T) {
+	res, err := asyncapi.Generate("testdata/ws-duplicate-send.yaml")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if len(res.WebSocket) != 1 {
+		t.Fatalf("WebSocket mocks = %d, want 1 (merged by path)", len(res.WebSocket))
+	}
+	ws := res.WebSocket[0]
+	if ws.OnConnect == nil || ws.OnConnect.Send == "" {
+		t.Fatal("expected a merged on_connect push")
+	}
+
+	foundWarning := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "on_connect push per path") {
+			foundWarning = true
+		}
+	}
+	if !foundWarning {
+		t.Errorf("warnings = %v, want one flagging the dropped duplicate on_connect payload", res.Warnings)
+	}
+}
+
+func TestGenerate_UnquotedNumericVersionFieldIsCoerced(t *testing.T) {
+	// YAML parses an unquoted "asyncapi: 2.6" as a float64, not a string;
+	// Generate must still recognise it as AsyncAPI 2.x rather than
+	// mistaking it for a missing version field.
+	res, err := asyncapi.Generate("testdata/float-version.yaml")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if len(res.Kafka) != 1 {
+		t.Fatalf("Kafka mocks = %d, want 1 (got %+v, warnings=%v)", len(res.Kafka), res.Kafka, res.Warnings)
+	}
+}
+
 func TestGenerate_UnsupportedVersion(t *testing.T) {
 	_, err := asyncapi.Generate("testdata/unsupported-version.yaml")
 	if err == nil {

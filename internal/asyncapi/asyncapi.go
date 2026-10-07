@@ -58,10 +58,16 @@ func Generate(specPath string) (*Result, error) {
 		return nil, err
 	}
 
-	verRaw, _ := doc["asyncapi"].(string)
-	if verRaw == "" {
+	verField, hasVer := doc["asyncapi"]
+	if !hasVer || verField == nil {
 		return nil, fmt.Errorf("%s: not an AsyncAPI document (missing top-level \"asyncapi\" version field)", specPath)
 	}
+	// YAML parses an unquoted "2.6"/"3.0" as a float and a bare "2" as an
+	// int, not a string, so coerce rather than requiring a string type
+	// assertion to succeed — a malformed-but-present version field should
+	// get a clear "unsupported version" error, not be mistaken for a
+	// missing field.
+	verRaw := fmt.Sprintf("%v", verField)
 	major := strings.SplitN(verRaw, ".", 2)[0]
 
 	var ops []operation
@@ -89,8 +95,7 @@ func IsAsyncAPI(specPath string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	_, ok := doc["asyncapi"]
-	return ok, nil
+	return doc["asyncapi"] != nil, nil
 }
 
 func loadDoc(specPath string) (map[string]any, error) {

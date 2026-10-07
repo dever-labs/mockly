@@ -90,6 +90,11 @@ func buildMocks(ops []operation) *Result {
 				}
 				mock.OnMessage = append(mock.OnMessage, rule)
 			} else {
+				if mock.OnConnect != nil {
+					res.Warnings = append(res.Warnings, fmt.Sprintf(
+						"%s: another 'send'/'publish' operation already targets WebSocket path %q; only one on_connect push per path is supported, this operation's payload is discarded",
+						op.ID, path))
+				}
 				mock.OnConnect = &config.WebSocketAction{Send: encodeJSON(op.Payload)}
 			}
 

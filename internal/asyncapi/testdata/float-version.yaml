@@ -1,0 +1,19 @@
+asyncapi: 2.6
+info:
+  title: Unquoted numeric version field (YAML parses this as a float, not a string)
+  version: 1.0.0
+servers:
+  broker:
+    url: kafka.example.com:9092
+    protocol: kafka
+channels:
+  events:
+    publish:
+      operationId: event
+      message:
+        payload:
+          type: object
+          properties:
+            tag:
+              type: string
+              example: ok

@@ -36,8 +36,8 @@ clean:
 test:
 	go test ./internal/... -v -race -coverprofile=coverage.txt
 
-## test-e2e: Run end-to-end tests (builds the UI + binary first)
-test-e2e: build
+## test-e2e: Run end-to-end tests (builds the binary first)
+test-e2e: build-go
 	go test -tags e2e ./tests/e2e/... -v -timeout 120s
 
 ## lint: Run golangci-lint

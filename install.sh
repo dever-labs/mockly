@@ -56,10 +56,39 @@ fi
 # ── Download ──────────────────────────────────────────────────────────────────
 BINARY_NAME="mockly-${OS}-${ARCH}"
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY_NAME}"
+CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums.txt"
 TMP_FILE=$(mktemp)
+TMP_CHECKSUMS=$(mktemp)
+trap 'rm -f "$TMP_FILE" "$TMP_CHECKSUMS"' EXIT
 
 echo "Installing mockly ${VERSION} (${OS}/${ARCH})..."
 curl -sSfL "$DOWNLOAD_URL" -o "$TMP_FILE"
+
+# ── Verify checksum ───────────────────────────────────────────────────────────
+curl -sSfL "$CHECKSUMS_URL" -o "$TMP_CHECKSUMS"
+
+EXPECTED_SHA256=$(grep " ${BINARY_NAME}\$" "$TMP_CHECKSUMS" | awk '{print $1}' || true)
+if [ -z "$EXPECTED_SHA256" ]; then
+  echo "Failed to find a checksum for ${BINARY_NAME} in ${CHECKSUMS_URL}" >&2
+  exit 1
+fi
+
+if command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL_SHA256=$(sha256sum "$TMP_FILE" | awk '{print $1}')
+elif command -v shasum >/dev/null 2>&1; then
+  ACTUAL_SHA256=$(shasum -a 256 "$TMP_FILE" | awk '{print $1}')
+else
+  echo "Neither sha256sum nor shasum is available; cannot verify the download." >&2
+  exit 1
+fi
+
+if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+  echo "Checksum mismatch for ${BINARY_NAME}!" >&2
+  echo "  expected: ${EXPECTED_SHA256}" >&2
+  echo "  actual:   ${ACTUAL_SHA256}" >&2
+  exit 1
+fi
+echo "Checksum verified."
 
 # ── Install ───────────────────────────────────────────────────────────────────
 chmod +x "$TMP_FILE"

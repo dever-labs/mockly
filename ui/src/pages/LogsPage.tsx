@@ -25,6 +25,14 @@ export function LogsPage() {
   const [live, setLive] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  // Sync local state from the query result once it loads. We intentionally
+  // keep this as an effect rather than the "sync during render" pattern:
+  // `initial` defaults to a brand new `[]` on every render while the query
+  // is still pending (data === undefined), so comparing it by reference
+  // during render would never stabilize and would trip React's "too many
+  // re-renders" loop guard as soon as anything else re-renders this
+  // component before the query resolves.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setEntries(initial) }, [initial])
 
   useEffect(() => {

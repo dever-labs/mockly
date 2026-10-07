@@ -37,7 +37,7 @@ func validateBase64Fields(cfg *Config) []error {
 
 func walkBase64Fields(v reflect.Value, fieldName, path string, errs *[]error) {
 	switch v.Kind() {
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		if v.IsNil() {
 			return
 		}
@@ -80,7 +80,7 @@ func validateDuplicateIDs(cfg *Config) []error {
 	for i := 0; i < protocols.NumField(); i++ {
 		protoName := protocols.Type().Field(i).Name
 		protoVal := protocols.Field(i)
-		if protoVal.Kind() == reflect.Ptr {
+		if protoVal.Kind() == reflect.Pointer {
 			if protoVal.IsNil() {
 				continue
 			}
@@ -126,7 +126,7 @@ func validateRegexes(cfg *Config) []error {
 
 func walkRegexFields(v reflect.Value, fieldName, path string, errs *[]error) {
 	switch v.Kind() {
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		if v.IsNil() {
 			return
 		}

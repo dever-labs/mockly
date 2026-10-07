@@ -101,7 +101,7 @@ func sendProduce(t *testing.T, addr string) int16 {
 		t.Fatalf("dial Kafka: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	if _, err := conn.Write(buildProduceRequest("test-topic", "k", "v")); err != nil {
 		t.Fatalf("write Kafka produce request: %v", err)
 	}

@@ -294,7 +294,10 @@ func (s *Server) buildUsers() []gosnmp.UsmSecurityParameters {
 			PrivacyPassphrase:        u.PrivPassphrase,
 		}
 		GoSNMPServer.GenKeys(&usp)
-		users = append(users, usp)
+		// usp is a freshly constructed value that has never been locked, so its
+		// embedded (unexported) sync.Mutex is still at its zero value here —
+		// copying it via append is safe despite the govet copylocks warning.
+		users = append(users, usp) //nolint:govet // see comment above
 	}
 	return users
 }

@@ -196,7 +196,7 @@ function MockForm({ value, onChange, onSave, onCancel }: FormProps) {
             value={value.request.method}
             onChange={(e) => setReq('method', e.target.value)}
           >
-            {['GET','POST','PUT','PATCH','DELETE','OPTIONS','HEAD'].map((m) => (
+            {METHODS.map((m) => (
               <option key={m}>{m}</option>
             ))}
           </select>
@@ -251,5 +251,3 @@ function MockForm({ value, onChange, onSave, onCancel }: FormProps) {
     </div>
   )
 }
-
-export { METHODS }

@@ -1276,7 +1276,10 @@ func TestHTTPServer_HTTPFault_CustomStatus(t *testing.T) {
 	sc := scenarios.New(nil)
 	base := startTestServer(t, mocks, sc)
 	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{Status: http.StatusTeapot, ErrorRate: 0}})
-	resp, _ := http.Get(base + "/ok")
+	resp, err := http.Get(base + "/ok")
+	if err != nil {
+		t.Fatalf("get /ok: %v", err)
+	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusTeapot {
 		t.Fatalf("HTTP fault should override to 418, got %d", resp.StatusCode)
@@ -1332,7 +1335,10 @@ func TestHTTPServer_GlobalFault_Headers(t *testing.T) {
 		Status:  http.StatusTooManyRequests,
 		Headers: map[string]string{"Retry-After": "60"},
 	}})
-	resp, _ := http.Get(base + "/ok")
+	resp, err := http.Get(base + "/ok")
+	if err != nil {
+		t.Fatalf("get /ok: %v", err)
+	}
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusTooManyRequests {
@@ -1394,7 +1400,10 @@ func TestHTTPServer_PerMockFault_Headers(t *testing.T) {
 	sc := scenarios.New(nil)
 	base := startTestServer(t, mocks, sc)
 
-	resp, _ := http.Get(base + "/api/resource")
+	resp, err := http.Get(base + "/api/resource")
+	if err != nil {
+		t.Fatalf("get /api/resource: %v", err)
+	}
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusTooManyRequests {
@@ -1727,7 +1736,7 @@ func TestHTTPServer_BearerAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Errorf("expected 200 with valid token, got %d", resp.StatusCode)
 	}
@@ -1739,7 +1748,7 @@ func TestHTTPServer_BearerAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 401 {
 		t.Errorf("expected 401 with wrong token, got %d", resp2.StatusCode)
 	}
@@ -1749,7 +1758,7 @@ func TestHTTPServer_BearerAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	resp3.Body.Close()
+	_ = resp3.Body.Close()
 	if resp3.StatusCode != 401 {
 		t.Errorf("expected 401 with no token, got %d", resp3.StatusCode)
 	}
@@ -1782,7 +1791,7 @@ func TestHTTPServer_BasicAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Errorf("expected 200 with valid basic auth, got %d", resp.StatusCode)
 	}
@@ -1794,7 +1803,7 @@ func TestHTTPServer_BasicAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 401 {
 		t.Errorf("expected 401 with wrong password, got %d", resp2.StatusCode)
 	}
@@ -1827,7 +1836,7 @@ func TestHTTPServer_APIKey_Header(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Errorf("expected 200 with valid API key, got %d", resp.StatusCode)
 	}
@@ -1837,7 +1846,7 @@ func TestHTTPServer_APIKey_Header(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 401 {
 		t.Errorf("expected 401 without API key, got %d", resp2.StatusCode)
 	}
@@ -1866,7 +1875,7 @@ func TestHTTPServer_NTLMHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatalf("step1 request failed: %v", err)
 	}
-	resp1.Body.Close()
+	_ = resp1.Body.Close()
 	if resp1.StatusCode != 401 {
 		t.Fatalf("step1: expected 401, got %d", resp1.StatusCode)
 	}
@@ -1884,7 +1893,7 @@ func TestHTTPServer_NTLMHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatalf("step2 request failed: %v", err)
 	}
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 401 {
 		t.Fatalf("step2: expected 401, got %d", resp2.StatusCode)
 	}
@@ -1901,7 +1910,7 @@ func TestHTTPServer_NTLMHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatalf("step3 request failed: %v", err)
 	}
-	resp3.Body.Close()
+	_ = resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Fatalf("step3: expected 200, got %d", resp3.StatusCode)
 	}
@@ -1963,7 +1972,7 @@ func TestHTTPServer_NTLMDoesNotHijackBearerRequests(t *testing.T) {
 		t.Fatalf("request failed: %v", err)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Errorf("expected 200 for bearer request, got %d (body: %s)", resp.StatusCode, body)
 	}

@@ -52,7 +52,7 @@ func sendSIP(t *testing.T, addr string) string {
 		t.Fatalf("dial SIP: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(time.Second))
+	_ = conn.SetDeadline(time.Now().Add(time.Second))
 	if _, err := conn.Write([]byte(sipInvite())); err != nil {
 		t.Fatalf("write SIP INVITE: %v", err)
 	}

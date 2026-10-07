@@ -511,7 +511,10 @@ func TestAPI_SNMP_MockCRUD(t *testing.T) {
 	}
 
 	// List — one mock now.
-	resp3, _ := http.Get(base + "/api/mocks/snmp")
+	resp3, err := http.Get(base + "/api/mocks/snmp")
+	if err != nil {
+		t.Fatalf("list snmp mocks: %v", err)
+	}
 	defer resp3.Body.Close() //nolint:errcheck
 	var listed []config.SNMPMock
 	mustDecodeJSON(t, resp3.Body, &listed)
@@ -591,7 +594,10 @@ func TestAPI_SNMP_TrapsCRUD(t *testing.T) {
 	}
 
 	// List — one trap now.
-	resp3, _ := http.Get(base + "/api/snmp/traps")
+	resp3, err := http.Get(base + "/api/snmp/traps")
+	if err != nil {
+		t.Fatalf("list snmp traps: %v", err)
+	}
 	defer resp3.Body.Close() //nolint:errcheck
 	var listed []config.SNMPTrap
 	mustDecodeJSON(t, resp3.Body, &listed)

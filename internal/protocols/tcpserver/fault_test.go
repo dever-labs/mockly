@@ -56,7 +56,7 @@ func TestTCPServer_GlobalFault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial faulted server: %v", err)
 	}
-	conn.SetDeadline(time.Now().Add(time.Second))
+	_ = conn.SetDeadline(time.Now().Add(time.Second))
 	_, err = conn.Write([]byte("PING"))
 	if err != nil {
 		t.Fatalf("write faulted request: %v", err)
@@ -83,7 +83,7 @@ func TestTCPServer_GlobalFault(t *testing.T) {
 		t.Fatalf("dial normal server: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(time.Second))
+	_ = conn.SetDeadline(time.Now().Add(time.Second))
 	if _, err := conn.Write([]byte("PING")); err != nil {
 		t.Fatalf("write normal request: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestTCPServer_GlobalFault_Delay(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 
 	t0 := time.Now()
 	if _, err := conn.Write([]byte("PING")); err != nil {
@@ -150,7 +150,7 @@ func TestTCPServer_TCPFault_ResponseBeforeClose(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(time.Second))
+	_ = conn.SetDeadline(time.Now().Add(time.Second))
 	if _, err := conn.Write([]byte("PING")); err != nil {
 		t.Fatalf("write: %v", err)
 	}

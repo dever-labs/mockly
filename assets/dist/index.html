@@ -1,0 +1,9 @@
+<!doctype html>
+<!--
+  Placeholder so `//go:embed dist` in assets/assets.go has at least one
+  file to embed (Go skips dot-prefixed files by default, so an empty
+  .gitkeep is not sufficient). This file is always overwritten by the
+  real built UI (`npm run build` / the `ui` CI job's artifact) before
+  the Go binary is actually built and shipped.
+-->
+<html><head><title>mockly</title></head><body>UI not built — run `make build-ui`.</body></html>

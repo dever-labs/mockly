@@ -66,7 +66,7 @@ func TestGRPCServer_GlobalFault(t *testing.T) {
 	}, state.New(), sc, logger.New(100))
 	startServer(t, srv)
 
-	conn, err := grpc.Dial(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("dial gRPC: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestGRPCServer_GRPCFault_NotFound(t *testing.T) {
 	srv := grpcserver.New(&config.GRPCConfig{Enabled: true, Port: port}, state.New(), sc, logger.New(100))
 	startServer(t, srv)
 
-	conn, err := grpc.Dial(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("dial gRPC: %v", err)
 	}

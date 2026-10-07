@@ -50,6 +50,7 @@
 | **Log filtering** | Filter logs and log counts by matched mock ID via `/api/logs` and `/api/logs/count` |
 | **PATCH mocks** | Change only specific response fields at runtime without replacing the whole mock |
 | **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid, Anthropic, Resend, PagerDuty, AWS S3, NTLM, Nets/Nexi |
+| **OpenAPI mock generation** | `mockly generate openapi <spec>` turns an OpenAPI 3.x document into a ready-to-run config, one mock per operation |
 | **Web UI** | Served from the binary itself — no separate install |
 | **Management API** | 60+ REST endpoints covering all protocols, scenarios, fault, state, logs, webhooks, and call counts |
 | **Live request log** | SSE-streamed in real time to the UI |
@@ -1293,6 +1294,38 @@ Your test:
 // call the verification API to confirm your app called the right endpoints
 ```
 
+### Generating mocks from an OpenAPI spec
+
+If the dependency already publishes an OpenAPI 3.x document, skip hand-writing
+the happy-path mocks and generate them instead:
+
+```bash
+mockly generate openapi api.yaml -o mockly.yaml
+mockly start -c mockly.yaml
+```
+
+For every operation (path + method) in the spec, this picks a representative
+response (preferring `200`/`201`/`202`/`204`, then any other `2xx`) and builds
+its body from:
+
+1. the response's `example` or `examples`, if the spec defines one, or
+2. a value synthesised from the response's JSON schema — objects and arrays
+   are built recursively, `enum`s use their first value, and strings use a
+   format-aware placeholder (`date-time`, `date`, `email`, `uuid`, `uri`,
+   `byte` all get a sensible fake value instead of the literal `"string"`).
+
+Path templates carry over as-is: an operation on `/pets/{petId}` becomes a
+mock with `path: /pets/{petId}`, which Mockly already matches and captures
+into `{{.request.params.petId}}` for response templates.
+
+Operations Mockly couldn't derive a usable response for (no response
+defined in the spec, or a binary content-type with no example) are skipped
+with a warning printed to stderr — generation still succeeds for the rest.
+
+The generated file is a complete, runnable config (management API/UI ports
+included), not a fragment — review it, add scenarios/faults/state as
+needed, and commit it like any other Mockly config.
+
 ### Call verification
 
 Check how many times your app hit a mock — without log scraping:
@@ -1602,6 +1635,7 @@ mockly start --config keycloak.yaml
 mockly start       [--config <file>] [--ui-port <n>] [--api-port <n>]
 mockly apply       --config <file>
 mockly config      validate [file]
+mockly generate    openapi <spec-file> [-o <file>] [--port <n>]
 mockly list
 mockly add http    --method GET --path /foo --status 200 --body '{"ok":true}'
 mockly delete      <mock-id>

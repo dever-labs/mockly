@@ -51,7 +51,7 @@
 | **Log filtering** | Filter logs and log counts by matched mock ID via `/api/logs` and `/api/logs/count` |
 | **PATCH mocks** | Change only specific response fields at runtime without replacing the whole mock |
 | **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid, Anthropic, Resend, PagerDuty, AWS S3, NTLM, Nets/Nexi |
-| **OpenAPI mock generation** | `mockly generate <spec>` turns an OpenAPI 3.x or AsyncAPI 2.x/3.x document into a ready-to-run config, auto-detecting which it is |
+| **Spec-driven mock generation** | `mockly generate <spec>` turns an OpenAPI 3.x document, an AsyncAPI 2.x/3.x document, or a Protobuf (`.proto`) service definition into a ready-to-run config, auto-detecting which it is |
 | **Web UI** | Served from the binary itself — no separate install |
 | **Management API** | 60+ REST endpoints covering all protocols, scenarios, fault, state, logs, webhooks, and call counts |
 | **Live request log** | SSE-streamed in real time to the UI |
@@ -1295,13 +1295,14 @@ Your test:
 // call the verification API to confirm your app called the right endpoints
 ```
 
-### Generating mocks from an OpenAPI or AsyncAPI spec
+### Generating mocks from an OpenAPI, AsyncAPI, or Protobuf spec
 
-If the dependency already publishes an OpenAPI 3.x or AsyncAPI 2.x/3.x
-document, skip hand-writing the happy-path mocks and generate them instead.
-`mockly generate` auto-detects which kind of spec it's looking at (from the
-file's top-level `openapi:`/`asyncapi:` field), so the same command works
-for both:
+If the dependency already publishes an OpenAPI 3.x document, an AsyncAPI
+2.x/3.x document, or a Protobuf (`.proto`) service definition, skip
+hand-writing the happy-path mocks and generate them instead. `mockly
+generate` auto-detects which kind of spec it's looking at (from the file's
+top-level `openapi:`/`asyncapi:` field, or a `.proto` extension / `syntax =
+"proto2|3";` declaration), so the same command works for all three:
 
 ```bash
 mockly generate api.yaml -o mockly.yaml
@@ -1347,6 +1348,28 @@ Not every AsyncAPI direction has a Mockly equivalent:
 
 Skipped operations print a warning to stderr but don't fail generation, as
 long as at least one mock could be produced.
+
+**Protobuf** → for every unary RPC method in the spec's service(s), this
+builds a gRPC mock whose response body is synthesised from the method's
+output message type: scalar fields get a type-appropriate placeholder
+(64-bit integer kinds become JSON strings, per the standard proto3 JSON
+mapping), `repeated`/`map` fields get a single representative entry, nested
+messages recurse, and the handful of `google.protobuf.*` well-known types
+(`Timestamp`, `Duration`, `Empty`, the wrapper types, ...) get their
+JSON-mapped placeholder directly rather than being expanded field-by-field.
+Only one member of each real `oneof` is included (proto3 `optional` fields
+use a synthetic oneof under the hood and are unaffected).
+
+`import`s are resolved only from the spec file's own directory (no absolute
+paths, no `../` escaping it) plus the standard `google/protobuf/*.proto`
+well-known types — anything else is a hard error, not a skip, since an
+unresolvable type can't be faithfully represented at all. Streaming methods
+(client-streaming, server-streaming, bidirectional) have no Mockly
+equivalent — Mockly's gRPC mock reads at most one request and writes at
+most one response per call — and are skipped with a warning, as is any RPC
+method whose name collides with one already seen in a different service in
+the same file (Mockly matches gRPC calls by method name alone, not service,
+so a later duplicate would just shadow the first and never be reachable).
 
 The generated file is a complete, runnable config (management API/UI ports
 included), not a fragment — review it, add scenarios/faults/state as
@@ -1700,7 +1723,7 @@ mockly start --config keycloak.yaml
 mockly start       [--config <file>] [--ui-port <n>] [--api-port <n>]
 mockly apply       --config <file>
 mockly config      validate [file]
-mockly generate    openapi <spec-file> [-o <file>] [--port <n>]
+mockly generate    <spec-file> [-o <file>] [--http-port <n>]
 mockly list
 mockly add http    --method GET --path /foo --status 200 --body '{"ok":true}'
 mockly delete      <mock-id>

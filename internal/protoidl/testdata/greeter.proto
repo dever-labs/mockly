@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package greeter.v1;
+
+import "google/protobuf/timestamp.proto";
+import "common/address.proto";
+
+// Greeter exposes a couple of unary RPCs plus one streaming RPC that should
+// be skipped by the generator.
+service Greeter {
+  rpc SayHello (HelloRequest) returns (HelloReply);
+  rpc ListHellos (HelloRequest) returns (stream HelloReply);
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+  bool ok = 2;
+  int64 count = 3;
+  double score = 4;
+  repeated string tags = 5;
+  map<string, int32> attrs = 6;
+  Status status = 7;
+  google.protobuf.Timestamp created_at = 8;
+  common.Address address = 9;
+
+  oneof contact {
+    string email = 10;
+    string phone = 11;
+  }
+
+  optional string nickname = 12;
+}
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_ACTIVE = 1;
+}

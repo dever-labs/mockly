@@ -36,9 +36,16 @@ const (
 
 // Config is the top-level Mockly configuration.
 type Config struct {
-	Mockly    MocklyConfig    `yaml:"mockly" json:"mockly"`
-	Protocols ProtocolsConfig `yaml:"protocols" json:"protocols"`
-	Scenarios []Scenario      `yaml:"scenarios,omitempty" json:"scenarios,omitempty"`
+	// Vars declares default values for "${NAME}"/"${NAME:-default}" references
+	// used elsewhere in this file (e.g. in mock paths/bodies/headers). It lets
+	// a config be parameterized in one place instead of repeating the same
+	// literal value throughout the file. An OS environment variable of the
+	// same name, if set, always takes precedence over a Vars entry, so CI/CD
+	// can still override values without editing the file.
+	Vars      map[string]string `yaml:"vars,omitempty" json:"vars,omitempty"`
+	Mockly    MocklyConfig      `yaml:"mockly" json:"mockly"`
+	Protocols ProtocolsConfig   `yaml:"protocols" json:"protocols"`
+	Scenarios []Scenario        `yaml:"scenarios,omitempty" json:"scenarios,omitempty"`
 }
 
 type MocklyConfig struct {
@@ -1242,7 +1249,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config %q: %w", path, err)
 	}
 
-	data, err = expandEnvVars(data)
+	data, err = expandVars(data, extractVars(data))
 	if err != nil {
 		return nil, fmt.Errorf("expanding env vars in config %q: %w", path, err)
 	}
@@ -1261,23 +1268,52 @@ func Load(path string) (*Config, error) {
 // characters except "}".
 var envVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}`)
 
+// extractVars does a best-effort, preliminary parse of the raw config bytes
+// to read just the top-level "vars:" map, before "${...}" expansion and
+// before the full Config struct is unmarshalled. This lets "vars:" entries
+// be referenced anywhere else in the same file via "${NAME}"/"${NAME:-default}".
+// If the document can't be parsed at this stage, extractVars returns nil and
+// the real parse error surfaces later from the full yaml.Unmarshal in Load.
+func extractVars(data []byte) map[string]string {
+	var wrapper struct {
+		Vars map[string]string `yaml:"vars"`
+	}
+	if err := yaml.Unmarshal(data, &wrapper); err != nil {
+		return nil
+	}
+	return wrapper.Vars
+}
+
 // expandEnvVars substitutes "${VAR}"/"${VAR:-default}" references in raw
-// config bytes with the corresponding environment variable's value, before
-// the bytes are parsed as YAML. This lets a config reference a secret or
-// per-environment value (e.g. a webhook signing key) without hardcoding it
-// into a file that might be committed to source control.
-//
-// A missing, undefaulted variable ("${VAR}" with no ":-default" and no
-// matching environment variable) is a hard error — config loading fails
-// loudly rather than silently substituting an empty string, so a broken
-// reference can't go unnoticed.
+// config bytes using only OS environment variables (no "vars:" map). It
+// exists for callers/tests that only care about env-var expansion.
 func expandEnvVars(data []byte) ([]byte, error) {
+	return expandVars(data, nil)
+}
+
+// expandVars substitutes "${NAME}"/"${NAME:-default}" references in raw
+// config bytes with, in order of precedence: (1) an OS environment variable
+// of the same name, (2) an entry in the "vars" map (parsed from the config's
+// own top-level "vars:" section), (3) the inline ":-default" fallback. This
+// lets a config reference a secret or per-environment value (e.g. a webhook
+// signing key) without hardcoding it into a file that might be committed to
+// source control, and lets a config parameterize repeated values (e.g. a
+// realm name reused throughout a preset) in one place via "vars:".
+//
+// A missing, undefaulted reference ("${NAME}" with no ":-default", no
+// matching env var, and no "vars" entry) is a hard error — config loading
+// fails loudly rather than silently substituting an empty string, so a
+// broken reference can't go unnoticed.
+func expandVars(data []byte, vars map[string]string) ([]byte, error) {
 	var missing []string
 	result := envVarPattern.ReplaceAllFunc(data, func(match []byte) []byte {
 		groups := envVarPattern.FindSubmatch(match)
 		name := string(groups[1])
 		hasDefault := len(groups[2]) > 0
 		if val, ok := os.LookupEnv(name); ok {
+			return []byte(val)
+		}
+		if val, ok := vars[name]; ok {
 			return []byte(val)
 		}
 		if hasDefault {
@@ -1287,7 +1323,7 @@ func expandEnvVars(data []byte) ([]byte, error) {
 		return match
 	})
 	if len(missing) > 0 {
-		return nil, fmt.Errorf("undefined environment variable(s) referenced with no default: %s (use \"${VAR:-default}\" to provide a fallback)", strings.Join(missing, ", "))
+		return nil, fmt.Errorf("undefined variable(s) referenced with no default: %s (use \"${VAR:-default}\", or add it to the config's \"vars:\" map)", strings.Join(missing, ", "))
 	}
 	return result, nil
 }

@@ -313,14 +313,29 @@ response:
 
 ---
 
-### Environment variable substitution
+### Variables and environment substitution
 
-Config files support `${VAR}` and `${VAR:-default}` references, expanded
-against the process environment before the file is parsed as YAML. This
-keeps secrets and per-environment values (signing keys, ports, hostnames)
-out of a config file that might be committed to source control:
+Config files support `${NAME}` and `${NAME:-default}` references, expanded
+before the file is parsed as YAML. A reference is resolved in this order:
+
+1. An OS environment variable named `NAME`, if set.
+2. An entry named `NAME` in the config's own top-level `vars:` map.
+3. The inline `:-default` fallback, if present.
+4. Otherwise, config loading fails with an error listing every missing name.
+
+Environment variables keep secrets and per-environment values (signing
+keys, ports, hostnames) out of a config file that might be committed to
+source control. The `vars:` map lets a config (or a preset you're sharing)
+define its own committable defaults in one place instead of repeating the
+same literal value throughout the file — and those defaults can still be
+overridden at runtime via an OS environment variable of the same name,
+without editing the file:
 
 ```yaml
+vars:
+  realm: myrealm
+  issuer: http://localhost:8080
+
 protocols:
   http:
     enabled: true
@@ -332,13 +347,18 @@ protocols:
           status: 200
           headers:
             X-Signature: "${WEBHOOK_SIGNING_KEY}"
+      - id: realm-info
+        request: { method: GET, path: "/realms/${realm}" }
+        response: { status: 200, body: "{\"issuer\": \"${issuer}/realms/${realm}\"}" }
 ```
 
-- `${VAR}` — replaced with the environment variable's value. If `VAR` is
-  unset, config loading fails with an error listing every missing variable.
-- `${VAR:-default}` — replaced with the environment variable's value if
-  set, otherwise the literal `default` (which may be empty:
-  `${VAR:-}`).
+- `${NAME}` — replaced with the env var or `vars:` entry. If neither
+  exists, config loading fails with an error listing every missing name.
+- `${NAME:-default}` — replaced with the env var or `vars:` entry if either
+  exists, otherwise the literal `default` (which may be empty: `${NAME:-}`).
+- `vars:` entries are plain string values — they are not themselves
+  further expanded (no recursive `${...}` resolution inside a `vars:`
+  entry's value).
 
 ---
 

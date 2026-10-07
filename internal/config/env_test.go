@@ -106,6 +106,79 @@ protocols:
 	}
 }
 
+func TestLoadUsesVarsMapWhenEnvVarUnset(t *testing.T) {
+	os.Unsetenv("MOCKLY_TEST_REALM") //nolint:errcheck
+	path := writeTempConfig(t, `
+vars:
+  realm: myrealm
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+      - id: test
+        request: { method: GET, path: "/realms/${realm}" }
+        response: { status: 200, body: "${realm}" }
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Protocols.HTTP.Mocks[0].Request.Path != "/realms/myrealm" {
+		t.Fatalf("expected path /realms/myrealm, got %q", cfg.Protocols.HTTP.Mocks[0].Request.Path)
+	}
+	if cfg.Protocols.HTTP.Mocks[0].Response.Body != "myrealm" {
+		t.Fatalf("expected body %q, got %q", "myrealm", cfg.Protocols.HTTP.Mocks[0].Response.Body)
+	}
+}
+
+func TestLoadEnvVarWinsOverVarsMap(t *testing.T) {
+	t.Setenv("MOCKLY_TEST_REALM_OVERRIDE", "override-realm")
+	path := writeTempConfig(t, `
+vars:
+  MOCKLY_TEST_REALM_OVERRIDE: file-realm
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+      - id: test
+        request: { method: GET, path: /x }
+        response: { status: 200, body: "${MOCKLY_TEST_REALM_OVERRIDE}" }
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Protocols.HTTP.Mocks[0].Response.Body != "override-realm" {
+		t.Fatalf("expected the OS env var to win over vars map, got %q", cfg.Protocols.HTTP.Mocks[0].Response.Body)
+	}
+}
+
+func TestLoadVarsMapWinsOverInlineDefault(t *testing.T) {
+	// An inline ":-default" is only used when no env var AND no vars entry
+	// exists; when a vars entry is present it should win over the default.
+	path := writeTempConfig(t, `
+vars:
+  client_id: real-app
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    mocks:
+      - id: test
+        request: { method: GET, path: /x }
+        response: { status: 200, body: "${client_id:-fallback-app}" }
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Protocols.HTTP.Mocks[0].Response.Body != "real-app" {
+		t.Fatalf("expected vars entry to win over inline default, got %q", cfg.Protocols.HTTP.Mocks[0].Response.Body)
+	}
+}
+
 func TestLoadFailsWhenConfigReferencesUndefinedEnvVar(t *testing.T) {
 	os.Unsetenv("MOCKLY_TEST_REALLY_UNDEFINED") //nolint:errcheck
 	path := writeTempConfig(t, `

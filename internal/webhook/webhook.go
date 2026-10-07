@@ -139,11 +139,31 @@ func (s *Sender) SendAdHoc(wh config.Webhook) Record {
 }
 
 func (s *Sender) dispatch(protocol, mockID string, wh config.Webhook, reqCtx engine.RequestContext) Record {
+	url, err := engine.RenderErr(wh.URL, reqCtx)
+	if err != nil {
+		// The URL template failed to execute — commonly because it indexes
+		// an optional, caller-supplied field (e.g. a "webhooks" array) that
+		// wasn't present on this particular request. Attempting the call
+		// anyway would just send a broken literal-template string as the
+		// URL; skip the network call (and the configured delay) entirely
+		// and record why.
+		rec := Record{
+			ID:        xid.New().String(),
+			MockID:    mockID,
+			Protocol:  protocol,
+			Timestamp: time.Now().UTC(),
+			URL:       wh.URL,
+			Method:    wh.Method,
+			Error:     "skipped: webhook URL template failed to render: " + err.Error(),
+			Attempt:   1,
+		}
+		s.store.add(rec)
+		return rec
+	}
+
 	if wh.Delay.Duration > 0 {
 		time.Sleep(wh.Delay.Duration)
 	}
-
-	url := engine.Render(wh.URL, reqCtx)
 	method := wh.Method
 	if method == "" {
 		method = http.MethodPost

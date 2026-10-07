@@ -15,6 +15,7 @@ import (
 
 	"github.com/dever-labs/mockly/assets"
 	"github.com/dever-labs/mockly/internal/api"
+	"github.com/dever-labs/mockly/internal/asyncapi"
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/metrics"
@@ -421,59 +422,96 @@ a CI step or pre-commit hook.`,
 }
 
 // ---------------------------------------------------------------------------
-// generate openapi
+// generate
 // ---------------------------------------------------------------------------
 
 func generateCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "generate",
-		Short: "Generate a Mockly config from another source",
-	}
-	cmd.AddCommand(generateOpenAPICmd())
-	return cmd
-}
-
-func generateOpenAPICmd() *cobra.Command {
 	var out string
-	var port int
+	var httpPort int
 	cmd := &cobra.Command{
-		Use:   "openapi <spec-file>",
-		Short: "Generate a ready-to-run HTTP mock config from an OpenAPI 3.x spec",
-		Long: `Parses a local OpenAPI 3.x document (YAML or JSON) and derives one HTTP
-mock per operation: the path and method come straight from the spec, and the
-response body is taken from the operation's example/examples when present,
-or otherwise synthesised from its JSON schema (objects, arrays, enums,
-and format-aware strings like date-time/email/uuid).
+		Use:   "generate <spec-file>",
+		Short: "Generate a Mockly config from an OpenAPI or AsyncAPI spec",
+		Long: `Parses a local OpenAPI 3.x or AsyncAPI 2.x/3.x document (YAML or JSON,
+auto-detected from the file's top-level "openapi"/"asyncapi" field) and
+derives a ready-to-run Mockly config from it, so you can start mocking a
+system you only have a spec for in one step:
 
-The result is written as a complete, runnable Mockly config, so you can
-start mocking an API you only have a spec for in one step:
-
-  mockly generate openapi api.yaml -o mockly.yaml
+  mockly generate api.yaml -o mockly.yaml
   mockly start -c mockly.yaml
 
-Operations mockly couldn't derive a usable response for (no response
-defined, or a binary content-type with no example) are skipped; a warning
-is printed for each one but generation still succeeds.`,
+For an OpenAPI spec, one HTTP mock is generated per operation: the path and
+method come straight from the spec, and the response body is taken from the
+operation's example/examples when present, or otherwise synthesised from its
+JSON schema.
+
+For an AsyncAPI spec, mocks are generated per channel/operation across
+whichever of Kafka, MQTT, AMQP, NATS and WebSocket the spec's servers use.
+Not every AsyncAPI operation has a Mockly equivalent (e.g. Mockly has no
+spontaneous/scheduled publish mechanism for MQTT/AMQP/NATS yet) — those are
+skipped with a warning but generation still succeeds for the rest.
+
+Operations/channels Mockly couldn't derive a usable mock for are skipped; a
+warning is printed for each one but generation still succeeds as long as at
+least one mock could be produced.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			specPath := args[0]
-			res, err := openapi.Generate(specPath)
+
+			isAsync, err := asyncapi.IsAsyncAPI(specPath)
 			if err != nil {
 				return err
 			}
-			for _, w := range res.Warnings {
-				fmt.Fprintln(os.Stderr, "warn:", w)
-			}
-			if len(res.Mocks) == 0 {
-				return fmt.Errorf("%s: no operations could be converted into mocks", specPath)
-			}
 
 			cfg := config.Defaults()
-			cfg.Protocols.HTTP = &config.HTTPConfig{
-				Enabled: true,
-				Port:    port,
-				Mocks:   res.Mocks,
+			var generated int
+
+			if isAsync {
+				res, err := asyncapi.Generate(specPath)
+				if err != nil {
+					return err
+				}
+				for _, w := range res.Warnings {
+					fmt.Fprintln(os.Stderr, "warn:", w)
+				}
+				if res.Empty() {
+					return fmt.Errorf("%s: no operations could be converted into mocks", specPath)
+				}
+				if len(res.Kafka) > 0 {
+					cfg.Protocols.Kafka = &config.KafkaConfig{Enabled: true, Mocks: res.Kafka}
+					generated += len(res.Kafka)
+				}
+				if len(res.MQTT) > 0 {
+					cfg.Protocols.MQTT = &config.MQTTConfig{Enabled: true, Mocks: res.MQTT}
+					generated += len(res.MQTT)
+				}
+				if len(res.AMQP) > 0 {
+					cfg.Protocols.AMQP = &config.AMQPConfig{Enabled: true, Mocks: res.AMQP}
+					generated += len(res.AMQP)
+				}
+				if len(res.NATS) > 0 {
+					cfg.Protocols.NATS = &config.NATSConfig{Enabled: true, Mocks: res.NATS}
+					generated += len(res.NATS)
+				}
+				if len(res.WebSocket) > 0 {
+					cfg.Protocols.WebSocket = &config.WebSocketConfig{Enabled: true, Mocks: res.WebSocket}
+					generated += len(res.WebSocket)
+				}
+			} else {
+				res, err := openapi.Generate(specPath)
+				if err != nil {
+					return err
+				}
+				for _, w := range res.Warnings {
+					fmt.Fprintln(os.Stderr, "warn:", w)
+				}
+				if len(res.Mocks) == 0 {
+					return fmt.Errorf("%s: no operations could be converted into mocks", specPath)
+				}
+				cfg.Protocols.HTTP = &config.HTTPConfig{Enabled: true, Port: httpPort, Mocks: res.Mocks}
+				generated = len(res.Mocks)
 			}
+
+			config.ApplyDefaults(&cfg)
 
 			data, err := yaml.Marshal(cfg)
 			if err != nil {
@@ -483,13 +521,13 @@ is printed for each one but generation still succeeds.`,
 				return fmt.Errorf("writing %q: %w", out, err)
 			}
 
-			fmt.Printf("Generated %d mock(s) from %s -> %s\n", len(res.Mocks), specPath, out)
+			fmt.Printf("Generated %d mock(s) from %s -> %s\n", generated, specPath, out)
 			fmt.Printf("Run it with: mockly start -c %s\n", out)
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&out, "out", "o", "mockly.generated.yaml", "Output config file path")
-	cmd.Flags().IntVar(&port, "port", 8080, "HTTP port in the generated config")
+	cmd.Flags().IntVar(&httpPort, "http-port", 8080, "HTTP port in the generated config (OpenAPI specs only)")
 	return cmd
 }
 

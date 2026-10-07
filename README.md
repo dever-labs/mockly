@@ -51,7 +51,7 @@
 | **Log filtering** | Filter logs and log counts by matched mock ID via `/api/logs` and `/api/logs/count` |
 | **PATCH mocks** | Change only specific response fields at runtime without replacing the whole mock |
 | **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid, Anthropic, Resend, PagerDuty, AWS S3, NTLM, Nets/Nexi |
-| **OpenAPI mock generation** | `mockly generate openapi <spec>` turns an OpenAPI 3.x document into a ready-to-run config, one mock per operation |
+| **OpenAPI mock generation** | `mockly generate <spec>` turns an OpenAPI 3.x or AsyncAPI 2.x/3.x document into a ready-to-run config, auto-detecting which it is |
 | **Web UI** | Served from the binary itself — no separate install |
 | **Management API** | 60+ REST endpoints covering all protocols, scenarios, fault, state, logs, webhooks, and call counts |
 | **Live request log** | SSE-streamed in real time to the UI |
@@ -1295,19 +1295,22 @@ Your test:
 // call the verification API to confirm your app called the right endpoints
 ```
 
-### Generating mocks from an OpenAPI spec
+### Generating mocks from an OpenAPI or AsyncAPI spec
 
-If the dependency already publishes an OpenAPI 3.x document, skip hand-writing
-the happy-path mocks and generate them instead:
+If the dependency already publishes an OpenAPI 3.x or AsyncAPI 2.x/3.x
+document, skip hand-writing the happy-path mocks and generate them instead.
+`mockly generate` auto-detects which kind of spec it's looking at (from the
+file's top-level `openapi:`/`asyncapi:` field), so the same command works
+for both:
 
 ```bash
-mockly generate openapi api.yaml -o mockly.yaml
+mockly generate api.yaml -o mockly.yaml
 mockly start -c mockly.yaml
 ```
 
-For every operation (path + method) in the spec, this picks a representative
-response (preferring `200`/`201`/`202`/`204`, then any other `2xx`) and builds
-its body from:
+**OpenAPI** → for every operation (path + method) in the spec, this picks a
+representative response (preferring `200`/`201`/`202`/`204`, then any other
+`2xx`) and builds its body from:
 
 1. the response's `example` or `examples`, if the spec defines one, or
 2. a value synthesised from the response's JSON schema — objects and arrays
@@ -1322,6 +1325,28 @@ into `{{.request.params.petId}}` for response templates.
 Operations Mockly couldn't derive a usable response for (no response
 defined in the spec, or a binary content-type with no example) are skipped
 with a warning printed to stderr — generation still succeeds for the rest.
+
+**AsyncAPI** → channels/operations become Kafka, MQTT, AMQP, NATS and
+WebSocket mocks, depending on which protocol(s) the spec's `servers` use.
+Not every AsyncAPI direction has a Mockly equivalent:
+
+- **Kafka**: an operation where the application *emits* messages
+  (2.x `publish` / 3.x `action: send`) becomes a pre-seeded topic (data a
+  consumer can read immediately). The opposite direction (the app
+  *consuming* messages) has no static Mockly equivalent and is skipped.
+- **MQTT/AMQP/NATS**: an operation where the application *receives*
+  messages (2.x `subscribe` / 3.x `action: receive`) becomes a reactive
+  listener on that topic/routing-key/subject, optionally replying if the
+  operation declares a `reply` message (3.x only). The opposite direction
+  (the app spontaneously publishing) has no scheduled/spontaneous publish
+  mechanism in Mockly yet and is skipped — use the management API to
+  publish a message on demand instead.
+- **WebSocket**: a channel's `address` becomes the mock's `path`; a
+  `receive` operation becomes an `on_message` rule (replying if a `reply`
+  is declared), a `send` operation becomes an `on_connect` push.
+
+Skipped operations print a warning to stderr but don't fail generation, as
+long as at least one mock could be produced.
 
 The generated file is a complete, runnable config (management API/UI ports
 included), not a fragment — review it, add scenarios/faults/state as

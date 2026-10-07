@@ -1,6 +1,6 @@
 // Package openapi generates a starter set of HTTP mocks from an OpenAPI 3.x
-// document, so a consumer can point `mockly generate openapi` at a real
-// spec and get a runnable config instead of hand-writing every mock.
+// document, so a consumer can point `mockly generate` at a real spec and
+// get a runnable config instead of hand-writing every mock.
 //
 // For every operation (path + method) it picks a representative response
 // (preferring 2xx status codes) and derives a response body: it uses the
@@ -294,4 +294,3 @@ func exampleValue(mt *openapi3.MediaType) (any, error) {
 	}
 	return nil, nil
 }
-

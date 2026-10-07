@@ -1,0 +1,39 @@
+asyncapi: 2.6.0
+info:
+  title: Example Streaming Service (2.x)
+  version: 1.0.0
+servers:
+  production:
+    url: kafka.example.com:9092
+    protocol: kafka
+channels:
+  user/signedup:
+    publish:
+      operationId: userSignedUp
+      message:
+        payload:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+              format: email
+  user/deleted:
+    subscribe:
+      operationId: userDeleted
+      message:
+        $ref: '#/components/messages/UserDeleted'
+components:
+  messages:
+    UserDeleted:
+      payload:
+        $ref: '#/components/schemas/UserDeletedPayload'
+  schemas:
+    UserDeletedPayload:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid

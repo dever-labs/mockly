@@ -28,7 +28,7 @@ COPY --from=go-builder /mockly /usr/local/bin/mockly
 WORKDIR /config
 VOLUME ["/config"]
 
-EXPOSE 8080 9090
+EXPOSE 8080 9091
 
 ENTRYPOINT ["mockly"]
 CMD ["start", "-c", "/config/mockly.yaml"]

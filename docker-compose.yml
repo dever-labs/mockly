@@ -7,10 +7,10 @@ services:
     # build: .
     ports:
       - "8080:8080"   # HTTP mock server
-      - "9090:9090"   # Management API + Web UI
-      - "5025:5025"   # SMTP (if enabled)
+      - "9091:9091"   # Management API + Web UI
+      - "2525:2525"   # SMTP (if enabled)
       - "1883:1883"   # MQTT (if enabled)
-      - "6380:6380"   # Redis mock (if enabled)
+      - "6379:6379"   # Redis mock (if enabled)
     volumes:
       - ./mockly.yaml:/config/mockly.yaml:ro
     restart: unless-stopped

@@ -730,9 +730,9 @@ Every attempt (including retries) is recorded and available via the
 management API:
 
 ```sh
-curl http://localhost:9090/api/webhooks                 # attempt history
-curl -X DELETE http://localhost:9090/api/webhooks        # clear history
-curl -X POST http://localhost:9090/api/webhooks/send \
+curl http://localhost:9091/api/webhooks                 # attempt history
+curl -X DELETE http://localhost:9091/api/webhooks        # clear history
+curl -X POST http://localhost:9091/api/webhooks/send \
   -d '{"url":"https://example.com/hook","body":"{\"ping\":true}"}'  # send one ad hoc
 ```
 
@@ -2179,7 +2179,7 @@ steps:
     with:
       version: v0.14.0         # x-release-please-version
       config: mockly.yaml      # path to your config
-      api-port: 9090           # management API port (default)
+      api-port: 9091           # management API port (default)
 
   - name: Run tests
     run: npm test
@@ -2221,7 +2221,7 @@ integration-tests:
       variables:
         # mount config via CI artifacts or inline
   variables:
-    MOCKLY_URL: http://mockly:9090
+    MOCKLY_URL: http://mockly:9091
   script:
     - apk add --no-cache curl
     - curl "$MOCKLY_URL/api/protocols"
@@ -2242,7 +2242,7 @@ MOCKLY_VERSION=v0.14.0 # x-release-please-version
 
 # Start in background and wait for ready
 mockly start -c mockly.yaml &
-until curl -sf http://localhost:9090/api/protocols; do sleep 1; done
+until curl -sf http://localhost:9091/api/protocols; do sleep 1; done
 ```
 
 Windows (PowerShell):
@@ -2264,7 +2264,7 @@ irm https://raw.githubusercontent.com/dever-labs/mockly/main/install.ps1 | iex
 # Run with your local config
 docker run --rm \
   -v "$PWD/mockly.yaml:/config/mockly.yaml:ro" \
-  -p 8080:8080 -p 9090:9090 \
+  -p 8080:8080 -p 9091:9091 \
   ghcr.io/dever-labs/mockly:latest
 
 # Or with docker compose

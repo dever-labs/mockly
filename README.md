@@ -46,6 +46,7 @@
 | **Per-protocol fault injection** | Each protocol exposes its own native fault fields (DNS rcode, gRPC status code, Kafka error code, etc.) — activate via API or bundled inside a scenario |
 | **Per-mock fault injection** | Fault fields on individual HTTP mocks with independent delay (fixed or jittered range), status/body override, error rate, and rate limiting |
 | **Call verification** | Track how many times each mock was hit; block until an expected count is reached |
+| **Record mode (HTTP)** | Proxy unmatched requests to a real upstream, relay the real response, and capture it as a new mock for instant replay — bootstrap a mock set without hand-authoring every response |
 | **Outbound webhooks** | Any HTTP mock can fire a templated outbound callback (server-initiated notification) when matched — with delay, retries, and a searchable attempt history |
 | **Log filtering** | Filter logs and log counts by matched mock ID via `/api/logs` and `/api/logs/count` |
 | **PATCH mocks** | Change only specific response fields at runtime without replacing the whole mock |
@@ -1350,6 +1351,45 @@ long as at least one mock could be produced.
 The generated file is a complete, runnable config (management API/UI ports
 included), not a fragment — review it, add scenarios/faults/state as
 needed, and commit it like any other Mockly config.
+
+### Record mode (bootstrap mocks from a real backend)
+
+Hand-writing every mock is the biggest upfront cost of adopting a mock server. Record mode removes it: point Mockly at a real upstream, and any request that doesn't match an existing mock is transparently proxied there — the real response is both returned to the caller and saved as a new mock, so every subsequent identical request is replayed locally without hitting the upstream again.
+
+```yaml
+mockly:
+  api:
+    port: 9091
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    record:
+      enabled: true
+      target: https://api.example.com   # real upstream to proxy unmatched requests to
+      save_to: recorded-mocks.yaml      # optional: persist captured mocks for review
+    mocks: []                           # hand-written mocks still take precedence
+```
+
+```sh
+mockly start -c mockly.yaml
+
+# Run your test suite (or click around manually) against the real backend,
+# through Mockly, once — every response it returns gets captured.
+curl http://localhost:8080/v1/users/42
+
+# Recorded mocks are immediately visible like any other mock...
+curl http://localhost:9091/api/mocks/http
+
+# ...and, if save_to was set, written to disk so you can review and fold
+# them into your hand-written config:
+cat recorded-mocks.yaml
+```
+
+A few things worth knowing:
+- Hand-written mocks always take precedence — record mode only fires for requests that don't match anything already configured, so it's safe to mix recorded and hand-written mocks in the same file.
+- If the upstream is unreachable, Mockly falls back to the normal 404 "no mock matched" response rather than failing the request outright.
+- `save_to` is rewritten (not appended) after every new capture, and only ever contains recorded mocks — it won't clobber your hand-written config file.
 
 ### Call verification
 

@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strings"
@@ -21,6 +22,28 @@ func Validate(cfg *Config) []error {
 	errs = append(errs, validateDuplicateIDs(cfg)...)
 	errs = append(errs, validateRegexes(cfg)...)
 	errs = append(errs, validateBase64Fields(cfg)...)
+	errs = append(errs, validateRecordConfig(cfg)...)
+	return errs
+}
+
+// validateRecordConfig checks that HTTP record mode, when enabled, has a
+// usable Target URL — an empty or malformed target would otherwise only
+// surface as a confusing runtime error on the first unmatched request.
+func validateRecordConfig(cfg *Config) []error {
+	var errs []error
+	rec := cfg.Protocols.HTTP
+	if rec == nil || rec.Record == nil || !rec.Record.Enabled {
+		return errs
+	}
+	target := strings.TrimSpace(rec.Record.Target)
+	if target == "" {
+		errs = append(errs, fmt.Errorf("protocols.http.record: enabled but target is empty"))
+		return errs
+	}
+	u, err := url.Parse(target)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		errs = append(errs, fmt.Errorf("protocols.http.record: target %q is not a valid absolute URL", target))
+	}
 	return errs
 }
 

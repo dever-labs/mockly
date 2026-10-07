@@ -1237,6 +1237,14 @@ func defaults() Config {
 	}
 }
 
+// Defaults returns a Config pre-populated with Mockly's baseline defaults
+// (management API/UI ports) and no protocols enabled. Useful for building a
+// new config programmatically (e.g. `mockly generate`) without duplicating
+// those values.
+func Defaults() Config {
+	return defaults()
+}
+
 // Load reads and parses a YAML config file. Missing file returns defaults.
 func Load(path string) (*Config, error) {
 	cfg := defaults()

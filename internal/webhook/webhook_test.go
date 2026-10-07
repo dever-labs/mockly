@@ -3,6 +3,7 @@ package webhook
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,6 +123,33 @@ func TestSenderDispatchNetworkError(t *testing.T) {
 	rec := s.dispatch("http", "mock-3", config.Webhook{URL: "http://127.0.0.1:1"}, engine.RequestContext{})
 	if rec.Error == "" {
 		t.Error("expected an error to be recorded for an unreachable URL")
+	}
+}
+
+func TestSenderDispatchSkipsOnURLRenderFailure(t *testing.T) {
+	s := New(10)
+	wh := config.Webhook{
+		URL:        "{{ (index .request.body.webhooks 0).url }}",
+		Method:     "POST",
+		Delay:      config.Duration{Duration: time.Hour},
+		Retries:    2,
+		RetryDelay: config.Duration{Duration: time.Hour},
+	}
+	// Request body has no "webhooks" field, so the template fails to render.
+	reqCtx := engine.RequestContext{Body: `{"order":{"amount":1000}}`}
+
+	start := time.Now()
+	rec := s.dispatch("http", "mock-skip", wh, reqCtx)
+	elapsed := time.Since(start)
+
+	if elapsed > time.Second {
+		t.Errorf("dispatch took %s, want it to skip immediately without waiting for the configured delay", elapsed)
+	}
+	if rec.Error == "" || !strings.Contains(rec.Error, "skipped") {
+		t.Errorf("Error = %q, want it to explain the webhook was skipped", rec.Error)
+	}
+	if rec.StatusCode != 0 {
+		t.Errorf("StatusCode = %d, want 0 (no HTTP attempt should have been made)", rec.StatusCode)
 	}
 }
 

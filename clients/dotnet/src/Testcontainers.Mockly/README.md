@@ -1,12 +1,12 @@
 # Testcontainers.Mockly
 
-Run Mockly in Docker-backed .NET tests with [testcontainers-dotnet](https://dotnet.testcontainers.org/).
+**[Testcontainers](https://dotnet.testcontainers.org/) module for [Mockly](https://github.com/dever-labs/mockly)** — a single cross-platform binary that mocks HTTP, gRPC, GraphQL, WebSocket, Kafka, AMQP, MQTT, Redis, SMTP, and a dozen other protocols for integration tests, so you don't need a dozen Docker containers to test against a handful of external dependencies.
 
-`Testcontainers.Mockly` starts `ghcr.io/dever-labs/mockly:latest`, waits for the management API to become ready, and exposes the same mock/scenario/fault controls as the driver client.
+`Testcontainers.Mockly` starts `ghcr.io/dever-labs/mockly:latest`, waits for the management API to become ready, and exposes the same mock/scenario/fault controls as [`Mockly.Driver`](https://www.nuget.org/packages/Mockly.Driver) — but managed by Docker instead of a downloaded local binary.
 
 ## Requirements
 
-- .NET 8+
+- `net8.0`, `net9.0`, or `net10.0` (no third-party runtime dependencies beyond `Testcontainers`)
 - Docker
 
 ## Install
@@ -108,3 +108,16 @@ var container = new MocklyBuilder()
 await using var container = new MocklyBuilder().Build();
 await container.StartAsync();
 ```
+
+## Links
+
+- [Mockly server docs](https://github.com/dever-labs/mockly#readme) — full protocol list, config reference, scenarios, fault injection, CLI
+- [Mockly.Driver](https://www.nuget.org/packages/Mockly.Driver) — companion package for binary-based (non-Docker) usage
+- [Changelog](https://github.com/dever-labs/mockly/blob/main/clients/dotnet/CHANGELOG.md)
+- [Source](https://github.com/dever-labs/mockly/tree/main/clients/dotnet)
+- [Report an issue](https://github.com/dever-labs/mockly/issues)
+
+## License
+
+MIT — see [LICENSE](https://github.com/dever-labs/mockly/blob/main/clients/dotnet/LICENSE).
+

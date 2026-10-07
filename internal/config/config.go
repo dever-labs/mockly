@@ -204,7 +204,12 @@ type RateLimitFault struct {
 // drive where the callback is actually sent, without any protocol-specific
 // code in Mockly.
 type Webhook struct {
-	// URL is the callback endpoint. Supports templating.
+	// URL is the callback endpoint. Supports templating. If the template
+	// references an optional/missing request field (e.g. an array element
+	// that wasn't present on this particular request) and fails to render,
+	// the webhook is skipped entirely — no delay, no HTTP attempt, no
+	// retries — and a single record with an explanatory error is stored
+	// instead of attempting the call with a broken literal URL.
 	URL string `yaml:"url" json:"url"`
 	// Method is the HTTP method used for the callback (default: POST).
 	Method string `yaml:"method,omitempty" json:"method,omitempty"`

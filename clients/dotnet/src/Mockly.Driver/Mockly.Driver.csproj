@@ -9,12 +9,13 @@
     <PackageId>Mockly.Driver</PackageId>
     <Version>0.14.0</Version>
     <Authors>dever-labs</Authors>
-    <Description>C# client for Mockly — start/stop servers and manage HTTP mocks in tests</Description>
+    <Description>Mockly is a single binary that mocks HTTP, gRPC, Kafka, AMQP, MQTT, Redis, SMTP, and a dozen other protocols for integration tests — one process instead of a dozen Docker containers. Mockly.Driver is the C# client: it downloads the right platform binary automatically, starts/stops the server from your test process, and gives you a typed API to register mocks, inject faults, and manage scenarios.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/dever-labs/mockly/tree/main/clients/dotnet</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/dever-labs/mockly</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageTags>mock testing http integration-test mockly</PackageTags>
+    <PackageTags>mock testing http integration-test mockly protocol-mocking grpc kafka</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
@@ -25,6 +26,7 @@
   <!-- Bundle the MSBuild targets file — NuGet auto-applies it to consuming projects -->
   <ItemGroup>
     <None Include="build\Mockly.Driver.targets" Pack="true" PackagePath="build\"/>
+    <None Include="..\..\README.md" Pack="true" PackagePath="README.md"/>
   </ItemGroup>
 
   <!-- Bundle platform-native binaries — populated by CI before pack, ignored locally -->

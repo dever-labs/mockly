@@ -21,11 +21,8 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/schemaexample"
 )
-
-// maxSchemaDepth bounds recursive example generation so self-referencing or
-// deeply nested schemas can't cause runaway recursion.
-const maxSchemaDepth = 8
 
 // httpMethods are the operations recognised on a PathItem, in the order
 // they're emitted for a given path (for deterministic output).
@@ -293,115 +290,8 @@ func exampleValue(mt *openapi3.MediaType) (any, error) {
 		}
 	}
 	if mt.Schema != nil {
-		return generateExample(mt.Schema, 0), nil
+		return schemaexample.Generate(mt.Schema, 0), nil
 	}
 	return nil, nil
 }
 
-// generateExample synthesises a plausible JSON value for a schema: it
-// prefers an explicit example/default/enum value, then recurses into
-// object/array shapes, and otherwise fills in a type-appropriate
-// placeholder (format-aware for strings).
-func generateExample(ref *openapi3.SchemaRef, depth int) any {
-	if ref == nil || ref.Value == nil || depth > maxSchemaDepth {
-		return nil
-	}
-	schema := ref.Value
-
-	if schema.Example != nil {
-		return schema.Example
-	}
-	if len(schema.Enum) > 0 {
-		return schema.Enum[0]
-	}
-	if schema.Default != nil {
-		return schema.Default
-	}
-
-	if len(schema.AllOf) > 0 {
-		merged := map[string]any{}
-		hasObject := false
-		var fallback any
-		for _, sub := range schema.AllOf {
-			v := generateExample(sub, depth+1)
-			if m, ok := v.(map[string]any); ok {
-				for k, val := range m {
-					merged[k] = val
-				}
-				hasObject = true
-			} else if fallback == nil {
-				fallback = v
-			}
-		}
-		if hasObject {
-			return merged
-		}
-		return fallback
-	}
-	if len(schema.OneOf) > 0 {
-		return generateExample(schema.OneOf[0], depth+1)
-	}
-	if len(schema.AnyOf) > 0 {
-		return generateExample(schema.AnyOf[0], depth+1)
-	}
-
-	typ := ""
-	if schema.Type != nil && !schema.Type.IsEmpty() {
-		typ = schema.Type.Slice()[0]
-	} else if len(schema.Properties) > 0 {
-		typ = "object"
-	} else if schema.Items != nil {
-		typ = "array"
-	}
-
-	switch typ {
-	case "object":
-		obj := map[string]any{}
-		keys := make([]string, 0, len(schema.Properties))
-		for k := range schema.Properties {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			obj[k] = generateExample(schema.Properties[k], depth+1)
-		}
-		if len(obj) == 0 && schema.AdditionalProperties.Schema != nil {
-			obj["key"] = generateExample(schema.AdditionalProperties.Schema, depth+1)
-		}
-		return obj
-	case "array":
-		item := generateExample(schema.Items, depth+1)
-		return []any{item}
-	case "string":
-		return exampleString(schema.Format)
-	case "integer":
-		return 0
-	case "number":
-		return 0.0
-	case "boolean":
-		return true
-	default:
-		return nil
-	}
-}
-
-func exampleString(format string) string {
-	switch format {
-	case "date-time":
-		return "2024-01-01T00:00:00Z"
-	case "date":
-		return "2024-01-01"
-	case "email":
-		return "user@example.com"
-	case "uuid":
-		return "00000000-0000-0000-0000-000000000000"
-	case "uri", "url", "hostname":
-		return "https://example.com"
-	case "byte":
-		return "ZXhhbXBsZQ=="
-	case "password":
-		return "********" //nolint:gosec // placeholder text, not a real secret
-	default:
-		return "string"
-	}
-}

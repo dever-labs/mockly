@@ -73,6 +73,24 @@ protocols:
               "require_pushed_authorization_requests": false
             }
 
+      # ── Authorization endpoint (browser authorization_code flow) ─────────
+      # Mocks the redirect a real Keycloak would issue after a user logs in:
+      # a 302 straight to the caller's redirect_uri with a mock ?code= and
+      # the original ?state= echoed back, so an app's full browser-based
+      # authorization_code flow (not just a backend password/client_credentials
+      # grant) can be exercised end-to-end against this preset. There's no
+      # login page and no redirect_uri allow-list check — whatever redirect_uri
+      # is supplied is trusted and echoed back as-is.
+      - id: authorize
+        request:
+          method: GET
+          path: /realms/${realm}/protocol/openid-connect/auth
+        response:
+          status: 302
+          headers:
+            Location: "{{.query.redirect_uri}}?code=mock-auth-code-001{{if .query.state}}&state={{.query.state}}{{end}}"
+          body: ""
+
       # ── JWKS (public keys) ────────────────────────────────────────────────
       - id: jwks
         request:

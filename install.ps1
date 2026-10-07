@@ -59,15 +59,37 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 # ── Download ───────────────────────────────────────────────────────────────
 $BinaryName = "mockly-windows-$Arch.exe"
 $DownloadUrl = "https://github.com/$Repo/releases/download/$Version/$BinaryName"
+$ChecksumsUrl = "https://github.com/$Repo/releases/download/$Version/checksums.txt"
 $TmpFile = New-TemporaryFile
+$TmpChecksums = New-TemporaryFile
 
-Write-Host "Installing mockly $Version (windows/$Arch)..."
-Invoke-WebRequest -UseBasicParsing -Uri $DownloadUrl -OutFile $TmpFile
+try {
+  Write-Host "Installing mockly $Version (windows/$Arch)..."
+  Invoke-WebRequest -UseBasicParsing -Uri $DownloadUrl -OutFile $TmpFile
 
-# ── Install ────────────────────────────────────────────────────────────────
-New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-$TargetPath = Join-Path $InstallDir "mockly.exe"
-Move-Item -Force -Path $TmpFile -Destination $TargetPath
+  # ── Verify checksum ────────────────────────────────────────────────────────
+  Invoke-WebRequest -UseBasicParsing -Uri $ChecksumsUrl -OutFile $TmpChecksums
+
+  $checksumLine = Select-String -Path $TmpChecksums -Pattern " $([regex]::Escape($BinaryName))$" |
+    Select-Object -First 1
+  if (-not $checksumLine) {
+    throw "Failed to find a checksum for $BinaryName in $ChecksumsUrl"
+  }
+  $expectedSha256 = ($checksumLine.Line -split "\s+")[0]
+
+  $actualSha256 = (Get-FileHash -Path $TmpFile -Algorithm SHA256).Hash
+  if ($actualSha256 -ne $expectedSha256.ToUpperInvariant()) {
+    throw "Checksum mismatch for ${BinaryName}:`n  expected: $expectedSha256`n  actual:   $actualSha256"
+  }
+  Write-Host "Checksum verified."
+
+  # ── Install ──────────────────────────────────────────────────────────────
+  New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+  $TargetPath = Join-Path $InstallDir "mockly.exe"
+  Move-Item -Force -Path $TmpFile -Destination $TargetPath
+} finally {
+  Remove-Item -Force -ErrorAction SilentlyContinue $TmpFile, $TmpChecksums
+}
 
 # ── Add to PATH (current user) if not already present ─────────────────────
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")

@@ -1017,3 +1017,14 @@ func Render(tmpl string, req RequestContext) string {
 	}
 	return out
 }
+
+// RenderErr is the error-returning counterpart of Render, for callers that
+// need to distinguish "rendered successfully" from "template failed to
+// execute" instead of silently falling back to the unrendered literal — for
+// example a webhook URL built from an optional, caller-supplied field
+// (e.g. "{{ (index .request.body.webhooks 0).url }}") that isn't present on
+// every request: callers can use the error to skip the action entirely
+// rather than attempting it against a broken literal template string.
+func RenderErr(tmpl string, req RequestContext) (string, error) {
+	return renderTemplate(tmpl, req)
+}

@@ -11,12 +11,14 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	"github.com/dever-labs/mockly/assets"
 	"github.com/dever-labs/mockly/internal/api"
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/metrics"
+	"github.com/dever-labs/mockly/internal/openapi"
 	"github.com/dever-labs/mockly/internal/presets"
 	"github.com/dever-labs/mockly/internal/protocols/amqpserver"
 	"github.com/dever-labs/mockly/internal/protocols/coapserver"
@@ -65,6 +67,7 @@ binary with a built-in web UI and REST management API.`,
 		startCmd(),
 		applyCmd(),
 		configCmd(),
+		generateCmd(),
 		listCmd(),
 		addHTTPCmd(),
 		deleteCmd(),
@@ -415,6 +418,79 @@ a CI step or pre-commit hook.`,
 			return nil
 		},
 	}
+}
+
+// ---------------------------------------------------------------------------
+// generate openapi
+// ---------------------------------------------------------------------------
+
+func generateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Generate a Mockly config from another source",
+	}
+	cmd.AddCommand(generateOpenAPICmd())
+	return cmd
+}
+
+func generateOpenAPICmd() *cobra.Command {
+	var out string
+	var port int
+	cmd := &cobra.Command{
+		Use:   "openapi <spec-file>",
+		Short: "Generate a ready-to-run HTTP mock config from an OpenAPI 3.x spec",
+		Long: `Parses a local OpenAPI 3.x document (YAML or JSON) and derives one HTTP
+mock per operation: the path and method come straight from the spec, and the
+response body is taken from the operation's example/examples when present,
+or otherwise synthesised from its JSON schema (objects, arrays, enums,
+and format-aware strings like date-time/email/uuid).
+
+The result is written as a complete, runnable Mockly config, so you can
+start mocking an API you only have a spec for in one step:
+
+  mockly generate openapi api.yaml -o mockly.yaml
+  mockly start -c mockly.yaml
+
+Operations mockly couldn't derive a usable response for (no response
+defined, or a binary content-type with no example) are skipped; a warning
+is printed for each one but generation still succeeds.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			specPath := args[0]
+			res, err := openapi.Generate(specPath)
+			if err != nil {
+				return err
+			}
+			for _, w := range res.Warnings {
+				fmt.Fprintln(os.Stderr, "warn:", w)
+			}
+			if len(res.Mocks) == 0 {
+				return fmt.Errorf("%s: no operations could be converted into mocks", specPath)
+			}
+
+			cfg := config.Defaults()
+			cfg.Protocols.HTTP = &config.HTTPConfig{
+				Enabled: true,
+				Port:    port,
+				Mocks:   res.Mocks,
+			}
+
+			data, err := yaml.Marshal(cfg)
+			if err != nil {
+				return fmt.Errorf("encoding generated config: %w", err)
+			}
+			if err := os.WriteFile(out, data, 0o644); err != nil { //nolint:gosec // generated mock config, not a secret
+				return fmt.Errorf("writing %q: %w", out, err)
+			}
+
+			fmt.Printf("Generated %d mock(s) from %s -> %s\n", len(res.Mocks), specPath, out)
+			fmt.Printf("Run it with: mockly start -c %s\n", out)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&out, "out", "o", "mockly.generated.yaml", "Output config file path")
+	cmd.Flags().IntVar(&port, "port", 8080, "HTTP port in the generated config")
+	return cmd
 }
 
 // ---------------------------------------------------------------------------

@@ -74,6 +74,35 @@ func TestGenerate_MissingFile(t *testing.T) {
 	}
 }
 
+// TestGenerate_DefaultOnlyResponseIsSkipped ensures an operation whose only
+// documented response is "default" (conventionally an error/fallback
+// schema) is skipped with a warning rather than being turned into a mock
+// that fabricates a 200 success response.
+func TestGenerate_DefaultOnlyResponseIsSkipped(t *testing.T) {
+	res, err := Generate("testdata/default-only.yaml")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if len(res.Mocks) != 0 {
+		t.Errorf("mocks = %+v, want none (default-only response should be skipped)", res.Mocks)
+	}
+	if len(res.Warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1", res.Warnings)
+	}
+}
+
+// TestGenerate_RejectsExternalRefs ensures a spec that tries to resolve a
+// $ref outside the document (e.g. a URL pointing at a cloud metadata
+// endpoint) fails loudly instead of mockly silently following it, which
+// would expose the caller to SSRF or local file disclosure when generating
+// mocks from an untrusted/downloaded spec.
+func TestGenerate_RejectsExternalRefs(t *testing.T) {
+	_, err := Generate("testdata/external-ref.yaml")
+	if err == nil {
+		t.Fatal("expected an error for a spec with an external $ref, got nil")
+	}
+}
+
 func TestUniqueID_AppendsSuffixOnCollision(t *testing.T) {
 	used := map[string]int{}
 	ids := []string{uniqueID(used, "x"), uniqueID(used, "x"), uniqueID(used, "x")}

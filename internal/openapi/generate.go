@@ -40,9 +40,15 @@ type Result struct {
 // Generate parses the OpenAPI 3.x document at specPath (YAML or JSON, local
 // file) and returns one HTTP mock per operation it could derive a response
 // for.
+//
+// External $refs (to other files or URLs) are deliberately left disabled
+// (the kin-openapi loader default): a spec is often downloaded from an
+// untrusted source, and resolving external refs would let it make mockly
+// read arbitrary local files or issue SSRF-style requests to internal/cloud
+// metadata endpoints on the user's behalf. Only refs within the document
+// itself (#/components/...) are resolved.
 func Generate(specPath string) (*Result, error) {
 	loader := openapi3.NewLoader()
-	loader.IsExternalRefsAllowed = true
 
 	doc, err := loader.LoadFromFile(specPath)
 	if err != nil {
@@ -178,8 +184,11 @@ func slugify(s string) string {
 }
 
 // pickResponse chooses the response to derive a mock from, preferring (in
-// order) 200/201/202/204, any other 2xx, the "default" response, and
-// finally whatever the lowest-sorted status code is.
+// order) 200/201/202/204, any other 2xx, and finally whatever the
+// lowest-sorted numeric status code is. A spec's "default" response (almost
+// always an error/fallback schema, not a success case) is deliberately never
+// used: returning it under a fabricated 200 would misrepresent the
+// operation's actual behavior to anyone who runs the generated mock.
 func pickResponse(responses *openapi3.Responses) (int, *openapi3.Response) {
 	if responses == nil {
 		return 0, nil
@@ -211,23 +220,24 @@ func pickResponse(responses *openapi3.Responses) (int, *openapi3.Response) {
 		}
 	}
 
-	if ref, ok := m["default"]; ok && ref != nil && ref.Value != nil {
-		return 200, ref.Value
-	}
-
-	var all []string
+	// No 2xx response at all: fall back to the lowest-sorted *numeric*
+	// status code present (e.g. an operation that only documents 404s).
+	// "default" is excluded since it has no concrete status code of its own.
+	var numeric []string
 	for k := range m {
-		all = append(all, k)
+		if _, err := strconv.Atoi(k); err == nil {
+			numeric = append(numeric, k)
+		}
 	}
-	sort.Strings(all)
-	ref := m[all[0]]
+	sort.Strings(numeric)
+	if len(numeric) == 0 {
+		return 0, nil
+	}
+	ref := m[numeric[0]]
 	if ref == nil || ref.Value == nil {
 		return 0, nil
 	}
-	code, err := strconv.Atoi(all[0])
-	if err != nil {
-		code = 200
-	}
+	code, _ := strconv.Atoi(numeric[0])
 	return code, ref.Value
 }
 

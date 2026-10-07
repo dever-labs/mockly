@@ -2103,6 +2103,17 @@ mockly start -c mockly.yaml &
 until curl -sf http://localhost:9090/api/protocols; do sleep 1; done
 ```
 
+Windows (PowerShell):
+
+```powershell
+# Install latest release
+irm https://raw.githubusercontent.com/dever-labs/mockly/main/install.ps1 | iex
+
+# Or pin to a version
+$env:MOCKLY_VERSION = "v0.14.0" # x-release-please-version
+irm https://raw.githubusercontent.com/dever-labs/mockly/main/install.ps1 | iex
+```
+
 ---
 
 ### Docker

@@ -21,8 +21,8 @@ case "$OS" in
   darwin) OS="darwin" ;;
   *)
     echo "Unsupported OS: $OS" >&2
-    echo "For Windows, download the binary directly from:" >&2
-    echo "  https://github.com/${REPO}/releases" >&2
+    echo "For Windows, use install.ps1 instead:" >&2
+    echo "  irm https://raw.githubusercontent.com/${REPO}/main/install.ps1 | iex" >&2
     exit 1
     ;;
 esac

@@ -1935,7 +1935,7 @@ Mockly ships official clients for both native-process and Docker-backed test set
 | **Java** | `io.github.dever-labs:mockly-driver` | `io.github.dever-labs:mockly-testcontainers` | See Maven/Gradle below |
 | **.NET / C#** | `Mockly.Driver` | `Testcontainers.Mockly` | `dotnet add package Mockly.Driver` or `dotnet add package Testcontainers.Mockly` |
 | **Python** | `mockly-driver` | `mockly-testcontainers` | `pip install mockly-driver` or `pip install mockly-testcontainers` |
-| **Rust** | `mockly-driver` | `mockly-testcontainers` | `mockly-driver = "0.14.0"` <!-- x-release-please-version --> or `mockly-testcontainers = "0.13.1"` <!-- x-release-please-version --> in `[dev-dependencies]` |
+| **Rust** | `mockly-driver` | `mockly-testcontainers` | `mockly-driver = "0.15.0"` <!-- x-release-please-version --> or `mockly-testcontainers = "0.13.1"` <!-- x-release-please-version --> in `[dev-dependencies]` |
 
 Driver clients:
 - Automatically find or install the Mockly binary for the current platform
@@ -1988,7 +1988,7 @@ await server.stop()
 <dependency>
   <groupId>io.github.dever-labs</groupId>
   <artifactId>mockly-driver</artifactId>
-  <version>0.14.0</version> <!-- x-release-please-version -->
+  <version>0.15.0</version> <!-- x-release-please-version -->
   <scope>test</scope>
 </dependency>
 ```
@@ -2048,7 +2048,7 @@ server.stop()
 
 ```toml
 [dev-dependencies]
-mockly-driver = "0.14.0" # x-release-please-version
+mockly-driver = "0.15.0" # x-release-please-version
 ```
 
 ```rust
@@ -2175,9 +2175,9 @@ steps:
   - uses: actions/checkout@v5
 
   - name: Start Mockly
-    uses: dever-labs/mockly/.github/actions/setup-mockly@v0.14.0 # x-release-please-version
+    uses: dever-labs/mockly/.github/actions/setup-mockly@v0.15.0 # x-release-please-version
     with:
-      version: v0.14.0         # x-release-please-version
+      version: v0.15.0         # x-release-please-version
       config: mockly.yaml      # path to your config
       api-port: 9091           # management API port (default)
 
@@ -2204,7 +2204,7 @@ include:
 integration-tests:
   extends: .mockly-start
   variables:
-    MOCKLY_VERSION: "v0.14.0" # x-release-please-version
+    MOCKLY_VERSION: "v0.15.0" # x-release-please-version
     MOCKLY_CONFIG: "mockly.yaml"
   script:
     - ./run-tests.sh
@@ -2237,7 +2237,7 @@ integration-tests:
 curl -sSfL https://raw.githubusercontent.com/dever-labs/mockly/main/install.sh | bash
 
 # Or pin to a version
-MOCKLY_VERSION=v0.14.0 # x-release-please-version
+MOCKLY_VERSION=v0.15.0 # x-release-please-version
   curl -sSfL https://raw.githubusercontent.com/dever-labs/mockly/main/install.sh | bash
 
 # Start in background and wait for ready
@@ -2252,7 +2252,7 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/dever-labs/mockly/main/install.ps1 | iex
 
 # Or pin to a version
-$env:MOCKLY_VERSION = "v0.14.0" # x-release-please-version
+$env:MOCKLY_VERSION = "v0.15.0" # x-release-please-version
 irm https://raw.githubusercontent.com/dever-labs/mockly/main/install.ps1 | iex
 ```
 

@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package dup.v1;
+
+service ServiceA {
+  rpc Get (GetRequest) returns (GetReply);
+}
+
+service ServiceB {
+  // Same method name as ServiceA.Get — Mockly matches by method name only,
+  // so this is unreachable and should be skipped with a warning.
+  rpc Get (GetRequest) returns (GetReply);
+}
+
+message GetRequest {
+  string id = 1;
+}
+
+message GetReply {
+  string id = 1;
+}

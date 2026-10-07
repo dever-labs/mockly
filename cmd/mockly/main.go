@@ -41,6 +41,7 @@ import (
 	"github.com/dever-labs/mockly/internal/protocols/stompserver"
 	"github.com/dever-labs/mockly/internal/protocols/tcpserver"
 	"github.com/dever-labs/mockly/internal/protocols/wsserver"
+	"github.com/dever-labs/mockly/internal/protoidl"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
 	"github.com/dever-labs/mockly/internal/webhook"
@@ -430,11 +431,12 @@ func generateCmd() *cobra.Command {
 	var httpPort int
 	cmd := &cobra.Command{
 		Use:   "generate <spec-file>",
-		Short: "Generate a Mockly config from an OpenAPI or AsyncAPI spec",
-		Long: `Parses a local OpenAPI 3.x or AsyncAPI 2.x/3.x document (YAML or JSON,
-auto-detected from the file's top-level "openapi"/"asyncapi" field) and
-derives a ready-to-run Mockly config from it, so you can start mocking a
-system you only have a spec for in one step:
+		Short: "Generate a Mockly config from an OpenAPI, AsyncAPI, or Protobuf spec",
+		Long: `Parses a local OpenAPI 3.x document, AsyncAPI 2.x/3.x document (YAML or
+JSON, auto-detected from the file's top-level "openapi"/"asyncapi" field), or
+Protobuf (.proto) service definition, and derives a ready-to-run Mockly
+config from it, so you can start mocking a system you only have a spec for
+in one step:
 
   mockly generate api.yaml -o mockly.yaml
   mockly start -c mockly.yaml
@@ -450,22 +452,52 @@ Not every AsyncAPI operation has a Mockly equivalent (e.g. Mockly has no
 spontaneous/scheduled publish mechanism for MQTT/AMQP/NATS yet) — those are
 skipped with a warning but generation still succeeds for the rest.
 
-Operations/channels Mockly couldn't derive a usable mock for are skipped; a
-warning is printed for each one but generation still succeeds as long as at
-least one mock could be produced.`,
+For a .proto file, one gRPC mock is generated per unary RPC method, with the
+response body synthesised from the method's output message type. Streaming
+methods have no Mockly equivalent and are skipped with a warning. Imports are
+resolved only from the spec file's own directory plus the standard
+google/protobuf/*.proto well-known types.
+
+Operations/channels/methods Mockly couldn't derive a usable mock for are
+skipped; a warning is printed for each one but generation still succeeds as
+long as at least one mock could be produced.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			specPath := args[0]
 
-			isAsync, err := asyncapi.IsAsyncAPI(specPath)
+			isProto, err := protoidl.IsProtoIDL(specPath)
 			if err != nil {
 				return err
+			}
+			isAsync := false
+			if !isProto {
+				isAsync, err = asyncapi.IsAsyncAPI(specPath)
+				if err != nil {
+					return err
+				}
 			}
 
 			cfg := config.Defaults()
 			var generated int
 
-			if isAsync {
+			switch {
+			case isProto:
+				res, err := protoidl.Generate(specPath)
+				if err != nil {
+					return err
+				}
+				for _, w := range res.Warnings {
+					fmt.Fprintln(os.Stderr, "warn:", w)
+				}
+				if res.Empty() {
+					return fmt.Errorf("%s: no RPC methods could be converted into mocks", specPath)
+				}
+				cfg.Protocols.GRPC = &config.GRPCConfig{
+					Enabled:  true,
+					Services: []config.GRPCService{{Proto: specPath, Mocks: res.Mocks}},
+				}
+				generated = len(res.Mocks)
+			case isAsync:
 				res, err := asyncapi.Generate(specPath)
 				if err != nil {
 					return err
@@ -496,7 +528,7 @@ least one mock could be produced.`,
 					cfg.Protocols.WebSocket = &config.WebSocketConfig{Enabled: true, Mocks: res.WebSocket}
 					generated += len(res.WebSocket)
 				}
-			} else {
+			default:
 				res, err := openapi.Generate(specPath)
 				if err != nil {
 					return err

@@ -93,7 +93,7 @@ func openAMQPConnection(t *testing.T, addr string) net.Conn {
 	if err != nil {
 		t.Fatalf("dial AMQP: %v", err)
 	}
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	if _, err := conn.Write([]byte("AMQP\x00\x00\x09\x01")); err != nil {
 		t.Fatalf("write AMQP protocol header: %v", err)
 	}

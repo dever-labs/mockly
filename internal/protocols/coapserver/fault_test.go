@@ -54,7 +54,7 @@ func sendCoAP(t *testing.T, addr string) []byte {
 		t.Fatalf("dial CoAP: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	conn.SetDeadline(time.Now().Add(time.Second))
+	_ = conn.SetDeadline(time.Now().Add(time.Second))
 	if _, err := conn.Write(buildCoAPGet("/temp", 0x1234, 0x7a)); err != nil {
 		t.Fatalf("write CoAP request: %v", err)
 	}

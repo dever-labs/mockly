@@ -261,7 +261,10 @@ func TestAPI_UpdateScenario_InvalidJSON(t *testing.T) {
 func TestAPI_GetProtocolFault_NilFault(t *testing.T) {
 	// Known protocol with no fault set should return 200 with null body.
 	base, _, _, _, _ := startAPI(t)
-	resp, _ := http.Get(base + "/api/fault/http")
+	resp, err := http.Get(base + "/api/fault/http")
+	if err != nil {
+		t.Fatalf("get protocol fault: %v", err)
+	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		t.Errorf("get protocol fault (none set): want 200, got %d", resp.StatusCode)

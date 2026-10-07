@@ -213,7 +213,7 @@ func startMemcachedServer(t *testing.T, mocks []config.MemcachedMock) string {
 
 func memcachedCmd(t *testing.T, conn net.Conn, r *bufio.Reader, cmd string) string {
 	t.Helper()
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	_, _ = fmt.Fprintf(conn, "%s\r\n", cmd)
 	line, err := r.ReadString('\n')
 	if err != nil {
@@ -293,7 +293,7 @@ func TestMemcachedServer_Get_WithMock(t *testing.T) {
 	defer conn.Close() //nolint:errcheck
 	r := bufio.NewReader(conn)
 
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	_, _ = fmt.Fprintf(conn, "get user:1\r\n")
 
 	// Read VALUE line.
@@ -325,7 +325,7 @@ func TestMemcachedServer_Get_NoMock(t *testing.T) {
 	defer conn.Close() //nolint:errcheck
 	r := bufio.NewReader(conn)
 
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	_, _ = fmt.Fprintf(conn, "get nokey\r\n")
 	line, err := r.ReadString('\n')
 	if err != nil {
@@ -352,7 +352,7 @@ func TestMemcachedServer_Set(t *testing.T) {
 	defer conn.Close() //nolint:errcheck
 	r := bufio.NewReader(conn)
 
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	_, _ = fmt.Fprintf(conn, "set mykey 0 0 5\r\nhello\r\n")
 	line, err := r.ReadString('\n')
 	if err != nil {
@@ -424,7 +424,7 @@ func TestMemcachedServer_Quit(t *testing.T) {
 	defer conn.Close() //nolint:errcheck
 	r := bufio.NewReader(conn)
 
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	_, _ = fmt.Fprintf(conn, "quit\r\n")
 	// After quit the server closes the connection.
 	buf := make([]byte, 1)

@@ -1,14 +1,16 @@
 # Binaries
 /mockly
 /mockly.exe
-dist/
+/dist/
 
 # UI build
 ui/dist/
 ui/node_modules/
 
 # Assets (built by make)
-assets/dist/
+assets/dist/*
+!assets/dist/index.html
+!assets/dist/
 
 # Go
 *.test

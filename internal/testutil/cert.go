@@ -36,7 +36,7 @@ func WriteSelfSignedCert(certPath, keyPath string) error {
 	if err != nil {
 		return err
 	}
-	defer certOut.Close()
+	defer certOut.Close() //nolint:errcheck
 	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
 		return err
 	}
@@ -45,7 +45,7 @@ func WriteSelfSignedCert(certPath, keyPath string) error {
 	if err != nil {
 		return err
 	}
-	defer keyOut.Close()
+	defer keyOut.Close() //nolint:errcheck
 	keyDER, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
 		return err

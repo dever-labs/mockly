@@ -236,7 +236,7 @@ func (s *Server) maybeInjectFault(conn net.Conn) bool {
 		if msg == "" {
 			msg = "Service not available"
 		}
-		_, _ = conn.Write([]byte(fmt.Sprintf("%d %s\r\n", code, msg)))
+		_, _ = fmt.Fprintf(conn, "%d %s\r\n", code, msg)
 		return true
 	}
 	return false

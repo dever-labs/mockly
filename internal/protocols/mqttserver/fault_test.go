@@ -96,7 +96,7 @@ func connectMQTT(t *testing.T, addr, clientID string) net.Conn {
 	if err != nil {
 		t.Fatalf("dial MQTT: %v", err)
 	}
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	body := append(mqttString("MQTT"), 0x04, 0x02, 0x00, 0x1e)
 	body = append(body, mqttString(clientID)...)
 	writeMQTTPacket(t, conn, 0x10, body)

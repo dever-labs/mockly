@@ -22,7 +22,7 @@ inputs:
   api-port:
     description: Port for the management API (overrides config)
     required: false
-    default: "9090"
+    default: "9091"
 
 outputs:
   api-url:

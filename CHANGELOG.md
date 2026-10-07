@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.15.0](https://github.com/dever-labs/mockly/compare/v0.14.0...v0.15.0) (2026-10-07)
+
+
+### Features
+
+* add install.ps1 for Windows installs ([#270](https://github.com/dever-labs/mockly/issues/270)) ([5439297](https://github.com/dever-labs/mockly/commit/5439297e53facdca21ec88b525f1d6a797034928))
+* **cli:** generate a ready-to-run config from an OpenAPI spec ([#277](https://github.com/dever-labs/mockly/issues/277)) ([a87e463](https://github.com/dever-labs/mockly/commit/a87e463632dff2308ca2c71b2aae94cd048edd55))
+* **cli:** generate mock configs from AsyncAPI 2.x/3.x specs ([#278](https://github.com/dever-labs/mockly/issues/278)) ([c98a2f1](https://github.com/dever-labs/mockly/commit/c98a2f1051f8bc583d3dba33ed42bba916d0d638))
+* **config:** parameterize configs with a vars: map (and apply it to the Keycloak preset) ([#273](https://github.com/dever-labs/mockly/issues/273)) ([73c5c52](https://github.com/dever-labs/mockly/commit/73c5c5278ea18d6b0ad3da1ff87b8db59e356d47))
+* **dotnet:** expand TFM support testing and improve NuGet READMEs ([#267](https://github.com/dever-labs/mockly/issues/267)) ([4059060](https://github.com/dever-labs/mockly/commit/40590605f85ca91abe0018ddd46f5007b2de6ef5))
+* **http:** add record mode to bootstrap mocks from a real backend ([#275](https://github.com/dever-labs/mockly/issues/275)) ([844da5c](https://github.com/dever-labs/mockly/commit/844da5c77b73149d1e62bcee885dc391b1f59434))
+* **protoidl:** generate gRPC mocks from Protobuf (.proto) service definitions ([#279](https://github.com/dever-labs/mockly/issues/279)) ([0f1cc69](https://github.com/dever-labs/mockly/commit/0f1cc6980ea7f39b1d9acded5ef3d979441baaf8))
+* verify SHA256 checksums in install scripts ([#271](https://github.com/dever-labs/mockly/issues/271)) ([be7e4c0](https://github.com/dever-labs/mockly/commit/be7e4c0c8dbec7d2dd767a274f216fbb07aeeb82))
+
+
+### Bug Fixes
+
+* **build:** make Makefile portable across Linux/macOS/Windows ([#276](https://github.com/dever-labs/mockly/issues/276)) ([733a6ac](https://github.com/dever-labs/mockly/commit/733a6ac86894f652ba9fb48afa38153809c26087))
+* correct documented/default management port from 9090 to real default 9091 ([#274](https://github.com/dever-labs/mockly/issues/274)) ([35522b4](https://github.com/dever-labs/mockly/commit/35522b4e4f8c5f237c127431f662b7a003efffef))
+* **presets:** make Keycloak preset's RSA key material and JWTs real ([#272](https://github.com/dever-labs/mockly/issues/272)) ([e2b0949](https://github.com/dever-labs/mockly/commit/e2b09491c7e8f9a80972528bb7f088475254b4cc))
+* **webhook:** skip webhook dispatch when URL template fails to render ([#268](https://github.com/dever-labs/mockly/issues/268)) ([ba57c0f](https://github.com/dever-labs/mockly/commit/ba57c0fd727a000fe6118cecfa3d2997579f959d))
+
 ## [0.14.0](https://github.com/dever-labs/mockly/compare/v0.13.1...v0.14.0) (2026-10-06)
 
 

@@ -1,0 +1,18 @@
+asyncapi: 2.6.0
+info:
+  title: Ambiguous Multi-Server (2.x)
+  version: 1.0.0
+servers:
+  kafkaBroker:
+    url: kafka.example.com:9092
+    protocol: kafka
+  mqttBroker:
+    url: mqtt.example.com:1883
+    protocol: mqtt
+channels:
+  mystery/topic:
+    publish:
+      operationId: mysteryEvent
+      message:
+        payload:
+          type: object

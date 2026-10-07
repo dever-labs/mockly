@@ -1,0 +1,42 @@
+asyncapi: 3.0.0
+info:
+  title: Duplicate WS Send Operations
+  version: 1.0.0
+servers:
+  wsGateway:
+    host: ws.example.com
+    protocol: ws
+channels:
+  chanA:
+    address: /ws/dup
+    servers:
+      - $ref: '#/servers/wsGateway'
+    messages:
+      a:
+        payload:
+          type: object
+          properties:
+            tag:
+              type: string
+              example: A
+  chanB:
+    address: /ws/dup
+    servers:
+      - $ref: '#/servers/wsGateway'
+    messages:
+      b:
+        payload:
+          type: object
+          properties:
+            tag:
+              type: string
+              example: B
+operations:
+  sendA:
+    action: send
+    channel:
+      $ref: '#/channels/chanA'
+  sendB:
+    action: send
+    channel:
+      $ref: '#/channels/chanB'

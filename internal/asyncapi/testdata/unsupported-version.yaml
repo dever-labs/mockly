@@ -1,0 +1,5 @@
+asyncapi: 9.9.9
+info:
+  title: Unsupported Version
+  version: 1.0.0
+channels: {}

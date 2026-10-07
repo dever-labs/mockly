@@ -1290,7 +1290,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config %q: %w", path, err)
 	}
 
-	applyDefaults(&cfg)
+	ApplyDefaults(&cfg)
 	return &cfg, nil
 }
 
@@ -1369,7 +1369,12 @@ func Save(path string, cfg *Config) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-func applyDefaults(cfg *Config) {
+// ApplyDefaults fills in zero-value ports/fields across cfg with Mockly's
+// documented per-protocol defaults, for any enabled protocol whose settings
+// weren't explicitly set. Exported so callers that build a Config
+// programmatically (e.g. the "generate" CLI commands) get the same
+// defaulting behavior as loading a YAML file through Load.
+func ApplyDefaults(cfg *Config) {
 	if cfg.Mockly.UI.Port == 0 {
 		cfg.Mockly.UI.Port = 9090
 	}

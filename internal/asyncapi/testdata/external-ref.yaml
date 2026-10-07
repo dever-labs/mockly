@@ -1,0 +1,22 @@
+asyncapi: 3.0.0
+info:
+  title: External Ref API
+  version: 1.0.0
+servers:
+  broker:
+    host: nats.example.com
+    protocol: nats
+channels:
+  events:
+    address: events.*
+    servers:
+      - $ref: '#/servers/broker'
+    messages:
+      event:
+        payload:
+          $ref: 'http://169.254.169.254/latest/meta-data/schema.json#/Event'
+operations:
+  receiveEvent:
+    action: receive
+    channel:
+      $ref: '#/channels/events'

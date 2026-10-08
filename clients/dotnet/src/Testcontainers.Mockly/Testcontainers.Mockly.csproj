@@ -18,7 +18,7 @@
 
     <!-- NuGet package metadata -->
     <PackageId>Testcontainers.Mockly</PackageId>
-    <Version>0.14.0</Version>
+    <Version>0.15.0</Version>
     <Authors>dever-labs</Authors>
     <Description>Testcontainers module for Mockly — a single binary that mocks HTTP, gRPC, Kafka, AMQP, MQTT, Redis, SMTP, and a dozen other protocols for integration tests. This package runs Mockly as a Docker container (ghcr.io/dever-labs/mockly) and exposes a typed API to register mocks, inject faults, and manage scenarios.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

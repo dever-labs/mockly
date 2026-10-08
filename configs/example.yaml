@@ -1,6 +1,15 @@
 # Mockly example configuration
 # Run with: mockly start --config configs/example.yaml
 
+# Vars declares default values for env-var-style references (dollar-brace
+# NAME, optionally with a colon-dash default) used anywhere below (mock
+# paths/bodies/headers/etc). An OS environment variable of the same name
+# always takes precedence, so CI/CD can override a value without editing
+# this file.
+vars:
+  api_token: "my-secret-token"
+  admin_password: "s3cret"
+
 mockly:
   ui:
     enabled: true
@@ -143,7 +152,7 @@ protocols:
           path: /api/protected
           auth:
             type: bearer
-            token: "my-secret-token"         # or "re:^ey[A-Za-z0-9]" for JWTs, or "*"
+            token: "${api_token}"             # or "re:^ey[A-Za-z0-9]" for JWTs, or "*"
         response:
           status: 200
           body: '{"data":"sensitive"}'
@@ -166,7 +175,7 @@ protocols:
           auth:
             type: basic
             username: admin
-            password: s3cret
+            password: "${admin_password}"
         response:
           status: 200
           body: '{"admin":true}'
@@ -281,16 +290,26 @@ protocols:
     enabled: true
     port: 50051
     services:
-      - proto: ./protos/users.proto          # path is informational; server is codec-agnostic
+      # "proto:" generates one mock per unary RPC method in the referenced
+      # file at load time (IDs are "<service>-<method>", slugified — here
+      # "userservice-getuser", "userservice-listusers",
+      # "userservice-deleteuser"; run `mockly generate ./protos/users.proto`
+      # to preview them). Any hand-written mock below with a matching ID
+      # overrides the generated one; anything else is appended. See README's
+      # "Alternative: reference a spec directly from mockly.yaml" section.
+      - proto: ./protos/users.proto
         mocks:
-          - id: get-user-grpc
+          # Overrides the generated "userservice-getuser" mock with a fuller
+          # example response (the generated default only synthesises
+          # placeholder field values from the message shape).
+          - id: userservice-getuser
             method: GetUser
             response:
               id: "1"
               name: Alice
               email: alice@example.com
 
-          - id: list-users-grpc
+          - id: userservice-listusers
             method: ListUsers
             response:
               users:
@@ -299,7 +318,9 @@ protocols:
                 - id: "2"
                   name: Bob
 
-          - id: delete-user-error
+          # Overrides the generated "userservice-deleteuser" mock with an
+          # error response — not derivable from the .proto file alone.
+          - id: userservice-deleteuser
             method: DeleteUser
             error:
               code: 7      # PERMISSION_DENIED
@@ -470,6 +491,154 @@ protocols:
             type: string
             value: "Device restarted"
 
+  # ─── DNS ────────────────────────────────────────────────────────────────────
+  # "records" hold the raw answer values; for MX use "<priority> <host>",
+  # for SRV use "<priority> <weight> <port> <target>".
+  dns:
+    enabled: true
+    port: 5353
+    mocks:
+      - id: api-host
+        name: "api.example.com"
+        type: A
+        records:
+          - "127.0.0.1"
+        ttl: 60
+      - id: mail
+        name: "example.com"
+        type: MX
+        records:
+          - "10 mail.example.com"
+
+  # ─── AMQP ───────────────────────────────────────────────────────────────────
+  amqp:
+    enabled: true
+    port: 5672
+    # asyncapi: ./specs/orders-amqp.yaml   # generate mocks from an AsyncAPI doc
+    mocks:
+      - id: order-created
+        exchange: orders
+        routing_key: "order.created"
+        response:
+          body: '{"status":"accepted"}'
+
+  # ─── Kafka ──────────────────────────────────────────────────────────────────
+  kafka:
+    enabled: true
+    port: 9092
+    # asyncapi: ./specs/orders-kafka.yaml   # generate mocks from an AsyncAPI doc
+    mocks:
+      - id: orders-topic
+        topic: orders
+        records:
+          - key: "order-1"
+            value: '{"id":1,"status":"pending"}'
+
+  # ─── LDAP ───────────────────────────────────────────────────────────────────
+  ldap:
+    enabled: true
+    port: 3893
+    mocks:
+      - id: user-lookup
+        base_dn: "dc=example,dc=com"
+        filter: "*"
+        attributes:
+          cn:
+            - "Alice Smith"
+          mail:
+            - "alice@example.com"
+          uid:
+            - "alice"
+
+  # ─── IMAP ───────────────────────────────────────────────────────────────────
+  imap:
+    enabled: true
+    port: 1143
+    # users:               # omit to accept any username/password at LOGIN
+    #   - username: alice
+    #     password: hunter2
+    mailboxes:
+      - id: inbox
+        name: INBOX
+        messages:
+          - seq_num: 1
+            from: "sender@example.com"
+            to: "user@example.com"
+            subject: "Test email"
+            body: "Hello world"
+
+  # ─── FTP ────────────────────────────────────────────────────────────────────
+  ftp:
+    enabled: true
+    port: 2121
+    files:
+      - id: daily-report
+        path: /reports/daily.csv
+        content: |
+          date,revenue
+          2024-01-01,1000
+      - id: app-config
+        path: /data/config.json
+        content: '{"version":"1.0"}'
+
+  # ─── Memcached ──────────────────────────────────────────────────────────────
+  memcached:
+    enabled: true
+    port: 11211
+    mocks:
+      - id: session-cache
+        command: get
+        key: "session:*"
+        response:
+          value: '{"user_id":42,"role":"admin"}'
+      - id: any-delete
+        command: delete
+        key: "*"
+        response:
+          status: DELETED
+
+  # ─── STOMP ──────────────────────────────────────────────────────────────────
+  stomp:
+    enabled: true
+    port: 61613
+    mocks:
+      - id: process-order
+        destination: "/queue/orders"
+        response:
+          body: '{"status":"queued"}'
+          content_type: application/json
+
+  # ─── CoAP ───────────────────────────────────────────────────────────────────
+  coap:
+    enabled: true
+    port: 5683
+    mocks:
+      - id: temperature
+        method: GET
+        path: /sensors/temperature
+        response:
+          code: "2.05"
+          payload: "23.5"
+          content_format: 0   # text/plain
+
+  # ─── SIP ────────────────────────────────────────────────────────────────────
+  sip:
+    enabled: true
+    port: 5060
+    mocks:
+      - id: invite-ok
+        method: INVITE
+        uri: "sip:*@example.com"
+        response:
+          status: 200
+          reason: "OK"
+      - id: register
+        method: REGISTER
+        uri: "*"
+        response:
+          status: 200
+          reason: "OK"
+
 # ─── Scenarios ──────────────────────────────────────────────────────────────
 # Pre-defined failure modes; activate/deactivate via CLI or Management API.
 scenarios:
@@ -497,3 +666,21 @@ scenarios:
         delay: 3s
       - mock_id: get-user-by-id
         delay: 3s
+
+  # Scenarios can bundle protocol-native faults alongside mock patches —
+  # activating this scenario sets both atomically, and deactivating it
+  # restores normal behaviour for the mock patch and the Redis/DNS faults.
+  - id: backend-degraded
+    name: Backend Degraded
+    description: Redis errors and DNS failures, plus a patched mock
+    patches:
+      - mock_id: get-user-by-id
+        status: 503
+        body: '{"error":"backend degraded"}'
+    faults:
+      redis:
+        error: "LOADING Redis is loading the dataset in memory"
+        error_rate: 1.0
+      dns:
+        rcode: NXDOMAIN
+        error_rate: 0.5

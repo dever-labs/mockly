@@ -138,8 +138,18 @@ type HTTPConfig struct {
 	// MaxBodyBytes limits the size of incoming request bodies in bytes.
 	// 0 (default) means unlimited, which is appropriate when simulating
 	// endpoints that accept large payloads (file uploads, bulk imports, etc.).
-	MaxBodyBytes int64      `yaml:"max_body_bytes,omitempty" json:"max_body_bytes,omitempty"`
-	Mocks        []HTTPMock `yaml:"mocks" json:"mocks"`
+	MaxBodyBytes int64 `yaml:"max_body_bytes,omitempty" json:"max_body_bytes,omitempty"`
+	// OpenAPI, if set, points to a local OpenAPI 3.x document (resolved
+	// relative to this config file's own directory) that mocks are derived
+	// from at load time, exactly like `mockly generate` does for a
+	// standalone file. Mocks below are layered on top: one whose "id"
+	// matches a generated mock overrides it, any other is appended. This is
+	// the alternative to running `mockly generate` once into a static file:
+	// the spec and the hand-written overrides live side by side, and
+	// re-running `mockly start`/`config validate` always reflects the
+	// current spec.
+	OpenAPI string     `yaml:"openapi,omitempty" json:"openapi,omitempty"`
+	Mocks   []HTTPMock `yaml:"mocks" json:"mocks"`
 
 	// Record enables "record mode": requests that don't match any existing
 	// mock are transparently proxied to Target, the real response is
@@ -383,10 +393,17 @@ type HTTPStreamEvent struct {
 // ---------------------------------------------------------------------------
 
 type WebSocketConfig struct {
-	Enabled bool            `yaml:"enabled" json:"enabled"`
-	Port    int             `yaml:"port" json:"port"`
-	TLS     *TLSConfig      `yaml:"tls,omitempty" json:"tls,omitempty"`
-	Mocks   []WebSocketMock `yaml:"mocks" json:"mocks"`
+	Enabled bool       `yaml:"enabled" json:"enabled"`
+	Port    int        `yaml:"port" json:"port"`
+	TLS     *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
+	// AsyncAPI, if set, points to a local AsyncAPI 2.x/3.x document (resolved
+	// relative to this config file's own directory); its WebSocket
+	// channels/operations are generated into mocks at load time and layered
+	// underneath Mocks below (a matching "id" overrides, anything else is
+	// appended). See HTTPConfig.OpenAPI for the same mechanism applied to
+	// HTTP.
+	AsyncAPI string          `yaml:"asyncapi,omitempty" json:"asyncapi,omitempty"`
+	Mocks    []WebSocketMock `yaml:"mocks" json:"mocks"`
 }
 
 type WebSocketMock struct {
@@ -443,6 +460,11 @@ type GRPCConfig struct {
 }
 
 type GRPCService struct {
+	// Proto, if set, points to a local .proto service definition (resolved
+	// relative to this config file's own directory); its unary RPC methods
+	// are generated into mocks at load time and layered underneath Mocks
+	// below (a matching "id" overrides, anything else is appended). See
+	// HTTPConfig.OpenAPI for the same mechanism applied to HTTP.
 	Proto string     `yaml:"proto" json:"proto"`
 	Mocks []GRPCMock `yaml:"mocks" json:"mocks"`
 }
@@ -590,9 +612,16 @@ type ReceivedEmail struct {
 // ---------------------------------------------------------------------------
 
 type MQTTConfig struct {
-	Enabled bool       `yaml:"enabled" json:"enabled"`
-	Port    int        `yaml:"port" json:"port"`
-	Mocks   []MQTTMock `yaml:"mocks" json:"mocks"`
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	Port    int  `yaml:"port" json:"port"`
+	// AsyncAPI, if set, points to a local AsyncAPI 2.x/3.x document (resolved
+	// relative to this config file's own directory); its MQTT
+	// channels/operations are generated into mocks at load time and layered
+	// underneath Mocks below (a matching "id" overrides, anything else is
+	// appended). See HTTPConfig.OpenAPI for the same mechanism applied to
+	// HTTP.
+	AsyncAPI string     `yaml:"asyncapi,omitempty" json:"asyncapi,omitempty"`
+	Mocks    []MQTTMock `yaml:"mocks" json:"mocks"`
 }
 
 // MQTTMock subscribes to a topic pattern. When a message arrives, the broker
@@ -629,7 +658,14 @@ type NATSConfig struct {
 	// JetStream enables NATS JetStream (streams/consumers/KV/Object Store).
 	// Disabled by default to keep core-only setups lightweight.
 	JetStream *NATSJetStreamConfig `yaml:"jetstream,omitempty" json:"jetstream,omitempty"`
-	Mocks     []NATSMock           `yaml:"mocks,omitempty" json:"mocks,omitempty"`
+	// AsyncAPI, if set, points to a local AsyncAPI 2.x/3.x document (resolved
+	// relative to this config file's own directory); its NATS
+	// channels/operations are generated into mocks at load time and layered
+	// underneath Mocks below (a matching "id" overrides, anything else is
+	// appended). See HTTPConfig.OpenAPI for the same mechanism applied to
+	// HTTP.
+	AsyncAPI string     `yaml:"asyncapi,omitempty" json:"asyncapi,omitempty"`
+	Mocks    []NATSMock `yaml:"mocks,omitempty" json:"mocks,omitempty"`
 }
 
 // NATSJetStreamConfig enables JetStream on the embedded server.
@@ -773,9 +809,16 @@ type DNSMock struct {
 // ---------------------------------------------------------------------------
 
 type AMQPConfig struct {
-	Enabled bool       `yaml:"enabled" json:"enabled"`
-	Port    int        `yaml:"port" json:"port"`
-	Mocks   []AMQPMock `yaml:"mocks" json:"mocks"`
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	Port    int  `yaml:"port" json:"port"`
+	// AsyncAPI, if set, points to a local AsyncAPI 2.x/3.x document (resolved
+	// relative to this config file's own directory); its AMQP
+	// channels/operations are generated into mocks at load time and layered
+	// underneath Mocks below (a matching "id" overrides, anything else is
+	// appended). See HTTPConfig.OpenAPI for the same mechanism applied to
+	// HTTP.
+	AsyncAPI string     `yaml:"asyncapi,omitempty" json:"asyncapi,omitempty"`
+	Mocks    []AMQPMock `yaml:"mocks" json:"mocks"`
 }
 
 type AMQPMock struct {
@@ -806,9 +849,16 @@ type ReceivedAMQPMessage struct {
 // ---------------------------------------------------------------------------
 
 type KafkaConfig struct {
-	Enabled bool        `yaml:"enabled" json:"enabled"`
-	Port    int         `yaml:"port" json:"port"`
-	Mocks   []KafkaMock `yaml:"mocks" json:"mocks"`
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	Port    int  `yaml:"port" json:"port"`
+	// AsyncAPI, if set, points to a local AsyncAPI 2.x/3.x document (resolved
+	// relative to this config file's own directory); its Kafka
+	// channels/operations are generated into mocks at load time and layered
+	// underneath Mocks below (a matching "id" overrides, anything else is
+	// appended). See HTTPConfig.OpenAPI for the same mechanism applied to
+	// HTTP.
+	AsyncAPI string      `yaml:"asyncapi,omitempty" json:"asyncapi,omitempty"`
+	Mocks    []KafkaMock `yaml:"mocks" json:"mocks"`
 }
 
 type KafkaMock struct {

@@ -1,0 +1,43 @@
+asyncapi: 3.0.0
+info:
+  title: Orders events
+  version: 1.0.0
+servers:
+  kafkaBroker:
+    host: kafka.example.com:9092
+    protocol: kafka
+  wsGateway:
+    host: ws.example.com
+    protocol: ws
+channels:
+  orderCreated:
+    address: orders.created
+    servers:
+      - $ref: '#/servers/kafkaBroker'
+    messages:
+      orderCreatedMsg:
+        payload:
+          type: object
+          properties:
+            id:
+              type: string
+  liveUpdates:
+    address: /ws/updates
+    servers:
+      - $ref: '#/servers/wsGateway'
+    messages:
+      updateMsg:
+        payload:
+          type: object
+          properties:
+            status:
+              type: string
+operations:
+  publishOrderCreated:
+    action: send
+    channel:
+      $ref: '#/channels/orderCreated'
+  pushLiveUpdate:
+    action: send
+    channel:
+      $ref: '#/channels/liveUpdates'

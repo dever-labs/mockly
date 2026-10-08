@@ -51,7 +51,7 @@
 | **Log filtering** | Filter logs and log counts by matched mock ID via `/api/logs` and `/api/logs/count` |
 | **PATCH mocks** | Change only specific response fields at runtime without replacing the whole mock |
 | **Preset configs** | Drop-in YAML configs for Keycloak, Authelia, OAuth2, GitHub, Stripe, OpenAI, Slack, Twilio, SendGrid, Anthropic, Resend, PagerDuty, AWS S3, NTLM, Nets/Nexi |
-| **Spec-driven mock generation** | `mockly generate <spec>` turns an OpenAPI 3.x document, an AsyncAPI 2.x/3.x document, or a Protobuf (`.proto`) service definition into a ready-to-run config, auto-detecting which it is |
+| **Spec-driven mock generation** | `mockly generate <spec>` turns an OpenAPI 3.x document, an AsyncAPI 2.x/3.x document, or a Protobuf (`.proto`) service definition into a ready-to-run config, auto-detecting which it is — or reference the spec directly from `mockly.yaml` (`openapi:`/`asyncapi:`/`proto:`) to keep regenerating it live and layer hand-written mocks on top |
 | **Web UI** | Served from the binary itself — no separate install |
 | **Management API** | 60+ REST endpoints covering all protocols, scenarios, fault, state, logs, webhooks, and call counts |
 | **Live request log** | SSE-streamed in real time to the UI |
@@ -135,8 +135,7 @@ protocols:
     enabled: true
     port: 50051
     services:
-      - proto: ./protos/users.proto
-        mocks:
+      - mocks:
           - id: get-user
             method: GetUser
             response:
@@ -783,14 +782,18 @@ protocols:
     enabled: true
     port: 50051
     services:
-      - proto: ./protos/payments.proto   # informational — no compilation needed
-        mocks:
+      - mocks:
           - id: charge
             method: Charge
             response:
               success: true
               charge_id: ch_123
 ```
+
+Optionally reference a real `.proto` file (`proto: ./protos/payments.proto`)
+to generate mocks from it instead of hand-writing them — see
+[Generating mocks from an OpenAPI, AsyncAPI, or Protobuf
+spec](#generating-mocks-from-an-openapi-asyncapi-or-protobuf-spec).
 
 ### GraphQL
 
@@ -1374,6 +1377,69 @@ so a later duplicate would just shadow the first and never be reachable).
 The generated file is a complete, runnable config (management API/UI ports
 included), not a fragment — review it, add scenarios/faults/state as
 needed, and commit it like any other Mockly config.
+
+#### Alternative: reference a spec directly from `mockly.yaml`
+
+`mockly generate` is a one-time snapshot: it turns a spec into a static file
+you then own — regenerating overwrites it, so any fault/scenario/mock you
+hand-added is lost unless you re-apply it yourself. If you'd rather the spec
+stay a live input — e.g. it's still evolving, or you want hand-written
+faults/scenarios/extra mocks to automatically keep working against a spec
+you don't want to manually resync — reference it inline instead, using the
+same `openapi`/`asyncapi`/`proto` key next to `mocks:` in the relevant
+protocol block. Every time the config is loaded (`mockly start`,
+`mockly apply`, `mockly config validate`), Mockly regenerates mocks from the
+spec and layers `mocks:` on top: an entry whose `id` matches a generated
+mock overrides it (e.g. to attach a `fault`, pin a different response, or
+add `state`); any other `id` is simply appended alongside it. Relative spec
+paths are resolved against the config file's own directory, not the current
+working directory.
+
+A generated mock's `id` is derived automatically (from the OpenAPI
+operation's `operationId`, or the AsyncAPI operation's key, or, for
+Protobuf, `<service>-<method>` — always lowercased/slugified, e.g.
+`operationId: getUser` → `id: getuser`, `rpc GetUser` on service `Users` →
+`id: users-getuser`). Run `mockly generate <spec> -o /tmp/preview.yaml` once
+to see the exact IDs a given spec produces before writing overrides for it —
+guessing the id wrong just appends a harmless extra mock instead of
+overriding anything, so it fails quietly rather than loudly.
+
+```yaml
+protocols:
+  http:
+    enabled: true
+    port: 8080
+    openapi: ./api.yaml      # generates one HTTP mock per operation
+    mocks:
+      - id: getuser           # matches operationId "getUser", slugified -> overrides it
+        request: { method: GET, path: "/users/{id}" }
+        response: { status: 200, body: '{"id":"{{.request.params.id}}","name":"Alice"}' }
+        fault: { delay: 200ms, error_rate: 0.1 }
+      - id: admin-only-route  # no spec counterpart -> just an extra mock
+        request: { method: GET, path: "/admin/ping" }
+        response: { status: 200, body: "pong" }
+
+  kafka:
+    enabled: true
+    asyncapi: ./events.yaml  # same spec can be referenced by more than one protocol block
+    mocks: []
+
+  grpc:
+    enabled: true
+    port: 50051
+    services:
+      - proto: ./protos/users.proto
+        mocks:
+          - id: users-getuser  # "<service>-<method>", slugified -> overrides it
+            method: GetUser
+            response: { id: "1", name: Alice }
+```
+
+Both approaches use the exact same generators under the hood and can be
+mixed across protocols in the same file — use whichever fits each spec:
+`generate` once for a spec you want to fully own and hand-edit from that
+point on, an inline reference for one you want to keep regenerating from on
+every start.
 
 ### Record mode (bootstrap mocks from a real backend)
 

@@ -127,6 +127,67 @@ func startMockly(t *testing.T, cfgFmt string) (apiBase, httpBase string) {
 	return apiBase, httpBase
 }
 
+// startMocklyConfig starts the real mockly binary against a fully-rendered
+// config (the caller allocates and injects any protocol ports itself, e.g.
+// via freePort) and returns the management API base URL. Use this instead of
+// startMockly when a test needs a protocol other than HTTP, or more than one
+// protocol port. The process is killed and waited on when the test ends.
+func startMocklyConfig(t *testing.T, cfgYAML string) (apiBase string) {
+	t.Helper()
+
+	apiPort := freePort(t)
+	fullCfg := fmt.Sprintf("mockly:\n  api:\n    port: %d\n", apiPort) + cfgYAML
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "mockly.yaml")
+	if err := os.WriteFile(cfgPath, []byte(fullCfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cmd := exec.Command(binaryPath, "start",
+		"--config", cfgPath,
+		"--api-port", fmt.Sprintf("%d", apiPort),
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start mockly: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := cmd.Process.Kill(); err != nil {
+			t.Logf("cleanup: failed to kill mockly process: %v", err)
+		}
+		if err := cmd.Wait(); err != nil {
+			t.Logf("cleanup: wait on mockly process returned error: %v", err)
+		}
+	})
+
+	apiBase = fmt.Sprintf("http://127.0.0.1:%d", apiPort)
+	waitForHTTP(t, apiBase+"/api/protocols", 10*time.Second)
+	return apiBase
+}
+
+// dialWithRetry dials addr, retrying until it succeeds or timeout elapses.
+// Protocol listeners can take a few milliseconds to bind after the
+// management API responds, so callers that immediately dial a non-HTTP
+// protocol port right after startMocklyConfig returns should use this
+// instead of a single net.Dial.
+func dialWithRetry(t *testing.T, network, addr string, timeout time.Duration) net.Conn {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout(network, addr, 200*time.Millisecond)
+		if err == nil {
+			return conn
+		}
+		lastErr = err
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("dial %s %s: %v", network, addr, lastErr)
+	return nil
+}
+
 func waitForHTTP(t *testing.T, url string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -234,6 +295,119 @@ protocols:
 	mustGetJSON(t, apiBase+"/api/mocks/http", &mocks)
 	if len(mocks) != 1 || mocks[0]["id"] != "hello" {
 		t.Errorf("unexpected mocks from API: %+v", mocks)
+	}
+}
+
+// TestE2E_InlineOpenAPI_GeneratesAndOverridesMocks exercises the real
+// `mockly start` binary against a config that references an OpenAPI spec
+// inline (protocols.http.openapi) instead of running `mockly generate` as a
+// separate step: it verifies the spec-derived mock is actually served, that
+// a hand-written mocks: entry sharing the spec's operation id overrides its
+// response, and that a hand-written mock with no spec counterpart at all is
+// still served alongside it.
+func TestE2E_InlineOpenAPI_GeneratesAndOverridesMocks(t *testing.T) {
+	dir := t.TempDir()
+
+	specPath := filepath.Join(dir, "orders.yaml")
+	spec := `openapi: 3.0.3
+info:
+  title: Orders
+  version: "1.0"
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+
+	apiPort := freePort(t)
+	httpPort := freePort(t)
+	cfg := fmt.Sprintf(`mockly:
+  api:
+    port: %d
+protocols:
+  http:
+    enabled: true
+    port: %d
+    openapi: orders.yaml
+    mocks:
+      - id: listorders
+        request:
+          method: GET
+          path: /orders
+        response:
+          status: 200
+          body: '{"count":99,"overridden":true}'
+      - id: create-order
+        request:
+          method: POST
+          path: /orders
+        response:
+          status: 201
+`, apiPort, httpPort)
+
+	cfgPath := filepath.Join(dir, "mockly.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cmd := exec.Command(binaryPath, "start", "--config", cfgPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start mockly: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := cmd.Process.Kill(); err != nil {
+			t.Logf("cleanup: failed to kill mockly process: %v", err)
+		}
+		_ = cmd.Wait()
+	})
+
+	apiBase := fmt.Sprintf("http://127.0.0.1:%d", apiPort)
+	httpBase := fmt.Sprintf("http://127.0.0.1:%d", httpPort)
+	waitForHTTP(t, apiBase+"/api/protocols", 10*time.Second)
+
+	// The spec-derived mock's response is overridden by the hand-written
+	// "listorders" entry.
+	resp, err := http.Get(httpBase + "/orders")
+	if err != nil {
+		t.Fatalf("GET /orders: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 || !strings.Contains(string(body), `"overridden":true`) {
+		t.Errorf("GET /orders = %d %s, want 200 with overridden body", resp.StatusCode, body)
+	}
+
+	// The hand-written-only mock (no spec counterpart) is also served.
+	resp2, err := http.Post(httpBase+"/orders", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /orders: %v", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	if resp2.StatusCode != 201 {
+		t.Errorf("POST /orders = %d, want 201", resp2.StatusCode)
+	}
+
+	// Exactly these two mocks should be registered — the generator didn't
+	// also leave a stray, un-overridden "listorders" duplicate behind.
+	var mocks []map[string]interface{}
+	mustGetJSON(t, apiBase+"/api/mocks/http", &mocks)
+	if len(mocks) != 2 {
+		t.Errorf("want 2 HTTP mocks, got %d: %+v", len(mocks), mocks)
 	}
 }
 

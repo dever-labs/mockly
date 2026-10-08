@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/dever-labs/mockly/internal/api"
 	"github.com/dever-labs/mockly/internal/asyncapi"
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/configgen"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/metrics"
 	"github.com/dever-labs/mockly/internal/openapi"
@@ -90,12 +92,33 @@ binary with a built-in web UI and REST management API.`,
 // start
 // ---------------------------------------------------------------------------
 
+// loadResolvedConfig loads the config at path and resolves any inline
+// schema reference it declares (HTTPConfig.OpenAPI, an AsyncAPI field, or a
+// GRPCService.Proto) into mocks, printing any generator warning to stderr.
+// This is the shared entry point for every command that actually needs the
+// final, effective mock set (start, apply, config validate) — commands that
+// only read e.g. the management API port don't need it.
+func loadResolvedConfig(path string) (*config.Config, error) {
+	cfg, err := config.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	warnings, err := configgen.Resolve(cfg, filepath.Dir(path))
+	for _, w := range warnings {
+		fmt.Fprintln(os.Stderr, "warn:", w)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
 func startCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start all configured mock servers",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(cfgFile)
+			cfg, err := loadResolvedConfig(cfgFile)
 			if err != nil {
 				return err
 			}
@@ -351,7 +374,7 @@ func applyCmd() *cobra.Command {
 		Use:   "apply",
 		Short: "Apply a config file to a running Mockly instance",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(applyFile)
+			cfg, err := loadResolvedConfig(applyFile)
 			if err != nil {
 				return err
 			}
@@ -394,6 +417,10 @@ effects (no ports bound, no servers started). Reports YAML parse errors,
 duplicate mock IDs within a protocol, and invalid regular expressions
 (path_regex/uri_regex fields and any "re:..." matcher value).
 
+Any inline schema reference (openapi:/asyncapi:/proto:) is also resolved,
+so a broken or stale spec is caught here too, same as it would be at
+"mockly start".
+
 Exits non-zero if the file is missing or invalid, so this can be wired into
 a CI step or pre-commit hook.`,
 		Args: cobra.MaximumNArgs(1),
@@ -405,7 +432,7 @@ a CI step or pre-commit hook.`,
 			if _, err := os.Stat(path); err != nil {
 				return fmt.Errorf("config %q: %w", path, err)
 			}
-			cfg, err := config.Load(path)
+			cfg, err := loadResolvedConfig(path)
 			if err != nil {
 				return fmt.Errorf("config %q: %w", path, err)
 			}

@@ -122,7 +122,10 @@ func (s *Server) GetMessageStore() *MessageStore {
 
 // Start runs the MQTT broker. Blocks until ctx is cancelled.
 func (s *Server) Start(ctx context.Context) error {
-	broker := mqtt.New(&mqtt.Options{})
+	// InlineClient is required for broker.Publish (used below to deliver mock
+	// responses) — without it, every publish from Mockly itself fails with
+	// mqtt.ErrInlineClientNotEnabled and mock responses are silently dropped.
+	broker := mqtt.New(&mqtt.Options{InlineClient: true})
 
 	if err := broker.AddHook(new(auth.AllowHook), nil); err != nil {
 		return fmt.Errorf("mqtt add auth hook: %w", err)

@@ -1,0 +1,43 @@
+// Sample service definition used by configs/example.yaml's gRPC section to
+// demonstrate the "proto:" inline-schema-reference feature: Mockly generates
+// one mock per unary RPC method from this file at load time, and any
+// hand-written mock in mockly.yaml with a matching ID overrides it (see
+// README's "Alternative: reference a spec directly from mockly.yaml").
+syntax = "proto3";
+
+package users.v1;
+
+service UserService {
+  rpc GetUser (GetUserRequest) returns (GetUserReply);
+  rpc ListUsers (ListUsersRequest) returns (ListUsersReply);
+  rpc DeleteUser (DeleteUserRequest) returns (DeleteUserReply);
+}
+
+message GetUserRequest {
+  string id = 1;
+}
+
+message GetUserReply {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+}
+
+message ListUsersRequest {}
+
+message ListUsersReply {
+  repeated User users = 1;
+}
+
+message User {
+  string id = 1;
+  string name = 2;
+}
+
+message DeleteUserRequest {
+  string id = 1;
+}
+
+message DeleteUserReply {
+  bool success = 1;
+}

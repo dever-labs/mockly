@@ -839,17 +839,61 @@ type AMQPConfig struct {
 	// underneath Mocks below (a matching "id" overrides, anything else is
 	// appended). See HTTPConfig.OpenAPI for the same mechanism applied to
 	// HTTP.
-	AsyncAPI string     `yaml:"asyncapi,omitempty" json:"asyncapi,omitempty"`
-	Mocks    []AMQPMock `yaml:"mocks" json:"mocks"`
+	AsyncAPI string `yaml:"asyncapi,omitempty" json:"asyncapi,omitempty"`
+	// Exchanges declares the type of each named exchange, which controls how
+	// Bindings below route a published message's routing key to queues:
+	//   - "direct" (default when an exchange isn't listed here): a binding's
+	//     RoutingKeyPattern must equal the published routing key exactly
+	//     (empty pattern matches any key).
+	//   - "fanout": every binding for that exchange matches, regardless of
+	//     routing key or RoutingKeyPattern.
+	//   - "topic": RoutingKeyPattern is matched against the routing key using
+	//     real AMQP topic semantics ("."-separated words, "*" matches
+	//     exactly one word, "#" matches zero or more words; empty pattern
+	//     matches any key).
+	// An exchange is never required to be declared here — publishing to or
+	// binding against an undeclared exchange defaults to "direct" semantics.
+	Exchanges []AMQPExchange `yaml:"exchanges,omitempty" json:"exchanges,omitempty"`
+	// Bindings, when non-empty, enables real exchange/queue topology: a
+	// published message's exchange+routing_key is routed (per that
+	// exchange's type above) to every bound Queue, and mocks are matched by
+	// Queue (see AMQPMock.Queue) rather than directly by exchange+routing
+	// key. When Bindings is empty (default), publishing behaves exactly as
+	// before this field existed: mocks are matched directly against
+	// AMQPMock.Exchange/RoutingKey and delivered to whichever consumer
+	// happens to be active on the publishing channel (or the first
+	// available consumer).
+	Bindings []AMQPBinding `yaml:"bindings,omitempty" json:"bindings,omitempty"`
+	Mocks    []AMQPMock    `yaml:"mocks" json:"mocks"`
+}
+
+// AMQPExchange declares an exchange's routing type for AMQPConfig.Bindings.
+type AMQPExchange struct {
+	Name string `yaml:"name" json:"name"`
+	// Type is one of "direct" (default), "topic", or "fanout".
+	Type string `yaml:"type,omitempty" json:"type,omitempty"`
+}
+
+// AMQPBinding ties an exchange+routing-key pattern to a queue, mirroring a
+// real broker's Exchange.Bind/Queue.Bind topology. See AMQPConfig.Bindings.
+type AMQPBinding struct {
+	Exchange          string `yaml:"exchange" json:"exchange"`
+	RoutingKeyPattern string `yaml:"routing_key_pattern,omitempty" json:"routing_key_pattern,omitempty"`
+	Queue             string `yaml:"queue" json:"queue"`
 }
 
 type AMQPMock struct {
-	ID         string          `yaml:"id" json:"id"`
-	Exchange   string          `yaml:"exchange,omitempty" json:"exchange,omitempty"`
-	RoutingKey string          `yaml:"routing_key,omitempty" json:"routing_key,omitempty"`
-	Response   *AMQPResponse   `yaml:"response,omitempty" json:"response,omitempty"`
-	Delay      Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
-	State      *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
+	ID         string `yaml:"id" json:"id"`
+	Exchange   string `yaml:"exchange,omitempty" json:"exchange,omitempty"`
+	RoutingKey string `yaml:"routing_key,omitempty" json:"routing_key,omitempty"`
+	// Queue matches a mock against a queue routed to by AMQPConfig.Bindings
+	// instead of directly by Exchange/RoutingKey above. Only used when
+	// Bindings is non-empty; ignored (and Exchange/RoutingKey used instead)
+	// otherwise.
+	Queue    string          `yaml:"queue,omitempty" json:"queue,omitempty"`
+	Response *AMQPResponse   `yaml:"response,omitempty" json:"response,omitempty"`
+	Delay    Duration        `yaml:"delay,omitempty" json:"delay,omitempty"`
+	State    *StateCondition `yaml:"state,omitempty" json:"state,omitempty"`
 }
 
 type AMQPResponse struct {

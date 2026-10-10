@@ -138,8 +138,6 @@ func readPublish(t *testing.T, conn net.Conn) (string, string) {
 }
 
 func TestMQTTServer_GlobalFault(t *testing.T) {
-	t.Skip("TODO: implement MQTT response delivery assertion with a compatible client")
-
 	port := freePort(t)
 	sc := scenarios.New(nil)
 	log := logger.New(100)
@@ -189,5 +187,35 @@ func TestMQTTServer_GlobalFault(t *testing.T) {
 }
 
 func TestMQTTServer_MQTTFault_FromScenario(t *testing.T) {
-	t.Skip("TODO: implement MQTT scenario fault assertion with a compatible client")
+	port := freePort(t)
+	sc := scenarios.New([]config.Scenario{{ID: "drop", Faults: &config.ProtocolFaults{MQTT: &config.MQTTFault{ErrorRate: 0}}}})
+	srv := mqttserver.New(&config.MQTTConfig{
+		Enabled: true,
+		Port:    port,
+		Mocks: []config.MQTTMock{{
+			ID:       "m",
+			Topic:    "test/topic",
+			Response: &config.MQTTResponse{Topic: "test/response", Payload: "world"},
+		}},
+	}, state.New(), sc, logger.New(100))
+	startServer(t, srv)
+	sc.Activate("drop")
+
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	sub := connectMQTT(t, addr, fmt.Sprintf("sub-%d", time.Now().UnixNano()))
+	defer sub.Close() //nolint:errcheck
+	subscribeMQTT(t, sub, "test/response")
+	pub := connectMQTT(t, addr, fmt.Sprintf("pub-%d", time.Now().UnixNano()))
+	defer pub.Close() //nolint:errcheck
+
+	publishMQTT(t, pub, "test/topic", "hello")
+	if err := sub.SetReadDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+		t.Fatalf("set MQTT scenario fault deadline: %v", err)
+	}
+	buf := make([]byte, 1)
+	if _, err := sub.Read(buf); err == nil {
+		t.Fatal("scenario fault unexpectedly delivered MQTT data")
+	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+		t.Fatalf("scenario fault read error = %v, want timeout", err)
+	}
 }

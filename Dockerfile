@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ── Stage 1: Build UI ─────────────────────────────────────────────────────────
-FROM node:20-alpine AS ui-builder
+FROM node:25-alpine AS ui-builder
 WORKDIR /app/ui
 COPY ui/package*.json ./
 RUN npm ci

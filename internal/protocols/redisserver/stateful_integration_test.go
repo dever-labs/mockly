@@ -266,6 +266,94 @@ func TestStateful_List_PushRangeLen(t *testing.T) {
 	}
 }
 
+func TestStateful_HGetAll(t *testing.T) {
+	port, stop := startStateful(t)
+	defer stop()
+
+	respRoundTrip(t, port, respCmd("HSET", "h", "f1", "v1", "f2", "v2"))
+
+	// *4\r\n + 4 bulk strings (2 lines each) = 9 lines total.
+	lines := respRoundTripLines(t, port, respCmd("HGETALL", "h"), 9)
+	if len(lines) != 9 || lines[0] != "*4" {
+		t.Fatalf("HGETALL array header: want '*4', got %v", lines)
+	}
+	// Pair up field/value by scanning the flat bulk-string sequence directly,
+	// since map iteration order of the hash is non-deterministic.
+	fields := map[string]string{}
+	for i := 1; i+3 < len(lines); i += 4 {
+		fields[lines[i+1]] = lines[i+3]
+	}
+	if fields["f1"] != "v1" || fields["f2"] != "v2" {
+		t.Fatalf("HGETALL fields: want f1=v1 f2=v2, got %v (lines=%v)", fields, lines)
+	}
+}
+
+func TestStateful_HGetAll_MissingKeyReturnsEmptyArray(t *testing.T) {
+	port, stop := startStateful(t)
+	defer stop()
+
+	line := respRoundTrip(t, port, respCmd("HGETALL", "nosuchkey"))
+	if line != "*0" {
+		t.Fatalf("HGETALL missing key: want '*0', got %q", line)
+	}
+}
+
+func TestStateful_HGetAll_WrongType(t *testing.T) {
+	port, stop := startStateful(t)
+	defer stop()
+
+	respRoundTrip(t, port, respCmd("SET", "k", "v"))
+	line := respRoundTrip(t, port, respCmd("HGETALL", "k"))
+	if line[0] != '-' {
+		t.Fatalf("expected WRONGTYPE error for HGETALL on a string key, got %q", line)
+	}
+}
+
+// TestStateful_WrongArity proves every stateful command's arity check
+// (wrongArgsErr) actually runs and returns a RESP error, not just an
+// internal panic or silently-wrong response, when called with too few
+// arguments.
+func TestStateful_WrongArity(t *testing.T) {
+	port, stop := startStateful(t)
+	defer stop()
+
+	cases := []string{"SET", "GET", "DEL", "EXISTS", "EXPIRE", "TTL", "PERSIST", "APPEND", "HSET", "HGET", "HGETALL", "HDEL", "HEXISTS", "LPUSH", "RPUSH", "LRANGE", "LLEN"}
+	for _, cmd := range cases {
+		t.Run(cmd, func(t *testing.T) {
+			line := respRoundTrip(t, port, respCmd(cmd))
+			if len(line) == 0 || line[0] != '-' {
+				t.Fatalf("%s with no args: want RESP error, got %q", cmd, line)
+			}
+		})
+	}
+}
+
+// TestStateful_ResetData proves Server.ResetData actually clears the
+// in-memory datastore (the codepath POST /api/reset relies on via
+// internal/api.Server.reset to stop stateful Redis keys leaking between
+// test runs/scenarios).
+func TestStateful_ResetData(t *testing.T) {
+	srv, port := newStatefulRedisServer(nil)
+	stop := startRedis(t, srv)
+	defer stop()
+
+	respRoundTrip(t, port, respCmd("SET", "k", "v"))
+	respRoundTrip(t, port, respCmd("HSET", "h", "f", "v"))
+	respRoundTrip(t, port, respCmd("LPUSH", "l", "a"))
+
+	srv.ResetData()
+
+	if line := respRoundTrip(t, port, respCmd("GET", "k")); line != "$-1" {
+		t.Fatalf("GET after ResetData: want '$-1', got %q", line)
+	}
+	if line := respRoundTrip(t, port, respCmd("HGETALL", "h")); line != "*0" {
+		t.Fatalf("HGETALL after ResetData: want '*0', got %q", line)
+	}
+	if line := respRoundTrip(t, port, respCmd("LLEN", "l")); line != ":0" {
+		t.Fatalf("LLEN after ResetData: want ':0', got %q", line)
+	}
+}
+
 func TestStateful_WrongType(t *testing.T) {
 	port, stop := startStateful(t)
 	defer stop()

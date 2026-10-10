@@ -260,20 +260,24 @@ func (s *Server) processPublish(state *connState, channel uint16, pub *publishSt
 // connection model — it does not fan out across separate client
 // connections.
 func (s *Server) routePublish(state *connState, pub *publishState, fault *config.AMQPFault, body string) {
+	// Fault injection is rolled once per published message (matching the
+	// flat-mode semantics below), not once per bound queue — otherwise a
+	// fanout publish to N queues would apply N independent Bernoulli
+	// trials, turning a configured ErrorRate of e.g. 0.1 into a much
+	// higher effective drop probability for the publish as a whole.
+	dropped := fault != nil && s.scenarios.RollFault(fault.ErrorRate)
+
 	matchedID := ""
 	for _, queue := range s.routeToQueues(pub.exchange, pub.routingKey) {
 		mock, ok := s.matchMockByQueue(queue)
 		if ok && matchedID == "" {
 			matchedID = mock.ID
 		}
-		if !ok || mock.Response == nil {
+		if !ok || mock.Response == nil || dropped {
 			continue
 		}
 		consumers := consumersForQueue(state, queue)
 		if len(consumers) == 0 {
-			continue
-		}
-		if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
 			continue
 		}
 		if mock.Delay.Duration > 0 {

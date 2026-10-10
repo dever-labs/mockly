@@ -64,6 +64,11 @@ class MocklyContainer(DockerContainer):
         ) as config_file:
             config_file.write(self._config_yaml)
             self._config_host_path = config_file.name
+        # The mockly image runs as a non-root user, so the bind-mounted
+        # config file must be world-readable (tempfile defaults to 0600,
+        # owner-only). Match the Go/Node clients, which copy the config
+        # into the container with explicit mode 0o644.
+        os.chmod(self._config_host_path, 0o644)
         self.with_command(f"start -c {CONTAINER_CONFIG_PATH}")
         self.with_volume_mapping(self._config_host_path, CONTAINER_CONFIG_PATH, "ro")
 

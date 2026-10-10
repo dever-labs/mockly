@@ -27,6 +27,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # actions/setup-go@v7.0.0
         with:
           go-version: "1.26"
+          check-latest: true
           cache: false
 
       - name: Lint (golangci-lint)
@@ -38,12 +39,29 @@ jobs:
         # Run all internal packages with the race detector, except snmpserver
         # which wraps slayercat/GoSNMPServer v0.5.2 — that library has an
         # unfixed data race in Shutdown()/NextSnmp() that is not in our code.
+        # Coverage from both runs is merged into one profile for the
+        # threshold check and artifact upload below.
         run: |
-          go test $(go list ./internal/... | grep -v snmpserver) -race
-          go test ./internal/protocols/snmpserver/...
+          go test $(go list ./internal/... | grep -v snmpserver) -race -coverprofile=coverage-main.txt -covermode=atomic
+          go test ./internal/protocols/snmpserver/... -coverprofile=coverage-snmp.txt -covermode=atomic
+          echo "mode: atomic" > coverage.txt
+          grep -h -v '^mode:' coverage-main.txt coverage-snmp.txt >> coverage.txt
+
+      - name: Check coverage threshold
+        run: ./scripts/check-coverage.sh coverage.txt
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7.0.1
+        with:
+          name: coverage-report
+          path: coverage.txt
+          retention-days: 30
 
       - name: Check documented dependency versions
         run: ./scripts/check-doc-versions.sh
+
+      - name: Vulnerability scan (govulncheck)
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -101,6 +119,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # actions/setup-go@v7.0.0
         with:
           go-version: "1.26"
+          check-latest: true
           cache: false
 
       - name: Download UI artifact
@@ -128,6 +147,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # actions/setup-go@v7.0.0
         with:
           go-version: "1.26"
+          check-latest: true
           cache: false
 
       - name: Run Go testcontainers tests
@@ -216,6 +236,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # actions/setup-go@v7.0.0
         with:
           go-version: "1.26"
+          check-latest: true
           cache: false
 
       - name: Download UI artifact

@@ -5,7 +5,7 @@ DIST_DIR   := dist
 
 GO_BUILD_FLAGS := -ldflags="-s -w"
 
-.PHONY: all build build-ui build-go clean test test-e2e lint dev tidy test-tc test-tc-go test-tc-node test-tc-python
+.PHONY: all build build-ui build-go clean test test-e2e lint vulncheck check-coverage dev tidy test-tc test-tc-go test-tc-node test-tc-python
 
 all: build
 
@@ -43,6 +43,14 @@ test-e2e: build-go
 ## lint: Run golangci-lint
 lint:
 	golangci-lint run ./...
+
+## vulncheck: Scan Go dependencies for known vulnerabilities
+vulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+## check-coverage: Verify test coverage meets the CI threshold (run `test` first)
+check-coverage:
+	./scripts/check-coverage.sh coverage.txt
 
 ## dev: Run with hot-reload (requires air)
 dev:

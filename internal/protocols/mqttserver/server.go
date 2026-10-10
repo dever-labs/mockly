@@ -271,13 +271,17 @@ func protocolVersionByte(version string) (byte, bool) {
 // OnConnect enforces cfg.ProtocolVersion, when set, by refusing CONNECT
 // attempts using any other MQTT wire version. When ProtocolVersion is empty,
 // this is a no-op and the broker auto-negotiates per client as before.
+// Config validation (internal/config.validateProtocolVersions) rejects any
+// unrecognized ProtocolVersion value before a server is ever started, but
+// OnConnect still fails closed (rejects the connection) defensively if an
+// unmapped value somehow reaches it.
 func (h *mockHook) OnConnect(cl *mqtt.Client, pk packets.Packet) error {
 	want := h.srv.cfg.ProtocolVersion
 	if want == "" {
 		return nil
 	}
 	wantByte, ok := protocolVersionByte(want)
-	if !ok || pk.ProtocolVersion == wantByte {
+	if ok && pk.ProtocolVersion == wantByte {
 		return nil
 	}
 	return packets.ErrUnsupportedProtocolVersion

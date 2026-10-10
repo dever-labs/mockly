@@ -49,6 +49,12 @@ func startCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if errs := config.Validate(cfg); len(errs) > 0 {
+				for _, e := range errs {
+					fmt.Fprintln(os.Stderr, "error:", e)
+				}
+				return fmt.Errorf("%s: %d validation error(s) found", cfgFile, len(errs))
+			}
 
 			if uiPort > 0 {
 				cfg.Mockly.UI.Port = uiPort

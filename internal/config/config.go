@@ -736,12 +736,15 @@ type SNMPConfig struct {
 	Port    int  `yaml:"port" json:"port"`
 	// Community is the v1/v2c community string accepted by the agent (default: public).
 	Community string `yaml:"community,omitempty" json:"community,omitempty"`
-	// ProtocolVersion pins the agent to a single SNMP dialect: "v1", "v2c",
-	// or "v3". When empty (default), both community-based (v1/v2c) and USM
-	// (v3) requests are accepted, unchanged from today's behavior. Setting
-	// "v3" rejects v1/v2c requests outright; setting "v1" or "v2c" disables
-	// v3/USM authentication (configured V3Users are not registered), so any
-	// v3 request fails authentication.
+	// ProtocolVersion pins the agent's accepted SNMP dialect(s): "v1",
+	// "v2c", or "v3". When empty (default), both community-based (v1/v2c)
+	// and USM (v3) requests are accepted, unchanged from today's behavior.
+	// Setting "v3" rejects v1/v2c requests outright. Setting "v1" or "v2c"
+	// disables v3/USM authentication (configured V3Users are not
+	// registered), so any v3 request fails authentication; note this does
+	// NOT distinguish v1 from v2c traffic specifically (both remain
+	// accepted together) since the underlying library has no separate
+	// v1-only/v2c-only flag.
 	ProtocolVersion string `yaml:"protocolVersion,omitempty" json:"protocolVersion,omitempty"`
 	// V3Users lists SNMPv3 USM user credentials.
 	V3Users []SNMPUser `yaml:"v3_users,omitempty" json:"v3_users,omitempty"`

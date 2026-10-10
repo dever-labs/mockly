@@ -22,11 +22,12 @@ var supportedProtocolVersions = map[string][]string{
 	"ldap": {"v3"},
 }
 
-// validateProtocolVersions checks every protocol's ProtocolVersion field (via
-// reflection, so new protocols only need an entry in
-// supportedProtocolVersions to be covered) against the list of versions this
-// binary actually supports for that protocol, reporting a clear error for
-// any unrecognized or unsupported value.
+// validateProtocolVersions checks each protocol's ProtocolVersion field
+// against the list of versions this binary actually supports for that
+// protocol, reporting a clear error for any unrecognized or unsupported
+// value. New protocols must be wired in explicitly below (there is no
+// reflection); adding an entry to supportedProtocolVersions alone is not
+// sufficient.
 func validateProtocolVersions(cfg *Config) []error {
 	var errs []error
 

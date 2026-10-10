@@ -1007,9 +1007,10 @@ protocols:
     enabled: true
     port: 1161            # default; 161 requires root / CAP_NET_BIND_SERVICE
     community: "public"   # v1/v2c community string
-    # Optional: pin the agent to a single SNMP dialect ("v1", "v2c", or
+    # Optional: restrict the accepted SNMP dialect(s) ("v1", "v2c", or
     # "v3"). Omit to accept any dialect (default). "v3" rejects v1/v2c
-    # requests; "v1"/"v2c" disables v3/USM authentication.
+    # requests; "v1"/"v2c" disables v3/USM authentication (v1 and v2c are
+    # not distinguished from each other — both remain accepted together).
     protocolVersion: "v3"
     v3_users:
       - username: mocklyuser

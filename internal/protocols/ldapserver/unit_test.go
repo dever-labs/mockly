@@ -196,6 +196,38 @@ func TestReadTLV_Normal(t *testing.T) {
 	}
 }
 
+func TestReadTLV_TruncatedExtendedLength_NoPanic(t *testing.T) {
+	// tag=0x04, length-of-length byte claims 5 extended length octets
+	// (0x85), but only 1 byte actually follows. Must not panic.
+	input := []byte{0x04, 0x85, 0x01}
+	tag, value, consumed := readTLV(input)
+	if tag != 0x04 {
+		t.Errorf("tag = 0x%02x, want 0x04", tag)
+	}
+	if value != nil {
+		t.Errorf("value = %v, want nil for truncated input", value)
+	}
+	if consumed != len(input) {
+		t.Errorf("consumed = %d, want %d", consumed, len(input))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// parseBindRequest
+// ---------------------------------------------------------------------------
+
+func TestParseBindRequest_MalformedInput_NoPanic(t *testing.T) {
+	// version INTEGER, then name tag 0x04 with a bogus extended length
+	// claiming more length-octets than remain in the buffer.
+	content := []byte{0x02, 0x01, 0x03, 0x04, 0x85, 0x01}
+	name, password, simple := parseBindRequest(content)
+	if simple {
+		t.Errorf("simple = true for malformed/truncated bind request, want false")
+	}
+	_ = name
+	_ = password
+}
+
 // ---------------------------------------------------------------------------
 // encodeInt
 // ---------------------------------------------------------------------------

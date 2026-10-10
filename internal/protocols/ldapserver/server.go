@@ -341,6 +341,12 @@ func readTLV(b []byte) (byte, []byte, int) {
 	}
 	length, hdr := tlvLength(b[1:])
 	start := 1 + hdr
+	if start > len(b) {
+		// Declared length-of-length bytes exceed what's actually present
+		// (truncated/malformed input) — return no content rather than
+		// slicing out of range.
+		return b[0], nil, len(b)
+	}
 	end := start + length
 	if end > len(b) {
 		end = len(b)

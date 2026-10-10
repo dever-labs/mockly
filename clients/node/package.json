@@ -48,7 +48,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^5.4.3"
   },
   "optionalDependencies": {
     "@dever-labs/mockly-driver-linux-x64": "0.15.0",

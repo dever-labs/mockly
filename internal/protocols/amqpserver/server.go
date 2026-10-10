@@ -214,6 +214,12 @@ func (s *Server) processPublish(state *connState, channel uint16, pub *publishSt
 
 	body := pub.body.String()
 	s.messages.Add(config.ReceivedAMQPMessage{ID: fmt.Sprintf("%d", time.Now().UnixNano()), Exchange: pub.exchange, RoutingKey: pub.routingKey, Body: body, Timestamp: time.Now().UTC().Format(time.RFC3339)})
+
+	if len(s.cfg.Bindings) > 0 {
+		s.routePublish(state, pub, fault, body)
+		return
+	}
+
 	mock, ok := s.matchMock(pub.exchange, pub.routingKey)
 	matchedID := ""
 	if ok {
@@ -239,19 +245,195 @@ func (s *Server) processPublish(state *connState, channel uint16, pub *publishSt
 	if cons == nil {
 		return
 	}
-	respExchange := mock.Response.Exchange
-	respRoutingKey := mock.Response.RoutingKey
+	s.deliver(state.conn, cons, mock.Response, pub.routingKey)
+}
+
+// routePublish handles the Bindings-topology delivery path (as opposed to
+// the flat Exchange+RoutingKey matchMock path above): it resolves the
+// published exchange+routing key to every bound queue (per that exchange's
+// declared type — direct/topic/fanout), matches each routed queue against a
+// mock by AMQPMock.Queue, and delivers that mock's response to every
+// consumer on this connection currently consuming from that queue.
+//
+// Delivery is scoped to consumers on the same TCP connection as the
+// publisher, matching this mock server's existing (pre-topology) single
+// connection model — it does not fan out across separate client
+// connections.
+func (s *Server) routePublish(state *connState, pub *publishState, fault *config.AMQPFault, body string) {
+	matchedID := ""
+	for _, queue := range s.routeToQueues(pub.exchange, pub.routingKey) {
+		mock, ok := s.matchMockByQueue(queue)
+		if ok && matchedID == "" {
+			matchedID = mock.ID
+		}
+		if !ok || mock.Response == nil {
+			continue
+		}
+		consumers := consumersForQueue(state, queue)
+		if len(consumers) == 0 {
+			continue
+		}
+		if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+			continue
+		}
+		if mock.Delay.Duration > 0 {
+			time.Sleep(mock.Delay.Duration)
+		}
+		for _, cons := range consumers {
+			s.deliver(state.conn, cons, mock.Response, pub.routingKey)
+		}
+	}
+	s.log.Log(logger.Entry{Protocol: "amqp", Method: "PUBLISH", Path: pub.routingKey, Status: 0, Body: body, MatchedID: matchedID})
+}
+
+// deliver writes a Basic.Deliver method frame plus content header/body
+// frames for resp to cons over conn, used by both the flat and
+// Bindings-topology publish paths.
+func (s *Server) deliver(conn net.Conn, cons *consumer, resp *config.AMQPResponse, incomingRoutingKey string) {
+	respExchange := resp.Exchange
+	respRoutingKey := resp.RoutingKey
 	if respRoutingKey == "" {
-		respRoutingKey = pub.routingKey
+		respRoutingKey = incomingRoutingKey
 	}
 	deliveryTag := atomic.AddUint64(&s.delivery, 1)
 	args := append(encodeShortStr(cons.tag), encodeLongLong(deliveryTag)...)
 	args = append(args, 0)
 	args = append(args, encodeShortStr(respExchange)...)
 	args = append(args, encodeShortStr(respRoutingKey)...)
-	_ = writeMethodFrame(state.conn, cons.channel, 60, 60, args)
-	_ = writeHeaderFrame(state.conn, cons.channel, 60, uint64(len(mock.Response.Body)))
-	_ = writeBodyFrame(state.conn, cons.channel, []byte(mock.Response.Body))
+	_ = writeMethodFrame(conn, cons.channel, 60, 60, args)
+	_ = writeHeaderFrame(conn, cons.channel, 60, uint64(len(resp.Body)))
+	_ = writeBodyFrame(conn, cons.channel, []byte(resp.Body))
+}
+
+// consumersForQueue returns every consumer on this connection currently
+// subscribed to queue.
+func consumersForQueue(state *connState, queue string) []*consumer {
+	var out []*consumer
+	for _, c := range state.consumers {
+		if c.queue == queue {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// routeToQueues resolves a published exchange+routingKey to the (deduped,
+// order-preserving) list of queues bound to it, per that exchange's
+// declared type (direct/topic/fanout; default "direct" when undeclared).
+func (s *Server) routeToQueues(exchange, routingKey string) []string {
+	exType := s.exchangeType(exchange)
+	seen := map[string]bool{}
+	var queues []string
+	for _, b := range s.cfg.Bindings {
+		if b.Exchange != exchange {
+			continue
+		}
+		if !bindingMatches(exType, b.RoutingKeyPattern, routingKey) {
+			continue
+		}
+		if seen[b.Queue] {
+			continue
+		}
+		seen[b.Queue] = true
+		queues = append(queues, b.Queue)
+	}
+	return queues
+}
+
+// exchangeType returns the declared type for name from s.cfg.Exchanges,
+// defaulting to "direct" when the exchange isn't declared or has an empty
+// Type.
+func (s *Server) exchangeType(name string) string {
+	for _, ex := range s.cfg.Exchanges {
+		if ex.Name == name {
+			if ex.Type == "" {
+				return "direct"
+			}
+			return ex.Type
+		}
+	}
+	return "direct"
+}
+
+// bindingMatches decides whether a binding's RoutingKeyPattern matches
+// routingKey, per the real AMQP semantics of exchangeType:
+//   - "fanout": always matches, regardless of pattern/routing key.
+//   - "topic": "."-word pattern matching ("*" = exactly one word, "#" = zero
+//     or more words); an empty pattern matches any key.
+//   - "direct" (default/unknown): exact string equality; an empty pattern
+//     matches any key.
+func bindingMatches(exchangeType, pattern, routingKey string) bool {
+	switch exchangeType {
+	case "fanout":
+		return true
+	case "topic":
+		if pattern == "" {
+			return true
+		}
+		return amqpTopicMatches(pattern, routingKey)
+	default:
+		if pattern == "" {
+			return true
+		}
+		return pattern == routingKey
+	}
+}
+
+// amqpTopicMatches implements real AMQP topic-exchange routing-key matching:
+// both pattern and key are split on ".", "*" matches exactly one word, and
+// "#" matches zero or more words (and may appear anywhere, not just at the
+// end).
+func amqpTopicMatches(pattern, key string) bool {
+	return topicMatchSegments(strings.Split(pattern, "."), strings.Split(key, "."))
+}
+
+func topicMatchSegments(pattern, key []string) bool {
+	if len(pattern) == 0 {
+		return len(key) == 0
+	}
+	switch pattern[0] {
+	case "#":
+		if len(pattern) == 1 {
+			return true
+		}
+		for i := 0; i <= len(key); i++ {
+			if topicMatchSegments(pattern[1:], key[i:]) {
+				return true
+			}
+		}
+		return false
+	case "*":
+		if len(key) == 0 {
+			return false
+		}
+		return topicMatchSegments(pattern[1:], key[1:])
+	default:
+		if len(key) == 0 || key[0] != pattern[0] {
+			return false
+		}
+		return topicMatchSegments(pattern[1:], key[1:])
+	}
+}
+
+// matchMockByQueue returns the first mock (whose StateCondition, if any, is
+// currently satisfied) whose Queue equals queue. Used by the
+// Bindings-topology publish path instead of matchMock's direct
+// exchange+routing-key matching.
+func (s *Server) matchMockByQueue(queue string) (config.AMQPMock, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, m := range s.mocks {
+		if m.State != nil {
+			if val, _ := s.store.Get(m.State.Key); val != m.State.Value {
+				continue
+			}
+		}
+		if m.Queue != queue {
+			continue
+		}
+		return m, true
+	}
+	return config.AMQPMock{}, false
 }
 
 func (s *Server) matchMock(exchange, routingKey string) (config.AMQPMock, bool) {

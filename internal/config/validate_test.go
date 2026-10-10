@@ -137,3 +137,52 @@ func TestValidateAllowsPlainStringsAndValidRegexes(t *testing.T) {
 		t.Fatalf("expected no errors, got %v", errs)
 	}
 }
+
+func TestValidateAMQPTopology_UnsupportedExchangeType(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.AMQP = &AMQPConfig{
+		Enabled:   true,
+		Port:      5672,
+		Exchanges: []AMQPExchange{{Name: "orders", Type: "headers"}},
+	}
+	errs := Validate(&cfg)
+	if len(errs) != 1 {
+		t.Fatalf("expected exactly 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), `unsupported type "headers"`) {
+		t.Fatalf("unexpected error message: %v", errs[0])
+	}
+}
+
+func TestValidateAMQPTopology_BindingMissingExchangeOrQueue(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.AMQP = &AMQPConfig{
+		Enabled: true,
+		Port:    5672,
+		Bindings: []AMQPBinding{
+			{Exchange: "", Queue: ""},
+		},
+	}
+	errs := Validate(&cfg)
+	if len(errs) != 2 {
+		t.Fatalf("expected exactly 2 errors (missing exchange + missing queue), got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateAMQPTopology_ValidConfig(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.AMQP = &AMQPConfig{
+		Enabled:   true,
+		Port:      5672,
+		Exchanges: []AMQPExchange{{Name: "orders", Type: "topic"}},
+		Bindings: []AMQPBinding{
+			{Exchange: "orders", RoutingKeyPattern: "orders.*.created", Queue: "created-queue"},
+		},
+		Mocks: []AMQPMock{
+			{ID: "created", Queue: "created-queue", Response: &AMQPResponse{Body: "ok"}},
+		},
+	}
+	if errs := Validate(&cfg); len(errs) != 0 {
+		t.Fatalf("expected no errors, got %v", errs)
+	}
+}

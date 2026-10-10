@@ -24,6 +24,37 @@ func Validate(cfg *Config) []error {
 	errs = append(errs, validateBase64Fields(cfg)...)
 	errs = append(errs, validateRecordConfig(cfg)...)
 	errs = append(errs, validateProtocolVersions(cfg)...)
+	errs = append(errs, validateAMQPTopology(cfg)...)
+	return errs
+}
+
+// validateAMQPTopology checks protocols.amqp.exchanges/bindings: exchange
+// types must be one of the implemented values, and bindings must reference a
+// non-empty exchange and queue (an empty queue would silently drop every
+// message routed to it, and an empty exchange can never match a publish).
+func validateAMQPTopology(cfg *Config) []error {
+	var errs []error
+	amqp := cfg.Protocols.AMQP
+	if amqp == nil {
+		return errs
+	}
+	validTypes := map[string]bool{"": true, "direct": true, "topic": true, "fanout": true}
+	for i, ex := range amqp.Exchanges {
+		if !validTypes[ex.Type] {
+			errs = append(errs, fmt.Errorf(
+				"protocols.amqp.exchanges[%d]: exchange %q has unsupported type %q; supported types: direct, topic, fanout",
+				i, ex.Name, ex.Type,
+			))
+		}
+	}
+	for i, b := range amqp.Bindings {
+		if b.Exchange == "" {
+			errs = append(errs, fmt.Errorf("protocols.amqp.bindings[%d]: exchange must not be empty", i))
+		}
+		if b.Queue == "" {
+			errs = append(errs, fmt.Errorf("protocols.amqp.bindings[%d]: queue must not be empty", i))
+		}
+	}
 	return errs
 }
 

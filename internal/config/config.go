@@ -918,8 +918,25 @@ type LDAPConfig struct {
 	// LDAPv2 is a legacy, largely-obsolete dialect and is not yet supported
 	// — setting "v2" fails config validation with a clear error rather than
 	// starting a server that cannot actually speak it.
-	ProtocolVersion string     `yaml:"protocol_version,omitempty" json:"protocol_version,omitempty"`
-	Mocks           []LDAPMock `yaml:"mocks" json:"mocks"`
+	ProtocolVersion string `yaml:"protocol_version,omitempty" json:"protocol_version,omitempty"`
+	// Users lists bind credentials the server will enforce. When empty
+	// (default), every bind request succeeds regardless of DN/password,
+	// unchanged from today's behavior. When set, a bind only succeeds for
+	// a matching username+password pair (wrong credentials get a real
+	// bindResponse with invalidCredentials), and search requests are only
+	// served to bound connections — restricted to AllowedMockIDs when that
+	// user's list is non-empty, or unrestricted (today's behavior) when it
+	// is empty.
+	Users []LDAPUser `yaml:"users,omitempty" json:"users,omitempty"`
+	Mocks []LDAPMock `yaml:"mocks" json:"mocks"`
+}
+
+type LDAPUser struct {
+	Username string `yaml:"username" json:"username"`
+	Password string `yaml:"password" json:"password"`
+	// AllowedMockIDs restricts this user's search results to mocks with a
+	// matching ID. Omit/empty to allow this user to see all search mocks.
+	AllowedMockIDs []string `yaml:"allowed_mock_ids,omitempty" json:"allowed_mock_ids,omitempty"`
 }
 
 type LDAPMock struct {
@@ -969,10 +986,28 @@ type IMAPMessage struct {
 // ---------------------------------------------------------------------------
 
 type FTPConfig struct {
-	Enabled          bool      `yaml:"enabled" json:"enabled"`
-	Port             int       `yaml:"port" json:"port"`
-	PassivePortStart int       `yaml:"passive_port_start,omitempty" json:"passive_port_start,omitempty"`
-	Files            []FTPFile `yaml:"files" json:"files"`
+	Enabled          bool `yaml:"enabled" json:"enabled"`
+	Port             int  `yaml:"port" json:"port"`
+	PassivePortStart int  `yaml:"passive_port_start,omitempty" json:"passive_port_start,omitempty"`
+	// Users lists login credentials the server will enforce. When empty
+	// (default), USER/PASS always succeeds regardless of value, unchanged
+	// from today's behavior. When set, PASS only succeeds for a matching
+	// username+password pair (wrong credentials get "530 Login
+	// incorrect"), and file-access commands (LIST/NLST/RETR/STOR/DELE/SIZE)
+	// require a successful login first — restricted to AllowedFiles when
+	// that user's list is non-empty, or unrestricted (today's behavior)
+	// when it is empty.
+	Users []FTPUser `yaml:"users,omitempty" json:"users,omitempty"`
+	Files []FTPFile `yaml:"files" json:"files"`
+}
+
+type FTPUser struct {
+	Username string `yaml:"username" json:"username"`
+	Password string `yaml:"password" json:"password"`
+	// AllowedFiles restricts this user's visible/accessible files to
+	// entries with a matching ID. Omit/empty to allow this user to access
+	// all files.
+	AllowedFiles []string `yaml:"allowed_files,omitempty" json:"allowed_files,omitempty"`
 }
 
 type FTPFile struct {

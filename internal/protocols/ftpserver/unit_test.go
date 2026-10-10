@@ -148,7 +148,7 @@ func TestFTP_Listing_ContainsFilesInDir(t *testing.T) {
 		{ID: "f1", Path: "/data/file1.txt", Content: "hello"},
 		{ID: "f2", Path: "/other/file2.txt", Content: "world"},
 	})
-	listing := srv.listing("/data", false)
+	listing := srv.listing("/data", false, nil)
 	if !strings.Contains(listing, "file1.txt") {
 		t.Errorf("listing should contain file1.txt, got: %q", listing)
 	}
@@ -161,7 +161,7 @@ func TestFTP_Listing_NamesOnly(t *testing.T) {
 	srv := newTestFTPServer(t, []config.FTPFile{
 		{ID: "f1", Path: "/data/file1.txt", Content: "hello"},
 	})
-	listing := srv.listing("/data", true)
+	listing := srv.listing("/data", true, nil)
 	if !strings.Contains(listing, "file1.txt") {
 		t.Errorf("names-only listing should contain filename, got: %q", listing)
 	}
@@ -175,7 +175,7 @@ func TestFTP_Listing_EmptyTarget(t *testing.T) {
 	srv := newTestFTPServer(t, []config.FTPFile{
 		{ID: "f1", Path: "/root.txt", Content: "root"},
 	})
-	listing := srv.listing("", false)
+	listing := srv.listing("", false, nil)
 	if !strings.Contains(listing, "root.txt") {
 		t.Errorf("empty target should default to root, got: %q", listing)
 	}
@@ -189,7 +189,7 @@ func TestFTP_FindFile_Found(t *testing.T) {
 	srv := newTestFTPServer(t, []config.FTPFile{
 		{ID: "f1", Path: "/data.csv", Content: "a,b,c"},
 	})
-	f, ok := srv.findFile("/data.csv")
+	f, ok := srv.findFile("/data.csv", nil)
 	if !ok {
 		t.Fatal("expected to find file")
 	}
@@ -200,7 +200,7 @@ func TestFTP_FindFile_Found(t *testing.T) {
 
 func TestFTP_FindFile_NotFound(t *testing.T) {
 	srv := newTestFTPServer(t, nil)
-	_, ok := srv.findFile("/nonexistent.txt")
+	_, ok := srv.findFile("/nonexistent.txt", nil)
 	if ok {
 		t.Fatal("should not find nonexistent file")
 	}

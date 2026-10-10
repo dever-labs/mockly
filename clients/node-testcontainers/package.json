@@ -34,7 +34,7 @@
     "testcontainers": ">=10.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.4",
     "testcontainers": "^12.0.3",
     "typescript": "^5.0.0",
     "vitest": "^5.0.2"

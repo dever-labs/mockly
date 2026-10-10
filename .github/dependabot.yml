@@ -89,6 +89,11 @@ updates:
       - dependencies
     commit-message:
       prefix: "chore(deps)"
+    # JUnit Jupiter 6 requires Java 17+ at runtime; this client targets
+    # Java 11 (maven.compiler.target) for broad consumer compatibility.
+    ignore:
+      - dependency-name: "org.junit.jupiter:junit-jupiter"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: maven
     directory: /clients/java/testcontainers
@@ -99,6 +104,9 @@ updates:
       - dependencies
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      - dependency-name: "org.junit.jupiter:junit-jupiter"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: nuget
     directory: /clients/dotnet

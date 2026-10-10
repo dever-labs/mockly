@@ -2483,6 +2483,8 @@ make build        # build UI + Go binary
 make test         # run unit + integration tests
 make test-e2e     # run e2e tests (builds binary first)
 make lint         # run golangci-lint
+make vulncheck    # scan Go dependencies for known vulnerabilities (govulncheck)
+make check-coverage  # verify test coverage meets the CI threshold (run after `make test`)
 make dev          # hot-reload with air
 ```
 

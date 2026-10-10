@@ -123,7 +123,7 @@ jobs:
           cache: false
 
       - name: Download UI artifact
-        uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317 # actions/download-artifact@v6
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact@v6
         with:
           name: ui-dist
           path: assets/dist/
@@ -240,7 +240,7 @@ jobs:
           cache: false
 
       - name: Download UI artifact
-        uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317 # actions/download-artifact@v6
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact@v6
         with:
           name: ui-dist
           path: assets/dist/
@@ -271,7 +271,7 @@ jobs:
       contents: write
     steps:
       - name: Download all binaries
-        uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317 # actions/download-artifact@v6
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact@v6
         with:
           pattern: mockly-*
           merge-multiple: true
@@ -308,7 +308,7 @@ jobs:
           dotnet-quality: preview
 
       - name: Download all binaries
-        uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317 # actions/download-artifact@v6
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact@v6
         with:
           pattern: mockly-*
           merge-multiple: true
@@ -358,7 +358,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Download all binaries
-        uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317 # actions/download-artifact@v6
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact@v6
         with:
           pattern: mockly-*
           merge-multiple: true

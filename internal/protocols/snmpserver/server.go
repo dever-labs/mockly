@@ -178,6 +178,26 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 }
 
+// applyProtocolVersion applies a config.SNMPConfig.ProtocolVersion pin to the
+// set of USM users and the SnmpV3Only flag passed to GoSNMPServer:
+//   - "v3": SnmpV3Only is set, so v1/v2c (community-based) requests are
+//     rejected by the library outright.
+//   - "v1" or "v2c": the USM user list is cleared, so any v3 request fails
+//     USM authentication (the library has no equivalent "v1/v2c only" flag
+//     to reject v3 requests at the version-negotiation step directly).
+//   - empty (default): both users and SnmpV3Only pass through unchanged,
+//     preserving today's behavior of accepting any dialect.
+func applyProtocolVersion(version string, users []gosnmp.UsmSecurityParameters) ([]gosnmp.UsmSecurityParameters, bool) {
+	switch version {
+	case "v3":
+		return users, true
+	case "v1", "v2c":
+		return nil, false
+	default:
+		return users, false
+	}
+}
+
 func (s *Server) buildAndListen() error {
 	s.mu.RLock()
 	mocks := append([]config.SNMPMock(nil), s.mocks...)
@@ -191,11 +211,18 @@ func (s *Server) buildAndListen() error {
 		community = "public"
 	}
 
+	// ProtocolVersion enforcement: "v3" rejects v1/v2c requests outright
+	// (via SnmpV3Only); "v1"/"v2c" disables v3/USM authentication entirely
+	// by registering no users, so any v3 request fails to authenticate.
+	// Empty (default) accepts both, unchanged from today's behavior.
+	users, snmpV3Only := applyProtocolVersion(s.cfg.ProtocolVersion, users)
+
 	master := GoSNMPServer.MasterAgent{
 		Logger: GoSNMPServer.NewDiscardLogger(),
 		SecurityConfig: GoSNMPServer.SecurityConfig{
 			AuthoritativeEngineBoots: 1,
 			Users:                    users,
+			SnmpV3Only:               snmpV3Only,
 		},
 		SubAgents: []*GoSNMPServer.SubAgent{
 			{
@@ -378,11 +405,16 @@ func (s *Server) sendTrap(trap *config.SNMPTrap) error {
 func (s *Server) StatusInfo() map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	version := s.cfg.ProtocolVersion
+	if version == "" {
+		version = "auto (v1/v2c/v3)"
+	}
 	return map[string]interface{}{
-		"protocol": "snmp",
-		"enabled":  s.cfg.Enabled,
-		"port":     s.cfg.Port,
-		"mocks":    len(s.mocks),
+		"protocol":         "snmp",
+		"enabled":          s.cfg.Enabled,
+		"port":             s.cfg.Port,
+		"mocks":            len(s.mocks),
+		"protocol_version": version,
 	}
 }
 

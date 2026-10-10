@@ -214,16 +214,27 @@ func matchMQTTTopic(filter, topic string) (bool, map[string]string) {
 	return len(filterParts) == len(topicParts), params
 }
 
+// protocolVersionLabel returns a human-readable description of the active
+// MQTT protocol version policy for StatusInfo: the pinned version, or a
+// description of the auto-negotiation range when unset.
+func protocolVersionLabel(version string) string {
+	if version == "" {
+		return "auto (3.1/3.1.1/5.0)"
+	}
+	return version
+}
+
 // StatusInfo returns JSON-serialisable server info.
 func (s *Server) StatusInfo() map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return map[string]interface{}{
-		"protocol": "mqtt",
-		"enabled":  s.cfg.Enabled,
-		"port":     s.cfg.Port,
-		"mocks":    len(s.mocks),
-		"messages": len(s.messages.All()),
+		"protocol":         "mqtt",
+		"enabled":          s.cfg.Enabled,
+		"port":             s.cfg.Port,
+		"mocks":            len(s.mocks),
+		"messages":         len(s.messages.All()),
+		"protocol_version": protocolVersionLabel(s.cfg.ProtocolVersion),
 	}
 }
 
@@ -239,7 +250,37 @@ type mockHook struct {
 func (h *mockHook) ID() string { return "mockly-mock-hook" }
 
 func (h *mockHook) Provides(b byte) bool {
-	return bytes.Contains([]byte{mqtt.OnPublish}, []byte{b})
+	return bytes.Contains([]byte{mqtt.OnPublish, mqtt.OnConnect}, []byte{b})
+}
+
+// protocolVersionByte maps a config.MQTTConfig.ProtocolVersion string to the
+// wire byte sent in a CONNECT packet's protocol version field.
+func protocolVersionByte(version string) (byte, bool) {
+	switch version {
+	case "3.1":
+		return 3, true
+	case "3.1.1":
+		return 4, true
+	case "5.0":
+		return 5, true
+	default:
+		return 0, false
+	}
+}
+
+// OnConnect enforces cfg.ProtocolVersion, when set, by refusing CONNECT
+// attempts using any other MQTT wire version. When ProtocolVersion is empty,
+// this is a no-op and the broker auto-negotiates per client as before.
+func (h *mockHook) OnConnect(cl *mqtt.Client, pk packets.Packet) error {
+	want := h.srv.cfg.ProtocolVersion
+	if want == "" {
+		return nil
+	}
+	wantByte, ok := protocolVersionByte(want)
+	if !ok || pk.ProtocolVersion == wantByte {
+		return nil
+	}
+	return packets.ErrUnsupportedProtocolVersion
 }
 
 func (h *mockHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {

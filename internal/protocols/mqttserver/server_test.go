@@ -4,6 +4,9 @@ package mqttserver
 import (
 	"testing"
 
+	mqtt "github.com/mochi-mqtt/server/v2"
+	"github.com/mochi-mqtt/server/v2/packets"
+
 	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/state"
@@ -291,5 +294,77 @@ func TestMQTT_StatusInfo(t *testing.T) {
 	}
 	if info["messages"] != 1 {
 		t.Errorf("want messages=1, got %v", info["messages"])
+	}
+	if info["protocol_version"] != "auto (3.1/3.1.1/5.0)" {
+		t.Errorf("want protocol_version=auto (3.1/3.1.1/5.0), got %v", info["protocol_version"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// protocolVersion
+// ---------------------------------------------------------------------------
+
+func TestProtocolVersionByte(t *testing.T) {
+	cases := []struct {
+		version string
+		want    byte
+		wantOK  bool
+	}{
+		{"3.1", 3, true},
+		{"3.1.1", 4, true},
+		{"5.0", 5, true},
+		{"", 0, false},
+		{"9.9", 0, false},
+	}
+	for _, tc := range cases {
+		got, ok := protocolVersionByte(tc.version)
+		if ok != tc.wantOK || (ok && got != tc.want) {
+			t.Errorf("protocolVersionByte(%q) = (%d, %v), want (%d, %v)", tc.version, got, ok, tc.want, tc.wantOK)
+		}
+	}
+}
+
+func TestProtocolVersionLabel(t *testing.T) {
+	if got := protocolVersionLabel(""); got != "auto (3.1/3.1.1/5.0)" {
+		t.Errorf("protocolVersionLabel(\"\") = %q", got)
+	}
+	if got := protocolVersionLabel("5.0"); got != "5.0" {
+		t.Errorf("protocolVersionLabel(\"5.0\") = %q", got)
+	}
+}
+
+func TestMockHook_OnConnect_PinnedVersionAccepted(t *testing.T) {
+	srv := New(&config.MQTTConfig{Enabled: true, Port: 1883, ProtocolVersion: "5.0"}, state.New(), nil, logger.New(100))
+	h := &mockHook{srv: srv}
+	if err := h.OnConnect(nil, packets.Packet{ProtocolVersion: 5}); err != nil {
+		t.Errorf("expected matching protocol version to be accepted, got %v", err)
+	}
+}
+
+func TestMockHook_OnConnect_MismatchedVersionRejected(t *testing.T) {
+	srv := New(&config.MQTTConfig{Enabled: true, Port: 1883, ProtocolVersion: "5.0"}, state.New(), nil, logger.New(100))
+	h := &mockHook{srv: srv}
+	if err := h.OnConnect(nil, packets.Packet{ProtocolVersion: 4}); err == nil {
+		t.Error("expected mismatched protocol version to be rejected")
+	}
+}
+
+func TestMockHook_OnConnect_UnsetVersionAllowsAny(t *testing.T) {
+	srv := New(&config.MQTTConfig{Enabled: true, Port: 1883}, state.New(), nil, logger.New(100))
+	h := &mockHook{srv: srv}
+	for _, v := range []byte{3, 4, 5} {
+		if err := h.OnConnect(nil, packets.Packet{ProtocolVersion: v}); err != nil {
+			t.Errorf("expected version %d to be allowed when ProtocolVersion is unset, got %v", v, err)
+		}
+	}
+}
+
+func TestMockHook_Provides(t *testing.T) {
+	h := &mockHook{}
+	if !h.Provides(mqtt.OnPublish) || !h.Provides(mqtt.OnConnect) {
+		t.Error("expected mockHook to provide both OnPublish and OnConnect")
+	}
+	if h.Provides(mqtt.OnDisconnect) {
+		t.Error("expected mockHook not to provide unrelated hooks")
 	}
 }

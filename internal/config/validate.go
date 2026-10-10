@@ -23,6 +23,7 @@ func Validate(cfg *Config) []error {
 	errs = append(errs, validateRegexes(cfg)...)
 	errs = append(errs, validateBase64Fields(cfg)...)
 	errs = append(errs, validateRecordConfig(cfg)...)
+	errs = append(errs, validateProtocolVersions(cfg)...)
 	return errs
 }
 

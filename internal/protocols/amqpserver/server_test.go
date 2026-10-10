@@ -21,4 +21,15 @@ func TestStatusInfo(t *testing.T) {
 	if info["protocol"] != "amqp" || info["port"] != 5672 {
 		t.Fatalf("unexpected status info: %#v", info)
 	}
+	if info["protocol_version"] != "0.9.1" {
+		t.Errorf("expected default protocol_version 0.9.1, got %v", info["protocol_version"])
+	}
+}
+
+func TestStatusInfo_ProtocolVersionPassthrough(t *testing.T) {
+	srv := New(&config.AMQPConfig{Enabled: true, Port: 5672, ProtocolVersion: "0.9.1"}, nil, nil, nil)
+	info := srv.StatusInfo()
+	if info["protocol_version"] != "0.9.1" {
+		t.Errorf("expected protocol_version 0.9.1, got %v", info["protocol_version"])
+	}
 }

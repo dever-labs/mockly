@@ -286,5 +286,9 @@ func encodeInt(v int) []byte {
 func (s *Server) StatusInfo() map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return map[string]interface{}{"protocol": "ldap", "enabled": s.cfg.Enabled, "port": s.cfg.Port, "mocks": len(s.mocks)}
+	version := s.cfg.ProtocolVersion
+	if version == "" {
+		version = "v3"
+	}
+	return map[string]interface{}{"protocol": "ldap", "enabled": s.cfg.Enabled, "port": s.cfg.Port, "mocks": len(s.mocks), "protocol_version": version}
 }

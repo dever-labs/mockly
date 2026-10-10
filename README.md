@@ -913,7 +913,7 @@ protocols:
     # Optional: pin the broker to a single MQTT wire dialect ("3.1",
     # "3.1.1", or "5.0"). Omit to auto-negotiate per client (default).
     # CONNECT attempts using any other version are refused.
-    protocolVersion: "5.0"
+    protocol_version: "5.0"
     mocks:
       - id: command-ack
         topic: "devices/+/command"
@@ -1011,7 +1011,7 @@ protocols:
     # "v3"). Omit to accept any dialect (default). "v3" rejects v1/v2c
     # requests; "v1"/"v2c" disables v3/USM authentication (v1 and v2c are
     # not distinguished from each other — both remain accepted together).
-    protocolVersion: "v3"
+    protocol_version: "v3"
     v3_users:
       - username: mocklyuser
         auth_protocol: md5        # md5 | sha | sha224 | sha256 | sha384 | sha512
@@ -1093,7 +1093,7 @@ protocols:
     # Optional: only "0.9.1" (the default) is currently implemented.
     # AMQP 1.0 is a structurally different protocol and is not yet
     # supported — setting "1.0" fails config validation.
-    protocolVersion: "0.9.1"
+    protocol_version: "0.9.1"
     mocks:
       - id: order-created
         exchange: orders
@@ -1131,7 +1131,7 @@ protocols:
     # Optional: only "v3" (the default) is currently implemented. LDAPv2
     # is a legacy, largely-obsolete dialect and is not yet supported —
     # setting "v2" fails config validation.
-    protocolVersion: "v3"
+    protocol_version: "v3"
     mocks:
       - id: user-lookup
         base_dn: "dc=example,dc=com"

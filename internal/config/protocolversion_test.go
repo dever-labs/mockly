@@ -49,7 +49,7 @@ func TestValidateProtocolVersionErrorListsSupportedVersions(t *testing.T) {
 		t.Fatalf("expected exactly 1 error, got %d: %v", len(errs), errs)
 	}
 	msg := errs[0].Error()
-	if !strings.Contains(msg, `protocols.ldap.protocolVersion`) || !strings.Contains(msg, `"v2"`) || !strings.Contains(msg, "v3") {
+	if !strings.Contains(msg, `protocols.ldap.protocol_version`) || !strings.Contains(msg, `"v2"`) || !strings.Contains(msg, "v3") {
 		t.Fatalf("expected error to name the field, the bad value, and the supported list, got: %s", msg)
 	}
 }

@@ -619,7 +619,7 @@ type MQTTConfig struct {
 	// per client CONNECT packet (today's behavior, unchanged). When set,
 	// CONNECT attempts using any other version are refused with
 	// "unsupported protocol version".
-	ProtocolVersion string `yaml:"protocolVersion,omitempty" json:"protocolVersion,omitempty"`
+	ProtocolVersion string `yaml:"protocol_version,omitempty" json:"protocol_version,omitempty"`
 	// AsyncAPI, if set, points to a local AsyncAPI 2.x/3.x document (resolved
 	// relative to this config file's own directory); its MQTT
 	// channels/operations are generated into mocks at load time and layered
@@ -745,7 +745,7 @@ type SNMPConfig struct {
 	// NOT distinguish v1 from v2c traffic specifically (both remain
 	// accepted together) since the underlying library has no separate
 	// v1-only/v2c-only flag.
-	ProtocolVersion string `yaml:"protocolVersion,omitempty" json:"protocolVersion,omitempty"`
+	ProtocolVersion string `yaml:"protocol_version,omitempty" json:"protocol_version,omitempty"`
 	// V3Users lists SNMPv3 USM user credentials.
 	V3Users []SNMPUser `yaml:"v3_users,omitempty" json:"v3_users,omitempty"`
 	Mocks   []SNMPMock `yaml:"mocks,omitempty" json:"mocks,omitempty"`
@@ -832,7 +832,7 @@ type AMQPConfig struct {
 	// implemented; AMQP 1.0 is a structurally different protocol and is not
 	// yet supported — setting "1.0" fails config validation with a clear
 	// error rather than starting a server that cannot actually speak it.
-	ProtocolVersion string `yaml:"protocolVersion,omitempty" json:"protocolVersion,omitempty"`
+	ProtocolVersion string `yaml:"protocol_version,omitempty" json:"protocol_version,omitempty"`
 	// AsyncAPI, if set, points to a local AsyncAPI 2.x/3.x document (resolved
 	// relative to this config file's own directory); its AMQP
 	// channels/operations are generated into mocks at load time and layered
@@ -918,7 +918,7 @@ type LDAPConfig struct {
 	// LDAPv2 is a legacy, largely-obsolete dialect and is not yet supported
 	// — setting "v2" fails config validation with a clear error rather than
 	// starting a server that cannot actually speak it.
-	ProtocolVersion string     `yaml:"protocolVersion,omitempty" json:"protocolVersion,omitempty"`
+	ProtocolVersion string     `yaml:"protocol_version,omitempty" json:"protocol_version,omitempty"`
 	Mocks           []LDAPMock `yaml:"mocks" json:"mocks"`
 }
 

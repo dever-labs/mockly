@@ -45,7 +45,7 @@ func validateProtocolVersions(cfg *Config) []error {
 			}
 		}
 		errs = append(errs, fmt.Errorf(
-			"protocols.%s.protocolVersion: %q is not supported by this build; supported versions: %s",
+			"protocols.%s.protocol_version: %q is not supported by this build; supported versions: %s",
 			proto, version, strings.Join(supported, ", "),
 		))
 	}

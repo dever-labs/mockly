@@ -1143,6 +1143,18 @@ protocols:
             - "alice@example.com"
           uid:
             - "alice"
+    # Optional: when omitted, Bind always succeeds (today's behavior,
+    # unchanged) and Search returns all mocks matching the base DN/filter.
+    # When present, Bind requires a matching username/password — a mismatch
+    # returns invalidCredentials and Search is rejected with
+    # insufficientAccessRights until a successful Bind. `allowed_mock_ids`
+    # further restricts a user's Search results to the listed mock `id`s;
+    # omit it (or leave it empty) to let that user see every mock.
+    users:
+      - username: alice
+        password: secret123
+        allowed_mock_ids:
+          - user-lookup
 ```
 
 ### IMAP
@@ -1183,6 +1195,18 @@ protocols:
       - id: app-config
         path: /data/config.json
         content: '{"version":"1.0"}'
+    # Optional: when omitted, PASS always succeeds (today's behavior,
+    # unchanged) and file commands (LIST/NLST/RETR/STOR/DELE/SIZE) work
+    # without logging in. When present, PASS requires a matching
+    # username/password — a mismatch returns "530 Login incorrect" and file
+    # commands return "530" until a successful login. `allowed_files`
+    # further restricts a user to the listed file `id`s; omit it (or leave
+    # it empty) to let that user access every file.
+    users:
+      - username: alice
+        password: secret123
+        allowed_files:
+          - daily-report
 ```
 
 ### Memcached

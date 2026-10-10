@@ -47,7 +47,7 @@ func TestLDAP_GetMocks_IsolatesSlice(t *testing.T) {
 
 func TestLDAP_MatchMocks_NoMocks(t *testing.T) {
 	srv := newTestLDAPServer(nil)
-	got := srv.matchMocks("dc=example,dc=com", "")
+	got := srv.matchMocks("dc=example,dc=com", "", nil)
 	if len(got) != 0 {
 		t.Errorf("should return empty when no mocks, got %d", len(got))
 	}
@@ -57,7 +57,7 @@ func TestLDAP_MatchMocks_BaseDNMismatch(t *testing.T) {
 	srv := newTestLDAPServer([]config.LDAPMock{
 		{ID: "m1", BaseDN: "dc=other,dc=com"},
 	})
-	got := srv.matchMocks("dc=example,dc=com", "")
+	got := srv.matchMocks("dc=example,dc=com", "", nil)
 	if len(got) != 0 {
 		t.Errorf("should not match different BaseDN, got %d", len(got))
 	}
@@ -67,7 +67,7 @@ func TestLDAP_MatchMocks_FilterMismatch(t *testing.T) {
 	srv := newTestLDAPServer([]config.LDAPMock{
 		{ID: "m1", BaseDN: "dc=example,dc=com", Filter: "(uid=alice)"},
 	})
-	got := srv.matchMocks("dc=example,dc=com", "(uid=bob)")
+	got := srv.matchMocks("dc=example,dc=com", "(uid=bob)", nil)
 	if len(got) != 0 {
 		t.Errorf("should not match different filter, got %d", len(got))
 	}
@@ -77,7 +77,7 @@ func TestLDAP_MatchMocks_Match(t *testing.T) {
 	srv := newTestLDAPServer([]config.LDAPMock{
 		{ID: "m1", BaseDN: "dc=example,dc=com", Filter: "(uid=alice)"},
 	})
-	got := srv.matchMocks("dc=example,dc=com", "(uid=alice)")
+	got := srv.matchMocks("dc=example,dc=com", "(uid=alice)", nil)
 	if len(got) != 1 || got[0].ID != "m1" {
 		t.Errorf("should match, got %+v", got)
 	}
@@ -88,7 +88,7 @@ func TestLDAP_MatchMocks_EmptyFilter(t *testing.T) {
 		{ID: "m1", BaseDN: "dc=example,dc=com"},
 	})
 	// Empty filter in mock matches any filter.
-	got := srv.matchMocks("dc=example,dc=com", "(uid=anyone)")
+	got := srv.matchMocks("dc=example,dc=com", "(uid=anyone)", nil)
 	if len(got) != 1 {
 		t.Errorf("empty filter should match any filter, got %d", len(got))
 	}
@@ -101,12 +101,12 @@ func TestLDAP_MatchMocks_StateCondition(t *testing.T) {
 	}}
 	srv := New(cfg, st, scenarios.New(nil), logger.New(100))
 
-	if got := srv.matchMocks("dc=example,dc=com", ""); len(got) != 0 {
+	if got := srv.matchMocks("dc=example,dc=com", "", nil); len(got) != 0 {
 		t.Error("should not match when state condition is unmet")
 	}
 
 	st.Set("ldap_mode", "active")
-	if got := srv.matchMocks("dc=example,dc=com", ""); len(got) != 1 {
+	if got := srv.matchMocks("dc=example,dc=com", "", nil); len(got) != 1 {
 		t.Error("should match when state condition is met")
 	}
 }

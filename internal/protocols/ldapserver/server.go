@@ -69,6 +69,8 @@ func (s *Server) Start(ctx context.Context) error {
 
 func (s *Server) handleConn(conn net.Conn) {
 	defer conn.Close() //nolint:errcheck
+	var boundUser string
+	boundAny := len(s.cfg.Users) == 0
 	for {
 		packet, err := readBERPacket(conn)
 		if err != nil {
@@ -77,11 +79,30 @@ func (s *Server) handleConn(conn net.Conn) {
 		msgID, opTag, opContent := parseLDAPEnvelope(packet)
 		switch opTag {
 		case 0x60:
-			_, _ = conn.Write(buildLDAPMessage(msgID, 0x61, bindSuccessContent()))
+			if len(s.cfg.Users) == 0 {
+				_, _ = conn.Write(buildLDAPMessage(msgID, 0x61, bindSuccessContent()))
+				continue
+			}
+			name, password, simple := parseBindRequest(opContent)
+			if simple {
+				if u, ok := s.findUser(name, password); ok {
+					boundUser = u.Username
+					boundAny = true
+					_, _ = conn.Write(buildLDAPMessage(msgID, 0x61, bindSuccessContent()))
+					continue
+				}
+			}
+			boundUser = ""
+			boundAny = false
+			_, _ = conn.Write(buildLDAPMessage(msgID, 0x61, ldapResultContent(49, "invalid credentials")))
 		case 0x42:
 			return
 		case 0x63:
 			baseDN, filterRaw := parseSearchRequest(opContent)
+			if !boundAny {
+				_, _ = conn.Write(buildLDAPMessage(msgID, 0x65, searchDoneContent(50, "insufficient access rights")))
+				continue
+			}
 			fault := s.scenarios.EffectiveLDAPFault()
 			if fault != nil && fault.Delay.Duration > 0 {
 				time.Sleep(fault.Delay.Duration)
@@ -98,7 +119,13 @@ func (s *Server) handleConn(conn net.Conn) {
 				_, _ = conn.Write(buildLDAPMessage(msgID, 0x65, searchDoneContent(byte(rc), message)))
 				continue
 			}
-			for _, mock := range s.matchMocks(baseDN, filterRaw) {
+			var allowedMockIDs []string
+			if len(s.cfg.Users) > 0 {
+				if u, ok := s.findUserByUsername(boundUser); ok {
+					allowedMockIDs = u.AllowedMockIDs
+				}
+			}
+			for _, mock := range s.matchMocks(baseDN, filterRaw, allowedMockIDs) {
 				if mock.Delay.Duration > 0 {
 					time.Sleep(mock.Delay.Duration)
 				}
@@ -156,6 +183,42 @@ func parseLDAPEnvelope(packet []byte) (int, byte, []byte) {
 	return msgID, opTag, opContent
 }
 
+// parseBindRequest extracts the bind DN (name) and, for a simple-auth bind,
+// the cleartext password from an LDAP BindRequest's content. simple is false
+// for non-simple authentication choices (e.g. SASL), which this mock does
+// not support — callers should treat that as a failed bind when users are
+// configured.
+func parseBindRequest(content []byte) (name string, password string, simple bool) {
+	_, _, next := readTLV(content) // version INTEGER, unused
+	rest := content[next:]
+	_, nameContent, next2 := readTLV(rest)
+	name = string(nameContent)
+	rest = rest[next2:]
+	authTag, authContent, _ := readTLV(rest)
+	if authTag == 0x80 {
+		return name, string(authContent), true
+	}
+	return name, "", false
+}
+
+func (s *Server) findUser(name, password string) (config.LDAPUser, bool) {
+	for _, u := range s.cfg.Users {
+		if u.Username == name && u.Password == password {
+			return u, true
+		}
+	}
+	return config.LDAPUser{}, false
+}
+
+func (s *Server) findUserByUsername(name string) (config.LDAPUser, bool) {
+	for _, u := range s.cfg.Users {
+		if u.Username == name {
+			return u, true
+		}
+	}
+	return config.LDAPUser{}, false
+}
+
 func parseSearchRequest(content []byte) (string, string) {
 	_, baseContent, next := readTLV(content)
 	baseDN := string(baseContent)
@@ -170,9 +233,20 @@ func parseSearchRequest(content []byte) (string, string) {
 	return baseDN, string(encoded)
 }
 
-func (s *Server) matchMocks(baseDN, filterRaw string) []config.LDAPMock {
+// matchMocks returns mocks matching baseDN/filterRaw. When allowedMockIDs is
+// non-empty, results are further restricted to mocks whose ID is in that
+// list (per-user authorization scoping); a nil/empty allowedMockIDs leaves
+// results unrestricted, preserving today's behavior.
+func (s *Server) matchMocks(baseDN, filterRaw string, allowedMockIDs []string) []config.LDAPMock {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	var allowed map[string]bool
+	if len(allowedMockIDs) > 0 {
+		allowed = make(map[string]bool, len(allowedMockIDs))
+		for _, id := range allowedMockIDs {
+			allowed[id] = true
+		}
+	}
 	matched := make([]config.LDAPMock, 0)
 	for _, m := range s.mocks {
 		if m.State != nil {
@@ -184,6 +258,9 @@ func (s *Server) matchMocks(baseDN, filterRaw string) []config.LDAPMock {
 			continue
 		}
 		if m.Filter != "" && m.Filter != filterRaw {
+			continue
+		}
+		if allowed != nil && !allowed[m.ID] {
 			continue
 		}
 		matched = append(matched, m)

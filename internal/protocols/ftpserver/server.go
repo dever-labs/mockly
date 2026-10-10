@@ -87,6 +87,8 @@ func (s *Server) handleConn(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 	cwd := "/"
 	var passive net.Listener
+	var pendingUser, authedUser string
+	authenticated := len(s.cfg.Users) == 0
 	defer func() {
 		if passive != nil {
 			_ = passive.Close()
@@ -108,11 +110,29 @@ func (s *Server) handleConn(conn net.Conn) {
 		if len(parts) > 1 {
 			arg = strings.Join(parts[1:], " ")
 		}
+		if requiresAuth(cmd) && !authenticated {
+			_, _ = conn.Write([]byte("530 Please login with USER and PASS\r\n"))
+			continue
+		}
 		switch cmd {
 		case "USER":
+			pendingUser = arg
 			_, _ = conn.Write([]byte("331 Password required\r\n"))
 		case "PASS":
-			_, _ = conn.Write([]byte("230 User logged in\r\n"))
+			if len(s.cfg.Users) == 0 {
+				authedUser = pendingUser
+				authenticated = true
+				_, _ = conn.Write([]byte("230 User logged in\r\n"))
+				continue
+			}
+			if u, ok := s.findUser(pendingUser, arg); ok {
+				authedUser = u.Username
+				authenticated = true
+				_, _ = conn.Write([]byte("230 User logged in\r\n"))
+			} else {
+				authenticated = false
+				_, _ = conn.Write([]byte("530 Login incorrect\r\n"))
+			}
 		case "SYST":
 			_, _ = conn.Write([]byte("215 UNIX Type: L8\r\n"))
 		case "FEAT":
@@ -153,9 +173,9 @@ func (s *Server) handleConn(conn net.Conn) {
 				continue
 			}
 			if cmd == "LIST" {
-				_, _ = io.WriteString(dataConn, s.listing(ftpAbsPath(cwd, arg), false))
+				_, _ = io.WriteString(dataConn, s.listing(ftpAbsPath(cwd, arg), false, s.allowedFiles(authedUser)))
 			} else {
-				_, _ = io.WriteString(dataConn, s.listing(ftpAbsPath(cwd, arg), true))
+				_, _ = io.WriteString(dataConn, s.listing(ftpAbsPath(cwd, arg), true, s.allowedFiles(authedUser)))
 			}
 			_ = dataConn.Close()
 			_, _ = conn.Write([]byte("226 Transfer complete\r\n"))
@@ -167,7 +187,7 @@ func (s *Server) handleConn(conn net.Conn) {
 				_, _ = conn.Write([]byte("425 Use PASV first\r\n"))
 				continue
 			}
-			file, ok := s.findFile(ftpAbsPath(cwd, arg))
+			file, ok := s.findFile(ftpAbsPath(cwd, arg), s.allowedFiles(authedUser))
 			if !ok {
 				_, _ = conn.Write([]byte("550 No such file\r\n"))
 				continue
@@ -201,10 +221,14 @@ func (s *Server) handleConn(conn net.Conn) {
 			}
 			_, _ = conn.Write([]byte("226 Transfer complete\r\n"))
 		case "DELE":
+			if _, ok := s.findFile(ftpAbsPath(cwd, arg), s.allowedFiles(authedUser)); !ok {
+				_, _ = conn.Write([]byte("550 No such file\r\n"))
+				continue
+			}
 			s.deleteFile(ftpAbsPath(cwd, arg))
 			_, _ = conn.Write([]byte("250 Deleted\r\n"))
 		case "SIZE":
-			file, ok := s.findFile(ftpAbsPath(cwd, arg))
+			file, ok := s.findFile(ftpAbsPath(cwd, arg), s.allowedFiles(authedUser))
 			if !ok {
 				_, _ = conn.Write([]byte("550 Not found\r\n"))
 				continue
@@ -252,7 +276,47 @@ func ftpAbsPath(cwd, p string) string {
 	return path.Clean(path.Join(cwd, p))
 }
 
-func (s *Server) listing(target string, namesOnly bool) string {
+func requiresAuth(cmd string) bool {
+	switch cmd {
+	case "LIST", "NLST", "RETR", "STOR", "DELE", "SIZE":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) findUser(username, password string) (config.FTPUser, bool) {
+	for _, u := range s.cfg.Users {
+		if u.Username == username && u.Password == password {
+			return u, true
+		}
+	}
+	return config.FTPUser{}, false
+}
+
+// allowedFiles returns the set of file IDs username is restricted to, or nil
+// when unrestricted (no Users configured, unknown user, or an empty
+// AllowedFiles list on that user's record).
+func (s *Server) allowedFiles(username string) map[string]bool {
+	if len(s.cfg.Users) == 0 {
+		return nil
+	}
+	for _, u := range s.cfg.Users {
+		if u.Username == username {
+			if len(u.AllowedFiles) == 0 {
+				return nil
+			}
+			allowed := make(map[string]bool, len(u.AllowedFiles))
+			for _, id := range u.AllowedFiles {
+				allowed[id] = true
+			}
+			return allowed
+		}
+	}
+	return nil
+}
+
+func (s *Server) listing(target string, namesOnly bool, allowed map[string]bool) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if target == "" {
@@ -264,6 +328,9 @@ func (s *Server) listing(target string, namesOnly bool) string {
 	}
 	var b strings.Builder
 	for _, file := range s.files {
+		if allowed != nil && !allowed[file.ID] {
+			continue
+		}
 		fileDir := path.Dir(file.Path)
 		if !strings.HasSuffix(fileDir, "/") {
 			fileDir += "/"
@@ -281,11 +348,14 @@ func (s *Server) listing(target string, namesOnly bool) string {
 	return b.String()
 }
 
-func (s *Server) findFile(filePath string) (config.FTPFile, bool) {
+func (s *Server) findFile(filePath string, allowed map[string]bool) (config.FTPFile, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, file := range s.files {
 		if file.Path == filePath {
+			if allowed != nil && !allowed[file.ID] {
+				return config.FTPFile{}, false
+			}
 			return file, true
 		}
 	}

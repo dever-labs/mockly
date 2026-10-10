@@ -19,7 +19,7 @@ COPY --from=ui-builder /app/assets/dist ./assets/dist
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /mockly ./cmd/mockly
 
 # ── Stage 3: Final image ──────────────────────────────────────────────────────
-FROM alpine:3.21
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates \
     && addgroup -S mockly && adduser -S -G mockly -h /config mockly
 

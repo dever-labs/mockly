@@ -427,5 +427,9 @@ func encodeLongLong(v uint64) []byte {
 func (s *Server) StatusInfo() map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return map[string]interface{}{"protocol": "amqp", "enabled": s.cfg.Enabled, "port": s.cfg.Port, "mocks": len(s.mocks), "messages": len(s.messages.All())}
+	version := s.cfg.ProtocolVersion
+	if version == "" {
+		version = "0.9.1"
+	}
+	return map[string]interface{}{"protocol": "amqp", "enabled": s.cfg.Enabled, "port": s.cfg.Port, "mocks": len(s.mocks), "messages": len(s.messages.All()), "protocol_version": version}
 }

@@ -614,6 +614,12 @@ type ReceivedEmail struct {
 type MQTTConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
 	Port    int  `yaml:"port" json:"port"`
+	// ProtocolVersion pins the broker to a single MQTT wire dialect: "3.1",
+	// "3.1.1", or "5.0". When empty (default), the broker auto-negotiates
+	// per client CONNECT packet (today's behavior, unchanged). When set,
+	// CONNECT attempts using any other version are refused with
+	// "unsupported protocol version".
+	ProtocolVersion string `yaml:"protocol_version,omitempty" json:"protocol_version,omitempty"`
 	// AsyncAPI, if set, points to a local AsyncAPI 2.x/3.x document (resolved
 	// relative to this config file's own directory); its MQTT
 	// channels/operations are generated into mocks at load time and layered
@@ -730,6 +736,16 @@ type SNMPConfig struct {
 	Port    int  `yaml:"port" json:"port"`
 	// Community is the v1/v2c community string accepted by the agent (default: public).
 	Community string `yaml:"community,omitempty" json:"community,omitempty"`
+	// ProtocolVersion pins the agent's accepted SNMP dialect(s): "v1",
+	// "v2c", or "v3". When empty (default), both community-based (v1/v2c)
+	// and USM (v3) requests are accepted, unchanged from today's behavior.
+	// Setting "v3" rejects v1/v2c requests outright. Setting "v1" or "v2c"
+	// disables v3/USM authentication (configured V3Users are not
+	// registered), so any v3 request fails authentication; note this does
+	// NOT distinguish v1 from v2c traffic specifically (both remain
+	// accepted together) since the underlying library has no separate
+	// v1-only/v2c-only flag.
+	ProtocolVersion string `yaml:"protocol_version,omitempty" json:"protocol_version,omitempty"`
 	// V3Users lists SNMPv3 USM user credentials.
 	V3Users []SNMPUser `yaml:"v3_users,omitempty" json:"v3_users,omitempty"`
 	Mocks   []SNMPMock `yaml:"mocks,omitempty" json:"mocks,omitempty"`
@@ -811,6 +827,12 @@ type DNSMock struct {
 type AMQPConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
 	Port    int  `yaml:"port" json:"port"`
+	// ProtocolVersion pins the server to a single AMQP wire dialect.
+	// Currently only "0.9.1" (today's default, also used when empty) is
+	// implemented; AMQP 1.0 is a structurally different protocol and is not
+	// yet supported — setting "1.0" fails config validation with a clear
+	// error rather than starting a server that cannot actually speak it.
+	ProtocolVersion string `yaml:"protocol_version,omitempty" json:"protocol_version,omitempty"`
 	// AsyncAPI, if set, points to a local AsyncAPI 2.x/3.x document (resolved
 	// relative to this config file's own directory); its AMQP
 	// channels/operations are generated into mocks at load time and layered
@@ -889,9 +911,15 @@ type ProducedKafkaMessage struct {
 // ---------------------------------------------------------------------------
 
 type LDAPConfig struct {
-	Enabled bool       `yaml:"enabled" json:"enabled"`
-	Port    int        `yaml:"port" json:"port"`
-	Mocks   []LDAPMock `yaml:"mocks" json:"mocks"`
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	Port    int  `yaml:"port" json:"port"`
+	// ProtocolVersion pins the server to a single LDAP dialect. Currently
+	// only "v3" (today's default, also used when empty) is implemented;
+	// LDAPv2 is a legacy, largely-obsolete dialect and is not yet supported
+	// — setting "v2" fails config validation with a clear error rather than
+	// starting a server that cannot actually speak it.
+	ProtocolVersion string     `yaml:"protocol_version,omitempty" json:"protocol_version,omitempty"`
+	Mocks           []LDAPMock `yaml:"mocks" json:"mocks"`
 }
 
 type LDAPMock struct {

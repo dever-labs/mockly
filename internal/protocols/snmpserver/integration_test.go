@@ -391,6 +391,9 @@ func TestSNMPServer_StatusInfo(t *testing.T) {
 	if info["mocks"].(int) != len(defaultMocks()) {
 		t.Errorf("mocks = %v, want %d", info["mocks"], len(defaultMocks()))
 	}
+	if info["protocol_version"] != "auto (v1/v2c/v3)" {
+		t.Errorf("protocol_version = %v, want auto (v1/v2c/v3)", info["protocol_version"])
+	}
 }
 
 func TestSNMPServer_GetTraps_Roundtrip(t *testing.T) {

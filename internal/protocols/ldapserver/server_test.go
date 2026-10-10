@@ -21,4 +21,15 @@ func TestStatusInfo(t *testing.T) {
 	if info["protocol"] != "ldap" || info["port"] != 3893 {
 		t.Fatalf("unexpected status info: %#v", info)
 	}
+	if info["protocol_version"] != "v3" {
+		t.Errorf("expected default protocol_version v3, got %v", info["protocol_version"])
+	}
+}
+
+func TestStatusInfo_ProtocolVersionPassthrough(t *testing.T) {
+	srv := New(&config.LDAPConfig{Enabled: true, Port: 3893, ProtocolVersion: "v3"}, nil, nil, nil)
+	info := srv.StatusInfo()
+	if info["protocol_version"] != "v3" {
+		t.Errorf("expected protocol_version v3, got %v", info["protocol_version"])
+	}
 }

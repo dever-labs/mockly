@@ -248,3 +248,43 @@ func TestBuildUsers_WithUser(t *testing.T) {
 		t.Errorf("unexpected auth protocol: %v", got[0].AuthenticationProtocol)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// protocolVersion
+// ---------------------------------------------------------------------------
+
+func TestApplyProtocolVersion(t *testing.T) {
+	users := []gosnmp.UsmSecurityParameters{{UserName: "alice"}}
+
+	gotUsers, gotV3Only := applyProtocolVersion("v3", users)
+	if !gotV3Only {
+		t.Error("v3: expected SnmpV3Only=true")
+	}
+	if len(gotUsers) != 1 {
+		t.Errorf("v3: expected users to pass through unchanged, got %v", gotUsers)
+	}
+
+	gotUsers, gotV3Only = applyProtocolVersion("v1", users)
+	if gotV3Only {
+		t.Error("v1: expected SnmpV3Only=false")
+	}
+	if len(gotUsers) != 0 {
+		t.Errorf("v1: expected users cleared, got %v", gotUsers)
+	}
+
+	gotUsers, gotV3Only = applyProtocolVersion("v2c", users)
+	if gotV3Only {
+		t.Error("v2c: expected SnmpV3Only=false")
+	}
+	if len(gotUsers) != 0 {
+		t.Errorf("v2c: expected users cleared, got %v", gotUsers)
+	}
+
+	gotUsers, gotV3Only = applyProtocolVersion("", users)
+	if gotV3Only {
+		t.Error("empty: expected SnmpV3Only=false")
+	}
+	if len(gotUsers) != 1 {
+		t.Errorf("empty: expected users to pass through unchanged, got %v", gotUsers)
+	}
+}

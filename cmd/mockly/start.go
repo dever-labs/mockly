@@ -113,10 +113,23 @@ func runServers(cfg *config.Config, watch bool) error {
 	var coapSrv api.CoAPProtocol
 	var sipSrv api.SIPProtocol
 
+	// reloaders holds one closure per enabled protocol, registered right
+	// next to where that protocol's server is created below, so adding a
+	// new protocol only means touching one place instead of keeping a
+	// startup block and a separate reload switch in sync. --watch calls
+	// all of them (each is a no-op if its protocol's section is absent
+	// from the reloaded config) after a valid config reload.
+	var reloaders []func(*config.Config)
+
 	if cfg.Protocols.HTTP != nil && cfg.Protocols.HTTP.Enabled {
 		srv := httpserver.New(cfg.Protocols.HTTP, store, sc, log, wh)
 		httpSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.HTTP != nil {
+				srv.SetMocks(c.Protocols.HTTP.Mocks)
+			}
+		})
 		fmt.Printf("→ HTTP mock server  on :%d\n", cfg.Protocols.HTTP.Port)
 	}
 
@@ -124,6 +137,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := wsserver.New(cfg.Protocols.WebSocket, store, sc, log)
 		wsSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.WebSocket != nil {
+				srv.SetMocks(c.Protocols.WebSocket.Mocks)
+			}
+		})
 		fmt.Printf("→ WebSocket server  on :%d\n", cfg.Protocols.WebSocket.Port)
 	}
 
@@ -131,6 +149,16 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := grpcserver.New(cfg.Protocols.GRPC, store, sc, log)
 		grpcSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.GRPC == nil {
+				return
+			}
+			var mocks []config.GRPCMock
+			for _, svc := range c.Protocols.GRPC.Services {
+				mocks = append(mocks, svc.Mocks...)
+			}
+			srv.SetMocks(mocks)
+		})
 		fmt.Printf("→ gRPC server       on :%d\n", cfg.Protocols.GRPC.Port)
 	}
 
@@ -138,6 +166,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := graphqlserver.New(cfg.Protocols.GraphQL, store, sc, log)
 		graphqlSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.GraphQL != nil {
+				srv.SetMocks(c.Protocols.GraphQL.Mocks)
+			}
+		})
 		fmt.Printf("→ GraphQL server    on :%d%s\n", cfg.Protocols.GraphQL.Port, cfg.Protocols.GraphQL.Path)
 	}
 
@@ -145,6 +178,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := tcpserver.New(cfg.Protocols.TCP, store, sc, log)
 		tcpSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.TCP != nil {
+				srv.SetMocks(c.Protocols.TCP.Mocks)
+			}
+		})
 		fmt.Printf("→ TCP server        on :%d\n", cfg.Protocols.TCP.Port)
 	}
 
@@ -152,6 +190,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := redisserver.New(cfg.Protocols.Redis, store, sc, log)
 		redisSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.Redis != nil {
+				srv.SetMocks(c.Protocols.Redis.Mocks)
+			}
+		})
 		fmt.Printf("→ Redis server      on :%d\n", cfg.Protocols.Redis.Port)
 	}
 
@@ -159,6 +202,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := smtpserver.New(cfg.Protocols.SMTP, sc, log)
 		smtpSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.SMTP != nil {
+				srv.SetRules(c.Protocols.SMTP.Rules)
+			}
+		})
 		fmt.Printf("→ SMTP server       on :%d (%s)\n", cfg.Protocols.SMTP.Port, cfg.Protocols.SMTP.Domain)
 	}
 
@@ -166,6 +214,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := mqttserver.New(cfg.Protocols.MQTT, store, sc, log)
 		mqttSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.MQTT != nil {
+				srv.SetMocks(c.Protocols.MQTT.Mocks)
+			}
+		})
 		fmt.Printf("→ MQTT broker       on :%d\n", cfg.Protocols.MQTT.Port)
 	}
 
@@ -173,6 +226,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := natsserver.New(cfg.Protocols.NATS, store, sc, log)
 		natsSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.NATS != nil {
+				srv.SetMocks(c.Protocols.NATS.Mocks)
+			}
+		})
 		fmt.Printf("→ NATS server       on :%d\n", cfg.Protocols.NATS.Port)
 	}
 
@@ -180,6 +238,12 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := snmpserver.New(cfg.Protocols.SNMP, store, sc, log)
 		snmpSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.SNMP != nil {
+				srv.SetMocks(c.Protocols.SNMP.Mocks)
+				srv.SetTraps(c.Protocols.SNMP.Traps)
+			}
+		})
 		fmt.Printf("→ SNMP agent        on :%d\n", cfg.Protocols.SNMP.Port)
 	}
 
@@ -187,6 +251,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := dnsserver.New(cfg.Protocols.DNS, store, sc, log)
 		dnsSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.DNS != nil {
+				srv.SetMocks(c.Protocols.DNS.Mocks)
+			}
+		})
 		fmt.Printf("→ DNS server        on :%d\n", cfg.Protocols.DNS.Port)
 	}
 
@@ -194,6 +263,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := amqpserver.New(cfg.Protocols.AMQP, store, sc, log)
 		amqpSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.AMQP != nil {
+				srv.SetMocks(c.Protocols.AMQP.Mocks)
+			}
+		})
 		fmt.Printf("→ AMQP server       on :%d\n", cfg.Protocols.AMQP.Port)
 	}
 
@@ -201,6 +275,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := kafkaserver.New(cfg.Protocols.Kafka, store, sc, log)
 		kafkaSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.Kafka != nil {
+				srv.SetMocks(c.Protocols.Kafka.Mocks)
+			}
+		})
 		fmt.Printf("→ Kafka server      on :%d\n", cfg.Protocols.Kafka.Port)
 	}
 
@@ -208,6 +287,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := ldapserver.New(cfg.Protocols.LDAP, store, sc, log)
 		ldapSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.LDAP != nil {
+				srv.SetMocks(c.Protocols.LDAP.Mocks)
+			}
+		})
 		fmt.Printf("→ LDAP server       on :%d\n", cfg.Protocols.LDAP.Port)
 	}
 
@@ -215,6 +299,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := imapserver.New(cfg.Protocols.IMAP, sc, log)
 		imapSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.IMAP != nil {
+				srv.SetMailboxes(c.Protocols.IMAP.Mailboxes)
+			}
+		})
 		fmt.Printf("→ IMAP server       on :%d\n", cfg.Protocols.IMAP.Port)
 	}
 
@@ -222,6 +311,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := ftpserver.New(cfg.Protocols.FTP, sc, log)
 		ftpSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.FTP != nil {
+				srv.SetFiles(c.Protocols.FTP.Files)
+			}
+		})
 		fmt.Printf("→ FTP server        on :%d\n", cfg.Protocols.FTP.Port)
 	}
 
@@ -229,6 +323,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := memcachedserver.New(cfg.Protocols.Memcached, store, sc, log)
 		memcachedSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.Memcached != nil {
+				srv.SetMocks(c.Protocols.Memcached.Mocks)
+			}
+		})
 		fmt.Printf("→ Memcached server  on :%d\n", cfg.Protocols.Memcached.Port)
 	}
 
@@ -236,6 +335,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := stompserver.New(cfg.Protocols.STOMP, store, sc, log)
 		stompSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.STOMP != nil {
+				srv.SetMocks(c.Protocols.STOMP.Mocks)
+			}
+		})
 		fmt.Printf("→ STOMP server      on :%d\n", cfg.Protocols.STOMP.Port)
 	}
 
@@ -243,6 +347,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := coapserver.New(cfg.Protocols.CoAP, store, sc, log)
 		coapSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.CoAP != nil {
+				srv.SetMocks(c.Protocols.CoAP.Mocks)
+			}
+		})
 		fmt.Printf("→ CoAP server       on :%d\n", cfg.Protocols.CoAP.Port)
 	}
 
@@ -250,6 +359,11 @@ func runServers(cfg *config.Config, watch bool) error {
 		srv := sipserver.New(cfg.Protocols.SIP, store, sc, log)
 		sipSrv = srv
 		launch(ctx, errCh, srv.Start)
+		reloaders = append(reloaders, func(c *config.Config) {
+			if c.Protocols.SIP != nil {
+				srv.SetMocks(c.Protocols.SIP.Mocks)
+			}
+		})
 		fmt.Printf("→ SIP server        on :%d\n", cfg.Protocols.SIP.Port)
 	}
 
@@ -296,74 +410,12 @@ func runServers(cfg *config.Config, watch bool) error {
 	}
 
 	if watch {
-		applyReload := func(newCfg *config.Config) {
-			if httpSrv != nil && newCfg.Protocols.HTTP != nil {
-				httpSrv.SetMocks(newCfg.Protocols.HTTP.Mocks)
-			}
-			if wsSrv != nil && newCfg.Protocols.WebSocket != nil {
-				wsSrv.SetMocks(newCfg.Protocols.WebSocket.Mocks)
-			}
-			if grpcSrv != nil && newCfg.Protocols.GRPC != nil {
-				var mocks []config.GRPCMock
-				for _, svc := range newCfg.Protocols.GRPC.Services {
-					mocks = append(mocks, svc.Mocks...)
-				}
-				grpcSrv.SetMocks(mocks)
-			}
-			if graphqlSrv != nil && newCfg.Protocols.GraphQL != nil {
-				graphqlSrv.SetMocks(newCfg.Protocols.GraphQL.Mocks)
-			}
-			if tcpSrv != nil && newCfg.Protocols.TCP != nil {
-				tcpSrv.SetMocks(newCfg.Protocols.TCP.Mocks)
-			}
-			if redisSrv != nil && newCfg.Protocols.Redis != nil {
-				redisSrv.SetMocks(newCfg.Protocols.Redis.Mocks)
-			}
-			if smtpSrv != nil && newCfg.Protocols.SMTP != nil {
-				smtpSrv.SetRules(newCfg.Protocols.SMTP.Rules)
-			}
-			if mqttSrv != nil && newCfg.Protocols.MQTT != nil {
-				mqttSrv.SetMocks(newCfg.Protocols.MQTT.Mocks)
-			}
-			if natsSrv != nil && newCfg.Protocols.NATS != nil {
-				natsSrv.SetMocks(newCfg.Protocols.NATS.Mocks)
-			}
-			if snmpSrv != nil && newCfg.Protocols.SNMP != nil {
-				snmpSrv.SetMocks(newCfg.Protocols.SNMP.Mocks)
-				snmpSrv.SetTraps(newCfg.Protocols.SNMP.Traps)
-			}
-			if dnsSrv != nil && newCfg.Protocols.DNS != nil {
-				dnsSrv.SetMocks(newCfg.Protocols.DNS.Mocks)
-			}
-			if amqpSrv != nil && newCfg.Protocols.AMQP != nil {
-				amqpSrv.SetMocks(newCfg.Protocols.AMQP.Mocks)
-			}
-			if kafkaSrv != nil && newCfg.Protocols.Kafka != nil {
-				kafkaSrv.SetMocks(newCfg.Protocols.Kafka.Mocks)
-			}
-			if ldapSrv != nil && newCfg.Protocols.LDAP != nil {
-				ldapSrv.SetMocks(newCfg.Protocols.LDAP.Mocks)
-			}
-			if imapSrv != nil && newCfg.Protocols.IMAP != nil {
-				imapSrv.SetMailboxes(newCfg.Protocols.IMAP.Mailboxes)
-			}
-			if ftpSrv != nil && newCfg.Protocols.FTP != nil {
-				ftpSrv.SetFiles(newCfg.Protocols.FTP.Files)
-			}
-			if memcachedSrv != nil && newCfg.Protocols.Memcached != nil {
-				memcachedSrv.SetMocks(newCfg.Protocols.Memcached.Mocks)
-			}
-			if stompSrv != nil && newCfg.Protocols.STOMP != nil {
-				stompSrv.SetMocks(newCfg.Protocols.STOMP.Mocks)
-			}
-			if coapSrv != nil && newCfg.Protocols.CoAP != nil {
-				coapSrv.SetMocks(newCfg.Protocols.CoAP.Mocks)
-			}
-			if sipSrv != nil && newCfg.Protocols.SIP != nil {
-				sipSrv.SetMocks(newCfg.Protocols.SIP.Mocks)
-			}
-		}
 		go func() {
+			applyReload := func(newCfg *config.Config) {
+				for _, reload := range reloaders {
+					reload(newCfg)
+				}
+			}
 			if err := watchConfig(ctx, cfgFile, applyReload); err != nil {
 				fmt.Fprintln(os.Stderr, "error: config watcher stopped:", err)
 			}

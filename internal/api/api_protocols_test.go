@@ -45,8 +45,8 @@ type stubAMQP struct {
 func (s *stubAMQP) StatusInfo() map[string]interface{} {
 	return map[string]interface{}{"protocol": "amqp"}
 }
-func (s *stubAMQP) GetMocks() []config.AMQPMock        { return s.mocks }
-func (s *stubAMQP) SetMocks(m []config.AMQPMock)       { s.mocks = m }
+func (s *stubAMQP) GetMocks() []config.AMQPMock               { return s.mocks }
+func (s *stubAMQP) SetMocks(m []config.AMQPMock)              { s.mocks = m }
 func (s *stubAMQP) GetMessageStore() *amqpserver.MessageStore { return s.ms }
 
 type stubKafka struct {
@@ -57,8 +57,8 @@ type stubKafka struct {
 func (s *stubKafka) StatusInfo() map[string]interface{} {
 	return map[string]interface{}{"protocol": "kafka"}
 }
-func (s *stubKafka) GetMocks() []config.KafkaMock          { return s.mocks }
-func (s *stubKafka) SetMocks(m []config.KafkaMock)         { s.mocks = m }
+func (s *stubKafka) GetMocks() []config.KafkaMock               { return s.mocks }
+func (s *stubKafka) SetMocks(m []config.KafkaMock)              { s.mocks = m }
 func (s *stubKafka) GetMessageStore() *kafkaserver.MessageStore { return s.ms }
 
 type stubLDAP struct {
@@ -109,8 +109,8 @@ type stubSTOMP struct {
 func (s *stubSTOMP) StatusInfo() map[string]interface{} {
 	return map[string]interface{}{"protocol": "stomp"}
 }
-func (s *stubSTOMP) GetMocks() []config.STOMPMock         { return s.mocks }
-func (s *stubSTOMP) SetMocks(m []config.STOMPMock)        { s.mocks = m }
+func (s *stubSTOMP) GetMocks() []config.STOMPMock               { return s.mocks }
+func (s *stubSTOMP) SetMocks(m []config.STOMPMock)              { s.mocks = m }
 func (s *stubSTOMP) GetMessageStore() *stompserver.MessageStore { return s.ms }
 
 type stubCoAP struct {
@@ -141,6 +141,7 @@ type fullAPIStubs struct {
 	dns       *stubDNS
 	amqp      *stubAMQP
 	kafka     *stubKafka
+	nats      *stubNATS
 	ldap      *stubLDAP
 	imap      *stubIMAP
 	ftp       *stubFTP
@@ -171,6 +172,7 @@ func startAPIFull(t *testing.T) (string, *fullAPIStubs) {
 		dns:       &stubDNS{},
 		amqp:      &stubAMQP{ms: amqpserver.NewMessageStore(50)},
 		kafka:     &stubKafka{ms: kafkaserver.NewMessageStore(50)},
+		nats:      &stubNATS{ms: natsserver.NewMessageStore(50)},
 		ldap:      &stubLDAP{},
 		imap:      &stubIMAP{},
 		ftp:       &stubFTP{},
@@ -190,7 +192,7 @@ func startAPIFull(t *testing.T) (string, *fullAPIStubs) {
 		&stubRedis{},
 		&stubSMTP{inbox: smtpserver.NewInbox(50)},
 		&stubMQTT{ms: mqttserver.NewMessageStore(50)},
-		&stubNATS{ms: natsserver.NewMessageStore(50)},
+		stubs.nats,
 		&stubSNMP{},
 		stubs.dns,
 		stubs.amqp,
@@ -398,6 +400,82 @@ func TestAPI_Kafka_CRUD(t *testing.T) {
 	_ = resp6.Body.Close()
 	if resp6.StatusCode != 200 {
 		t.Errorf("delete kafka mock: want 200, got %d", resp6.StatusCode)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// NATS mock CRUD
+// ---------------------------------------------------------------------------
+
+// TestAPI_NATS_CRUD covers /api/mocks/nats (list/create/update/delete) and
+// /api/nats/messages (list/clear) — the only protocol's management-API
+// surface that had no test at all before this, despite every other
+// protocol (Kafka, AMQP, MQTT, etc.) having an equivalent CRUD test.
+func TestAPI_NATS_CRUD(t *testing.T) {
+	base, stubs := startAPIFull(t)
+
+	mock := map[string]interface{}{
+		"id":      "nats-mock",
+		"subject": "orders.created",
+		"response": map[string]interface{}{
+			"payload": "ack",
+		},
+	}
+	body, _ := json.Marshal(mock)
+	resp, err := http.Post(base+"/api/mocks/nats", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/mocks/nats: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != 201 {
+		t.Errorf("create nats mock: want 201, got %d", resp.StatusCode)
+	}
+	if len(stubs.nats.GetMocks()) != 1 {
+		t.Fatalf("stub not updated: %+v", stubs.nats.GetMocks())
+	}
+
+	resp2, _ := http.Get(base + "/api/mocks/nats")
+	_ = resp2.Body.Close()
+	if resp2.StatusCode != 200 {
+		t.Errorf("list nats mocks: want 200, got %d", resp2.StatusCode)
+	}
+
+	// Update.
+	putBody, _ := json.Marshal(map[string]interface{}{"id": "nats-mock", "subject": "orders.created.v2"})
+	req, _ := http.NewRequest(http.MethodPut, base+"/api/mocks/nats/nats-mock", bytes.NewReader(putBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp3, _ := http.DefaultClient.Do(req)
+	_ = resp3.Body.Close()
+	if resp3.StatusCode != 200 {
+		t.Errorf("update nats mock: want 200, got %d", resp3.StatusCode)
+	}
+	if mocks := stubs.nats.GetMocks(); len(mocks) != 1 || mocks[0].Subject != "orders.created.v2" {
+		t.Fatalf("update nats mock not applied: %+v", mocks)
+	}
+
+	// Messages list and clear.
+	resp4, _ := http.Get(base + "/api/nats/messages")
+	_ = resp4.Body.Close()
+	if resp4.StatusCode != 200 {
+		t.Errorf("list nats messages: want 200, got %d", resp4.StatusCode)
+	}
+
+	req5, _ := http.NewRequest(http.MethodDelete, base+"/api/nats/messages", nil)
+	resp5, _ := http.DefaultClient.Do(req5)
+	_ = resp5.Body.Close()
+	if resp5.StatusCode != 200 {
+		t.Errorf("clear nats messages: want 200, got %d", resp5.StatusCode)
+	}
+
+	// Delete mock.
+	req6, _ := http.NewRequest(http.MethodDelete, base+"/api/mocks/nats/nats-mock", nil)
+	resp6, _ := http.DefaultClient.Do(req6)
+	_ = resp6.Body.Close()
+	if resp6.StatusCode != 200 {
+		t.Errorf("delete nats mock: want 200, got %d", resp6.StatusCode)
+	}
+	if len(stubs.nats.GetMocks()) != 0 {
+		t.Fatalf("nats mock not deleted: %+v", stubs.nats.GetMocks())
 	}
 }
 

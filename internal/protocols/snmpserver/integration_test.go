@@ -257,6 +257,69 @@ func TestSNMPServer_GETBULK(t *testing.T) {
 	}
 }
 
+// TestSNMPServer_GETBULK_NonRepeaterReturnsSuccessor verifies that a
+// GetBulk non-repeater variable is resolved like GetNext (lexicographic
+// successor), per RFC 3416 §4.2.3 — not an exact-match Get.
+func TestSNMPServer_GETBULK_NonRepeaterReturnsSuccessor(t *testing.T) {
+	port := freeUDPPort()
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+	stop := startSNMP(t, srv)
+	defer stop()
+
+	g := snmpClient(port)
+	if err := g.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer g.Conn.Close() //nolint:errcheck
+
+	// Querying an existing OID as a (sole) non-repeater should return the
+	// NEXT OID in the table, not that OID's own value.
+	resp, err := g.GetBulk([]string{"1.3.6.1.2.1.1.1.0"}, 1, 0)
+	if err != nil {
+		t.Fatalf("GETBULK: %v", err)
+	}
+	if len(resp.Variables) != 1 {
+		t.Fatalf("want 1 variable, got %d", len(resp.Variables))
+	}
+	if got := resp.Variables[0].Name; got != ".1.3.6.1.2.1.1.3.0" {
+		t.Errorf("want successor OID .1.3.6.1.2.1.1.3.0, got %s", got)
+	}
+}
+
+// TestSNMPServer_GETBULK_LargeMaxRepetitionsBounded verifies that an
+// attacker-controlled MaxRepetitions can't make the single-threaded agent
+// hang processing one packet.
+func TestSNMPServer_GETBULK_LargeMaxRepetitionsBounded(t *testing.T) {
+	port := freeUDPPort()
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+	stop := startSNMP(t, srv)
+	defer stop()
+
+	g := snmpClient(port)
+	g.Timeout = 5 * time.Second
+	if err := g.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer g.Conn.Close() //nolint:errcheck
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := g.GetBulk([]string{"1.3.6.1.2.1.1.1.0"}, 0, 200_000_000)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("GETBULK: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("GETBULK with a huge MaxRepetitions did not complete in time")
+	}
+}
+
+
 func TestSNMPServer_SET_UpdatesValue(t *testing.T) {
 	port := freeUDPPort()
 	mocks := []config.SNMPMock{

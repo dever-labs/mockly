@@ -1,6 +1,9 @@
 package snmpserver
 
 import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/subtle"
 	"fmt"
 	"io"
 	"log"
@@ -141,6 +144,28 @@ func (a *agent) respondV3(req *gosnmp.SnmpPacket, raw []byte, decodeErr error) (
 		return nil, nil
 	}
 
+	// Localize the user's auth/priv keys against our real engine ID. The
+	// copy cached on a.users was localized in buildUsers() against an empty
+	// engine ID (used only to validate the passphrase up front), so it must
+	// be recomputed here before it can verify or sign anything.
+	localUser := *user //nolint:govet // freshly derived value, embedded mutex never locked; see buildUsers
+	localUser.AuthoritativeEngineID = a.engineID
+	localUser.AuthoritativeEngineBoots = a.engineBoots
+	localUser.AuthoritativeEngineTime = a.engineTime()
+	localUser.SecretKey = nil
+	localUser.PrivacyKey = nil
+	if err := localUser.InitSecurityKeys(); err != nil {
+		return nil, fmt.Errorf("init security keys: %w", err)
+	}
+
+	if user.AuthenticationProtocol > gosnmp.NoAuth &&
+		!verifyAuthDigest(raw, user.AuthenticationProtocol, localUser.SecretKey, usp.AuthenticationParameters) {
+		// Authentication digest doesn't match: the request claims to be
+		// from this user but wasn't signed with their real passphrase.
+		// Drop silently, same as an unrecognised user/community.
+		return nil, nil
+	}
+
 	if decodeErr != nil {
 		// The first decode attempt used blank (no-auth) security
 		// parameters, which can't verify/decrypt an authenticated request —
@@ -165,23 +190,14 @@ func (a *agent) respondV3(req *gosnmp.SnmpPacket, raw []byte, decodeErr error) (
 		return nil, nil //nolint:nilerr // unsupported/unknown PDU: drop silently, not a transport error
 	}
 
-	respUser := *user //nolint:govet // freshly derived value, embedded mutex never locked; see buildUsers
-	respUser.AuthoritativeEngineID = a.engineID
-	respUser.AuthoritativeEngineBoots = a.engineBoots
-	respUser.AuthoritativeEngineTime = a.engineTime()
-	// user's keys were localized in buildUsers() against an empty engine ID
-	// (used only to validate the passphrase up front); clear them so
-	// InitSecurityKeys recomputes them against our real engine ID below.
-	respUser.SecretKey = nil
-	respUser.PrivacyKey = nil
-	if err := respUser.InitSecurityKeys(); err != nil {
-		return nil, fmt.Errorf("init security keys: %w", err)
-	}
-	dummy := &gosnmp.SnmpPacket{MsgFlags: gosnmp.AuthPriv, SecurityParameters: &respUser}
-	if err := respUser.InitPacket(dummy); err != nil {
+	// Refresh the engine time to "now" for the response signature (it was
+	// captured earlier, before request processing/serving).
+	localUser.AuthoritativeEngineTime = a.engineTime()
+	dummy := &gosnmp.SnmpPacket{MsgFlags: gosnmp.AuthPriv, SecurityParameters: &localUser}
+	if err := localUser.InitPacket(dummy); err != nil {
 		return nil, fmt.Errorf("init packet salt: %w", err)
 	}
-	resp.SecurityParameters = &respUser
+	resp.SecurityParameters = &localUser
 	return resp.MarshalMsg()
 }
 
@@ -201,6 +217,66 @@ func (a *agent) findUser(name string) *gosnmp.UsmSecurityParameters {
 	}
 	return nil
 }
+
+// authDigestLen returns the number of leading digest bytes USM keeps after
+// truncating the keyed hash, per the macVarbinds table in RFC 3414 §6.3.2 /
+// RFC 7860 §4.2.2 (MD5/SHA-1 use 12; the SHA-2 family scales with hash size).
+func authDigestLen(proto gosnmp.SnmpV3AuthProtocol) int {
+	switch proto {
+	case gosnmp.SHA224:
+		return 16
+	case gosnmp.SHA256:
+		return 24
+	case gosnmp.SHA384:
+		return 32
+	case gosnmp.SHA512:
+		return 48
+	default: // MD5, SHA
+		return 12
+	}
+}
+
+// verifyAuthDigest checks that raw — the exact bytes received on the wire —
+// carries a valid USM authentication digest for the given localized key, per
+// RFC 3414 §6.3.2 / RFC 7860 §4.2.2: a keyed hash computed over the whole
+// message with the msgAuthenticationParameters field's content zeroed out,
+// truncated, and compared against the digest the sender included.
+//
+// gosnmp.SnmpDecodePacket only decodes/decrypts a v3 packet — unlike its
+// client-side request/response path, it never checks this digest — so
+// without this, any client that merely knows a configured v3 username (no
+// correct passphrase required) could impersonate that user.
+//
+// The digest's on-wire location is found by searching raw for the already-
+// decoded digest bytes themselves, rather than re-parsing BER offsets. This
+// is safe even in the astronomically unlikely case of a false match
+// elsewhere in the packet: zeroing the wrong span only changes the bytes fed
+// into our recomputation, so it can cause a legitimate request to be
+// rejected (a false negative), never cause a forged request to be accepted.
+func verifyAuthDigest(raw []byte, proto gosnmp.SnmpV3AuthProtocol, secretKey []byte, received string) bool {
+	sentDigest := []byte(received)
+	n := authDigestLen(proto)
+	if len(sentDigest) != n {
+		return false
+	}
+	idx := bytes.Index(raw, sentDigest)
+	if idx < 0 {
+		return false
+	}
+	zeroed := make([]byte, len(raw))
+	copy(zeroed, raw)
+	for i := range sentDigest {
+		zeroed[idx+i] = 0
+	}
+	mac := hmac.New(proto.HashType().New, secretKey)
+	mac.Write(zeroed)
+	digest := mac.Sum(nil)
+	if len(digest) < n {
+		return false
+	}
+	return subtle.ConstantTimeCompare(digest[:n], sentDigest) == 1
+}
+
 
 func helloVariable() gosnmp.SnmpPDU {
 	// usmStatsUnknownEngineIDs — http://oidref.com/1.3.6.1.6.3.15.1.1.4.0
@@ -318,11 +394,14 @@ func (a *agent) serveGetBulk(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error)
 		nonRepeaters = n
 	}
 
-	// Non-repeaters behave like a plain Get (exact match only), per the
-	// GetBulk spec.
+	// Non-repeaters behave like a plain GetNext (lexicographic successor),
+	// per RFC 3416 §4.2.3 — not an exact-match Get.
 	for i := 0; i < nonRepeaters; i++ {
 		query := req.Variables[i].Name
-		_, idx := findOID(a.oids, query)
+		item, idx := findOID(a.oids, query)
+		if item != nil {
+			idx++
+		}
 		if idx >= len(a.oids) {
 			resp.Variables = append(resp.Variables, endOfMibView(query))
 			continue
@@ -330,9 +409,17 @@ func (a *agent) serveGetBulk(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error)
 		resp.Variables = append(resp.Variables, a.get(a.oids[idx]))
 	}
 
-	// Repeaters behave like repeated GetNext calls.
+	// Repeaters behave like repeated GetNext calls. MaxRepetitions is
+	// client-controlled and can be up to ~2.1 billion; cap it at the OID
+	// table size (no repeater can produce more than that many real values
+	// before every repeater hits end-of-MIB) so a crafted packet can't hang
+	// this agent's single-threaded request loop.
+	maxReps := int(req.MaxRepetitions)
+	if maxReps > len(a.oids) {
+		maxReps = len(a.oids)
+	}
 	eomSent := make(map[string]bool)
-	for rep := 0; rep < int(req.MaxRepetitions); rep++ {
+	for rep := 0; rep < maxReps; rep++ {
 		for k := nonRepeaters; k < n; k++ {
 			query := req.Variables[k].Name
 			item, idx := findOID(a.oids, query)
@@ -348,6 +435,9 @@ func (a *agent) serveGetBulk(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error)
 				continue
 			}
 			resp.Variables = append(resp.Variables, a.get(a.oids[next]))
+		}
+		if len(eomSent) == n-nonRepeaters {
+			break // every repeater has hit end-of-MIB; further reps are no-ops
 		}
 	}
 	return resp, nil

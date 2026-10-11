@@ -173,3 +173,82 @@ func TestSNMPServer_V3Only_RejectsV2c(t *testing.T) {
 		t.Fatal("expected v2c request to be rejected/dropped when ProtocolVersion=v3")
 	}
 }
+
+// TestSNMPServer_V3_ForgedAuthDigest_Dropped is a white-box test for the
+// server's USM authentication check: it crafts a GetRequest for a real,
+// configured username but signs it with the WRONG passphrase, submitting
+// the raw bytes directly to agent.respond (bypassing gosnmp's client-side
+// request/response verification entirely, so a prior bug here — where the
+// server never validated the digest at all — couldn't hide behind the
+// client rejecting its own expected response). The server must drop the
+// forged request (nil response), not process it.
+func TestSNMPServer_V3_ForgedAuthDigest_Dropped(t *testing.T) {
+	const realPassphrase = "realpassphrase123"
+	user := config.SNMPUser{Username: "admin", AuthProtocol: "sha", AuthPassphrase: realPassphrase}
+	srv := New(&config.SNMPConfig{
+		Enabled: true, Mocks: defaultMocks(), V3Users: []config.SNMPUser{user},
+	}, state.New(), scenarios.New(nil), logger.New(100))
+	users, err := srv.buildUsers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ag := newAgent("", true, users, "deadbeefdead", func() uint32 { return 1 }, srv.buildOIDs(defaultMocks()))
+
+	// Discovery handshake, to learn the agent's engine ID/boots/time.
+	discPkt := &gosnmp.SnmpPacket{
+		Version: gosnmp.Version3, MsgFlags: gosnmp.Reportable | gosnmp.NoAuthNoPriv,
+		SecurityModel: gosnmp.UserSecurityModel, SecurityParameters: &gosnmp.UsmSecurityParameters{},
+		PDUType: gosnmp.GetRequest, MsgID: 1, RequestID: 1,
+	}
+	discRaw, err := discPkt.MarshalMsg()
+	if err != nil {
+		t.Fatal(err)
+	}
+	discRespRaw, err := ag.respond(discRaw)
+	if err != nil {
+		t.Fatalf("discovery respond: %v", err)
+	}
+	probe := &gosnmp.GoSNMP{
+		Version: gosnmp.Version3, SecurityModel: gosnmp.UserSecurityModel,
+		SecurityParameters: &gosnmp.UsmSecurityParameters{UserName: user.Username},
+	}
+	discResp, err := probe.SnmpDecodePacket(discRespRaw)
+	if err != nil {
+		t.Fatalf("decode discovery response: %v", err)
+	}
+	engineUSP, ok := discResp.SecurityParameters.(*gosnmp.UsmSecurityParameters)
+	if !ok {
+		t.Fatalf("discovery response has no USM security parameters")
+	}
+
+	// A GetRequest for the real username, authenticated with the WRONG
+	// passphrase but a correctly-learned engine ID/boots/time.
+	forgedUSP := &gosnmp.UsmSecurityParameters{
+		UserName:                 user.Username,
+		AuthenticationProtocol:   gosnmp.SHA,
+		AuthenticationPassphrase: realPassphrase + "-wrong",
+		AuthoritativeEngineID:    engineUSP.AuthoritativeEngineID,
+		AuthoritativeEngineBoots: engineUSP.AuthoritativeEngineBoots,
+		AuthoritativeEngineTime:  engineUSP.AuthoritativeEngineTime,
+	}
+	if err := forgedUSP.InitSecurityKeys(); err != nil {
+		t.Fatal(err)
+	}
+	forgedPkt := &gosnmp.SnmpPacket{
+		Version: gosnmp.Version3, MsgFlags: gosnmp.AuthNoPriv, SecurityModel: gosnmp.UserSecurityModel,
+		SecurityParameters: forgedUSP, PDUType: gosnmp.GetRequest, MsgID: 2, RequestID: 2,
+		Variables: []gosnmp.SnmpPDU{{Name: defaultMocks()[0].OID, Type: gosnmp.Null}},
+	}
+	forgedRaw, err := forgedPkt.MarshalMsg()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	respRaw, err := ag.respond(forgedRaw)
+	if err != nil {
+		t.Fatalf("respond returned an error (acceptable, but expected a nil response): %v", err)
+	}
+	if respRaw != nil {
+		t.Fatal("server responded to a request signed with the wrong auth passphrase; USM authentication is not being enforced")
+	}
+}

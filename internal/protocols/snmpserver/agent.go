@@ -47,6 +47,13 @@ type agent struct {
 	engineTime  func() uint32
 
 	oids []*pduItem // kept sorted by numeric OID order; see sortOIDs
+
+	// usmLastTime tracks, per authenticated v3 username, the highest
+	// AuthoritativeEngineTime accepted so far. Used by checkTimeliness to
+	// reject replayed/stale USM requests (RFC 3414 §3.2 step 7). Only ever
+	// read/written from respond(), which serveForever calls from a single
+	// goroutine, so no locking is needed.
+	usmLastTime map[string]uint32
 }
 
 // newAgent builds an agent, sorting items by OID as GoSNMPServer's
@@ -61,7 +68,40 @@ func newAgent(community string, snmpV3Only bool, users []gosnmp.UsmSecurityParam
 		engineBoots: 1,
 		engineTime:  engineTime,
 		oids:        items,
+		usmLastTime: make(map[string]uint32),
 	}
+}
+
+// usmTimeWindow is the maximum allowed drift, in seconds, between a USM
+// message's claimed AuthoritativeEngineTime and this agent's own notion of
+// time, per RFC 3414 §1.3/§3.2 step 7 (the usmStatsNotInTimeWindows check).
+const usmTimeWindow = 150
+
+// checkTimeliness enforces RFC 3414 §3.2 step 7: it rejects v3 requests
+// whose claimed engine boots/time are stale (from a previous agent
+// incarnation), too far outside the time window, or an exact or older replay
+// of a previously-accepted message from the same user. It only applies once
+// a request has already passed authentication (verifyAuthDigest), since
+// AuthoritativeEngineBoots/Time are only trustworthy once covered by a valid
+// signature.
+func (a *agent) checkTimeliness(usp *gosnmp.UsmSecurityParameters) bool {
+	if usp.AuthoritativeEngineBoots != a.engineBoots {
+		return false
+	}
+	now := int64(a.engineTime())
+	claimed := int64(usp.AuthoritativeEngineTime)
+	diff := now - claimed
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > usmTimeWindow {
+		return false
+	}
+	if last, seen := a.usmLastTime[usp.UserName]; seen && usp.AuthoritativeEngineTime < last {
+		return false // replay of an older, already-superseded message
+	}
+	a.usmLastTime[usp.UserName] = usp.AuthoritativeEngineTime
+	return true
 }
 
 // respond decodes a raw incoming UDP payload, dispatches it against the OID
@@ -158,12 +198,20 @@ func (a *agent) respondV3(req *gosnmp.SnmpPacket, raw []byte, decodeErr error) (
 		return nil, fmt.Errorf("init security keys: %w", err)
 	}
 
-	if user.AuthenticationProtocol > gosnmp.NoAuth &&
-		!verifyAuthDigest(raw, user.AuthenticationProtocol, localUser.SecretKey, usp.AuthenticationParameters) {
-		// Authentication digest doesn't match: the request claims to be
-		// from this user but wasn't signed with their real passphrase.
-		// Drop silently, same as an unrecognised user/community.
-		return nil, nil
+	if user.AuthenticationProtocol > gosnmp.NoAuth {
+		if !verifyAuthDigest(raw, user.AuthenticationProtocol, localUser.SecretKey, usp.AuthenticationParameters) {
+			// Authentication digest doesn't match: the request claims to be
+			// from this user but wasn't signed with their real passphrase.
+			// Drop silently, same as an unrecognised user/community.
+			return nil, nil
+		}
+		if !a.checkTimeliness(usp) {
+			// Digest is valid but the claimed boots/time are stale, too far
+			// outside the window, or a replay of an older accepted message:
+			// drop silently rather than confirming a forged/replayed
+			// request was otherwise well-formed.
+			return nil, nil
+		}
 	}
 
 	if decodeErr != nil {
@@ -304,18 +352,31 @@ func octetStringPDU(name, s string) gosnmp.SnmpPDU {
 // ---------------------------------------------------------------------------
 
 func (a *agent) serve(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error) {
+	var resp *gosnmp.SnmpPacket
+	var err error
 	switch req.PDUType {
 	case gosnmp.GetRequest:
-		return a.serveGet(req)
+		resp, err = a.serveGet(req)
 	case gosnmp.GetNextRequest:
-		return a.serveGetNext(req)
+		resp, err = a.serveGetNext(req)
 	case gosnmp.GetBulkRequest:
-		return a.serveGetBulk(req)
+		resp, err = a.serveGetBulk(req)
 	case gosnmp.SetRequest:
-		return a.serveSet(req)
+		resp, err = a.serveSet(req)
 	default:
 		return nil, fmt.Errorf("unsupported pdu type %v", req.PDUType)
 	}
+	if err != nil || resp == nil {
+		return resp, err
+	}
+	if req.Version == gosnmp.Version1 && resp.Error != gosnmp.NoError {
+		// RFC 1157 §4.1.2: on any error, a v1 response must echo the
+		// original request's variable-bindings unchanged (there is no v1
+		// equivalent of the v2c/v3 per-varbind exception values such as
+		// noSuchInstance/endOfMibView this code uses for v2c/v3).
+		resp.Variables = append([]gosnmp.SnmpPDU(nil), req.Variables...)
+	}
+	return resp, nil
 }
 
 func responseFor(req *gosnmp.SnmpPacket) *gosnmp.SnmpPacket {
@@ -341,7 +402,7 @@ func (a *agent) serveGet(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error) {
 		if item == nil {
 			if resp.Error == gosnmp.NoError {
 				resp.Error = gosnmp.NoSuchName
-				resp.ErrorIndex = uint8(idx) //nolint:gosec // idx is bounded by request variable count
+				resp.ErrorIndex = uint8(idx + 1) //nolint:gosec // idx+1 is bounded by request variable count (1-based per RFC 1905 §4.2.1)
 			}
 			resp.Variables = append(resp.Variables, noSuchInstance(v.Name))
 			continue
@@ -367,6 +428,14 @@ func (a *agent) serveGetNext(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error)
 		idx++
 	}
 	if idx >= len(a.oids) {
+		if req.Version == gosnmp.Version1 {
+			// v1 has no endOfMibView exception value; signal exhaustion via
+			// error-status, per RFC 1157 (the serve() wrapper then echoes
+			// the original request's variable-bindings unchanged).
+			resp.Error = gosnmp.NoSuchName
+			resp.ErrorIndex = 1
+			return resp, nil
+		}
 		resp.Variables = append(resp.Variables, endOfMibView(query))
 		return resp, nil
 	}
@@ -381,6 +450,11 @@ func (a *agent) serveGetNext(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error)
 		resp.Variables = append(resp.Variables, a.get(a.oids[i]))
 	}
 	if len(resp.Variables) == 0 {
+		if req.Version == gosnmp.Version1 {
+			resp.Error = gosnmp.NoSuchName
+			resp.ErrorIndex = 1
+			return resp, nil
+		}
 		resp.Variables = append(resp.Variables, endOfMibView(query))
 	}
 	return resp, nil
@@ -418,7 +492,11 @@ func (a *agent) serveGetBulk(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error)
 	if maxReps > len(a.oids) {
 		maxReps = len(a.oids)
 	}
-	eomSent := make(map[string]bool)
+	// Keyed by repeater position (loop index k), not by OID name: a request
+	// can legally repeat the same OID name across multiple repeaters (e.g.
+	// walking the same subtree twice), and each such repeater must still
+	// get its own end-of-MIB marker every round.
+	eomSent := make(map[int]bool)
 	for rep := 0; rep < maxReps; rep++ {
 		for k := nonRepeaters; k < n; k++ {
 			query := req.Variables[k].Name
@@ -428,9 +506,9 @@ func (a *agent) serveGetBulk(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error)
 			}
 			next := idx + rep
 			if next >= len(a.oids) {
-				if !eomSent[query] {
+				if !eomSent[k] {
 					resp.Variables = append(resp.Variables, endOfMibView(query))
-					eomSent[query] = true
+					eomSent[k] = true
 				}
 				continue
 			}
@@ -451,13 +529,13 @@ func (a *agent) serveSet(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error) {
 		case item == nil:
 			if resp.Error == gosnmp.NoError {
 				resp.Error = gosnmp.NoSuchName
-				resp.ErrorIndex = uint8(idx) //nolint:gosec // idx is bounded by request variable count
+				resp.ErrorIndex = uint8(idx + 1) //nolint:gosec // idx+1 is bounded by request variable count (1-based per RFC 1905 §4.2.1)
 			}
 			resp.Variables = append(resp.Variables, noSuchInstance(v.Name))
 		case item.onSet == nil:
 			if resp.Error == gosnmp.NoError {
 				resp.Error = gosnmp.ReadOnly
-				resp.ErrorIndex = uint8(idx) //nolint:gosec // idx is bounded by request variable count
+				resp.ErrorIndex = uint8(idx + 1) //nolint:gosec // idx+1 is bounded by request variable count (1-based per RFC 1905 §4.2.1)
 			}
 			resp.Variables = append(resp.Variables, nilPDU(v.Name))
 		default:

@@ -174,7 +174,61 @@ func TestSNMPServer_V3Only_RejectsV2c(t *testing.T) {
 	}
 }
 
-// TestSNMPServer_V3_ForgedAuthDigest_Dropped is a white-box test for the
+// TestSNMPServer_V3_StaleReplayedTime_Dropped is a white-box test for the
+// USM anti-replay check (RFC 3414 §3.2 step 7): a validly-signed request
+// claiming an older AuthoritativeEngineTime than one already accepted from
+// the same user (simulating a captured-and-replayed older message) must be
+// dropped, even though its digest is perfectly valid.
+func TestSNMPServer_V3_StaleReplayedTime_Dropped(t *testing.T) {
+	const passphrase = "realpassphrase123"
+	user := config.SNMPUser{Username: "admin", AuthProtocol: "sha", AuthPassphrase: passphrase}
+	srv := New(&config.SNMPConfig{
+		Enabled: true, Mocks: defaultMocks(), V3Users: []config.SNMPUser{user},
+	}, state.New(), scenarios.New(nil), logger.New(100))
+	users, err := srv.buildUsers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fixed engineTime so the test exercises replay detection specifically,
+	// independent of the (already covered) ±150s window check.
+	ag := newAgent("", true, users, "deadbeefdead", func() uint32 { return 100 }, srv.buildOIDs(defaultMocks()))
+
+	buildAndSend := func(t *testing.T, requestID uint32, claimedTime uint32) []byte {
+		t.Helper()
+		usp := &gosnmp.UsmSecurityParameters{
+			UserName:                 user.Username,
+			AuthenticationProtocol:   gosnmp.SHA,
+			AuthenticationPassphrase: passphrase,
+			AuthoritativeEngineID:    "deadbeefdead",
+			AuthoritativeEngineBoots: 1,
+			AuthoritativeEngineTime:  claimedTime,
+		}
+		if err := usp.InitSecurityKeys(); err != nil {
+			t.Fatal(err)
+		}
+		pkt := &gosnmp.SnmpPacket{
+			Version: gosnmp.Version3, MsgFlags: gosnmp.AuthNoPriv, SecurityModel: gosnmp.UserSecurityModel,
+			SecurityParameters: usp, PDUType: gosnmp.GetRequest, MsgID: requestID, RequestID: requestID,
+			Variables: []gosnmp.SnmpPDU{{Name: defaultMocks()[0].OID, Type: gosnmp.Null}},
+		}
+		raw, err := pkt.MarshalMsg()
+		if err != nil {
+			t.Fatal(err)
+		}
+		respRaw, err := ag.respond(raw)
+		if err != nil {
+			t.Fatalf("respond: %v", err)
+		}
+		return respRaw
+	}
+
+	if resp := buildAndSend(t, 1, 100); resp == nil {
+		t.Fatal("a valid, well-timed request was unexpectedly dropped")
+	}
+	if resp := buildAndSend(t, 2, 50); resp != nil {
+		t.Fatal("an older, replayed engineTime (behind one already accepted from this user) was not dropped")
+	}
+}
 // server's USM authentication check: it crafts a GetRequest for a real,
 // configured username but signs it with the WRONG passphrase, submitting
 // the raw bytes directly to agent.respond (bypassing gosnmp's client-side

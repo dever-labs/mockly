@@ -320,6 +320,100 @@ func TestSNMPServer_GETBULK_LargeMaxRepetitionsBounded(t *testing.T) {
 }
 
 
+// TestSNMPServer_GETBULK_DuplicateRepeaterOID verifies that two repeater
+// variable-bindings requesting the same OID name each get their own
+// end-of-MIB marker (and value) every round, instead of the dedup map
+// collapsing the second one once the first hits end-of-MIB.
+func TestSNMPServer_GETBULK_DuplicateRepeaterOID(t *testing.T) {
+	port := freeUDPPort()
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+	stop := startSNMP(t, srv)
+	defer stop()
+
+	g := snmpClient(port)
+	if err := g.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer g.Conn.Close() //nolint:errcheck
+
+	// Two repeaters requesting the exact same OID name, with enough
+	// MaxRepetitions to run the table out and hit end-of-MIB on both.
+	resp, err := g.GetBulk([]string{"1.3.6.1.2.1.1.1.0", "1.3.6.1.2.1.1.1.0"}, 0, 20)
+	if err != nil {
+		t.Fatalf("GETBULK: %v", err)
+	}
+	// Every round must contribute exactly 2 variables (one per repeater)
+	// until both hit end-of-MIB, so the total must be even.
+	if len(resp.Variables)%2 != 0 {
+		t.Fatalf("expected an even number of variables (2 per round), got %d: %+v", len(resp.Variables), resp.Variables)
+	}
+}
+
+// TestSNMPServer_GET_ErrorIndexIsOneBased verifies that error-index on a
+// NoSuchName response is the 1-based position of the offending
+// variable-binding, per RFC 1905 §4.2.1 / RFC 3416 §3 — not the raw 0-based
+// slice index.
+func TestSNMPServer_GET_ErrorIndexIsOneBased(t *testing.T) {
+	port := freeUDPPort()
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+	stop := startSNMP(t, srv)
+	defer stop()
+
+	g := snmpClient(port)
+	if err := g.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer g.Conn.Close() //nolint:errcheck
+
+	// A known OID followed by an unknown one: the unknown one is at
+	// 1-based position 2.
+	resp, err := g.Get([]string{"1.3.6.1.2.1.1.1.0", "1.3.6.1.2.1.1.99.0"})
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	if resp.ErrorIndex != 2 {
+		t.Errorf("want ErrorIndex=2 (1-based), got %d", resp.ErrorIndex)
+	}
+}
+
+// TestSNMPServer_V1_UnknownOID_EchoesOriginalVarbinds verifies RFC 1157
+// §4.1.2 v1 error semantics: on any error, the response must echo the
+// original request's variable-bindings unchanged, not substitute a v2c/v3
+// exception value like noSuchInstance.
+func TestSNMPServer_V1_UnknownOID_EchoesOriginalVarbinds(t *testing.T) {
+	port := freeUDPPort()
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+	stop := startSNMP(t, srv)
+	defer stop()
+
+	g := &gosnmp.GoSNMP{
+		Target: "127.0.0.1", Port: uint16(port), Community: "public",
+		Version: gosnmp.Version1, Timeout: 2 * time.Second, Retries: 1,
+	}
+	if err := g.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer g.Conn.Close() //nolint:errcheck
+
+	const unknown = "1.3.6.1.2.1.1.99.0"
+	resp, err := g.Get([]string{unknown})
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	if resp.Error != gosnmp.NoSuchName {
+		t.Errorf("want error-status NoSuchName, got %v", resp.Error)
+	}
+	if len(resp.Variables) != 1 || resp.Variables[0].Name != "."+unknown {
+		t.Fatalf("want original varbind echoed unchanged, got %+v", resp.Variables)
+	}
+	if resp.Variables[0].Type == gosnmp.NoSuchInstance || resp.Variables[0].Type == gosnmp.EndOfMibView {
+		t.Errorf("v1 response must not use v2c/v3 exception value types, got %v", resp.Variables[0].Type)
+	}
+}
+
 func TestSNMPServer_SET_UpdatesValue(t *testing.T) {
 	port := freeUDPPort()
 	mocks := []config.SNMPMock{

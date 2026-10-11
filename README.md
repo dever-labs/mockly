@@ -446,6 +446,67 @@ validated exactly like at startup:
 startup. Enabling a previously-disabled protocol, or changing a port,
 requires a restart.
 
+### TLS
+
+Several protocols (`http`, `websocket`, `graphql`, `tcp`, and the
+management API) accept a `tls:` block to serve over TLS:
+
+```yaml
+protocols:
+  http:
+    enabled: true
+    port: 8443
+    tls:
+      enabled: true
+      cert_file: ./certs/server.crt
+      key_file: ./certs/server.key
+```
+
+`cert_file`/`key_file` must either both be set or both be omitted —
+setting only one is rejected by `mockly config validate`.
+
+**Automatic self-signed certificates.** If `cert_file`/`key_file` are
+omitted (or point to files that don't exist yet), a self-signed
+certificate is generated automatically — no extra flag needed:
+
+```yaml
+protocols:
+  http:
+    enabled: true
+    port: 8443
+    tls:
+      enabled: true # no cert_file/key_file: generates one on the fly
+```
+
+- If `cert_file`/`key_file` are **omitted entirely**, the certificate
+  stays in-memory only and a fresh one is generated on every start.
+- If `cert_file`/`key_file` are **set but the files don't exist yet**,
+  the generated cert/key are written there, so subsequent starts reuse
+  the same certificate instead of generating a new one each time.
+
+The certificate's content can be customized via `tls.generate`:
+
+```yaml
+tls:
+  enabled: true
+  cert_file: ./certs/server.crt
+  key_file: ./certs/server.key
+  generate:
+    common_name: mocks.example.com
+    organization: Example Corp
+    dns_names: [mocks.example.com, api.example.local]
+    ip_addresses: [127.0.0.1, "::1"]
+    valid_for: 720h # default: 8760h (1 year)
+    # For mutual-TLS/authorization test scenarios where the same cert is
+    # also presented as a client certificate:
+    client_auth: true
+    uris: [spiffe://example.org/ns/default/sa/mockly]
+```
+
+All `generate` fields are optional; omitted ones fall back to
+`common_name: localhost`, `dns_names: [localhost]`,
+`ip_addresses: [127.0.0.1, "::1"]`, and `valid_for: 8760h`.
+
 ---
 
 ## Protocols

@@ -186,3 +186,52 @@ func TestValidateAMQPTopology_ValidConfig(t *testing.T) {
 		t.Fatalf("expected no errors, got %v", errs)
 	}
 }
+
+func TestValidateTLSConfigs_RejectsOnlyCertFileSet(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.HTTP = &HTTPConfig{
+		Enabled: true,
+		Port:    8080,
+		TLS:     &TLSConfig{Enabled: true, CertFile: "cert.pem"},
+	}
+	errs := Validate(&cfg)
+	if len(errs) != 1 {
+		t.Fatalf("expected exactly one error, got %v", errs)
+	}
+	if !strings.Contains(errs[0].Error(), "protocols.http.tls") {
+		t.Errorf("error %q does not mention protocols.http.tls", errs[0])
+	}
+}
+
+func TestValidateTLSConfigs_RejectsOnlyKeyFileSet(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.TCP = &TCPConfig{
+		Enabled: true,
+		Port:    9000,
+		TLS:     &TLSConfig{Enabled: true, KeyFile: "key.pem"},
+	}
+	errs := Validate(&cfg)
+	if len(errs) != 1 {
+		t.Fatalf("expected exactly one error, got %v", errs)
+	}
+	if !strings.Contains(errs[0].Error(), "protocols.tcp.tls") {
+		t.Errorf("error %q does not mention protocols.tcp.tls", errs[0])
+	}
+}
+
+func TestValidateTLSConfigs_AllowsBothSetOrBothEmpty(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.HTTP = &HTTPConfig{
+		Enabled: true,
+		Port:    8080,
+		TLS:     &TLSConfig{Enabled: true, CertFile: "cert.pem", KeyFile: "key.pem"},
+	}
+	cfg.Protocols.WebSocket = &WebSocketConfig{
+		Enabled: true,
+		Port:    8081,
+		TLS:     &TLSConfig{Enabled: true}, // implicit generation: both empty is fine
+	}
+	if errs := Validate(&cfg); len(errs) != 0 {
+		t.Fatalf("expected no errors, got %v", errs)
+	}
+}

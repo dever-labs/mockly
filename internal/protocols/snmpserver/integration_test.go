@@ -423,3 +423,86 @@ func TestSNMPServer_SendTrap_NotFound(t *testing.T) {
 		t.Error("expected error for unknown trap ID")
 	}
 }
+
+// TestSNMPServer_SendTrap_DeliversRealPacket proves sendTrap actually puts a
+// well-formed SNMP trap PDU on the wire — not just that it returns nil error
+// — by receiving it with a real gosnmp.TrapListener and asserting on the
+// decoded community string, version, and variable bindings. This was
+// previously only exercised at the e2e level via a bare HTTP 200 assertion
+// (TestE2E_SNMP_TrapSend_Returns200), which wouldn't catch a bug that sends
+// a malformed/empty/wrong-community packet while still returning no error.
+func TestSNMPServer_SendTrap_DeliversRealPacket(t *testing.T) {
+	trapPort := freeUDPPort()
+
+	received := make(chan *gosnmp.SnmpPacket, 1)
+	tl := gosnmp.NewTrapListener()
+	defer tl.Close()
+	tl.Params = &gosnmp.GoSNMP{Community: "public-trap", Version: gosnmp.Version2c, Logger: gosnmp.NewLogger(logAdapter{})}
+	tl.OnNewTrap = func(packet *gosnmp.SnmpPacket, _ *net.UDPAddr) {
+		received <- packet
+	}
+	go func() { _ = tl.Listen(fmt.Sprintf("127.0.0.1:%d", trapPort)) }()
+	select {
+	case <-tl.Listening():
+	case <-time.After(2 * time.Second):
+		t.Fatal("trap listener never became ready")
+	}
+
+	port := freeUDPPort()
+	traps := []config.SNMPTrap{{
+		ID:        "linkDown",
+		Target:    fmt.Sprintf("127.0.0.1:%d", trapPort),
+		Version:   "2c",
+		Community: "public-trap",
+		OID:       "1.3.6.1.6.3.1.1.5.3",
+		Bindings: []config.SNMPTrapBinding{
+			{OID: "1.3.6.1.2.1.2.2.1.1.5", Type: "integer", Value: 5},
+			{OID: "1.3.6.1.2.1.2.2.1.2.5", Type: "string", Value: "eth5"},
+		},
+	}}
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Traps: traps}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+
+	if err := srv.SendTrap("linkDown"); err != nil {
+		t.Fatalf("SendTrap: %v", err)
+	}
+
+	select {
+	case packet := <-received:
+		if packet.Community != "public-trap" {
+			t.Errorf("received trap community = %q, want %q", packet.Community, "public-trap")
+		}
+		if packet.Version != gosnmp.Version2c {
+			t.Errorf("received trap version = %v, want Version2c", packet.Version)
+		}
+		if len(packet.Variables) < 2 {
+			t.Fatalf("received trap variables = %#v, want at least 2 bindings", packet.Variables)
+		}
+		foundInt, foundStr := false, false
+		for _, v := range packet.Variables {
+			if v.Name == ".1.3.6.1.2.1.2.2.1.1.5" || v.Name == "1.3.6.1.2.1.2.2.1.1.5" {
+				if n, ok := v.Value.(int); !ok || n != 5 {
+					t.Errorf("integer binding value = %#v, want 5", v.Value)
+				}
+				foundInt = true
+			}
+			if v.Name == ".1.3.6.1.2.1.2.2.1.2.5" || v.Name == "1.3.6.1.2.1.2.2.1.2.5" {
+				if s, ok := v.Value.([]byte); !ok || string(s) != "eth5" {
+					t.Errorf("string binding value = %#v, want \"eth5\"", v.Value)
+				}
+				foundStr = true
+			}
+		}
+		if !foundInt || !foundStr {
+			t.Fatalf("received trap missing expected bindings: %#v", packet.Variables)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting to receive trap")
+	}
+}
+
+// logAdapter discards gosnmp's internal debug logging during tests.
+type logAdapter struct{}
+
+func (logAdapter) Print(v ...interface{})                 {}
+func (logAdapter) Printf(format string, v ...interface{}) {}

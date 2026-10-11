@@ -1437,6 +1437,58 @@ func Defaults() Config {
 	return defaults()
 }
 
+// ResolvedFiles returns the main config file at path plus every file that
+// Load(path) would merge into it — directory-mode auto-included siblings
+// and the main file's own explicit Include globs — in the same order Load
+// processes them. It does not re-resolve an included file's own Include
+// field (Load ignores those too; see mergeIncludedConfig). Intended for
+// callers that need to know which files to watch for changes (e.g. the
+// `start --watch` hot-reload flag) without duplicating Load's merge logic.
+func ResolvedFiles(path string) ([]string, error) {
+	mainPath, autoIncludes, err := resolveConfigPath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := loadFile(mainPath)
+	if err != nil {
+		return nil, err
+	}
+
+	mainAbs, err := filepath.Abs(mainPath)
+	if err != nil {
+		mainAbs = mainPath
+	}
+	files := []string{mainPath}
+	seen := map[string]bool{mainAbs: true}
+
+	baseDir := filepath.Dir(mainPath)
+	patterns := append(append([]string{}, autoIncludes...), cfg.Include...)
+	for _, pattern := range patterns {
+		full := pattern
+		if !filepath.IsAbs(full) {
+			full = filepath.Join(baseDir, pattern)
+		}
+		matches, err := filepath.Glob(full)
+		if err != nil {
+			return nil, fmt.Errorf("include %q: %w", pattern, err)
+		}
+		sort.Strings(matches)
+		for _, m := range matches {
+			abs, err := filepath.Abs(m)
+			if err != nil {
+				abs = m
+			}
+			if seen[abs] {
+				continue
+			}
+			seen[abs] = true
+			files = append(files, m)
+		}
+	}
+	return files, nil
+}
+
 // Load reads and parses a YAML config file (or a directory — see below).
 // Missing file returns defaults.
 //

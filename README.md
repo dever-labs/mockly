@@ -419,6 +419,33 @@ is ignored, so there's always exactly one place that's authoritative for
 where a protocol listens. An included file's own `include:` field is
 ignored too — include chains can't form.
 
+### Hot-reload with `--watch`
+
+Pass `--watch` to `mockly start` to reload mocks whenever the config file
+(or, with `include:`/directory mode, any file that contributed to it)
+changes on disk, without restarting the server or losing in-progress
+connections:
+
+```bash
+mockly start -c ./mocks/ --watch
+```
+
+On each change, the config is re-read, inline schema refs
+(`openapi`/`asyncapi`/`proto`) are re-resolved, and the result is
+validated exactly like at startup:
+
+- If it's **valid**, every already-running protocol server has its mocks
+  replaced in place via the same `SetMocks`/`SetRules`/`SetMailboxes`/
+  `SetFiles` code path the management API's bulk-set endpoints use.
+- If it's **invalid** (parse error or failed validation), the reload is
+  rejected, an error is logged to stderr, and the server keeps serving
+  the last-known-good config — an editing mistake never crashes a running
+  mock server.
+
+`--watch` only updates mocks on protocols that were already enabled at
+startup. Enabling a previously-disabled protocol, or changing a port,
+requires a restart.
+
 ---
 
 ## Protocols

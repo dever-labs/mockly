@@ -41,6 +41,7 @@ import (
 )
 
 func startCmd() *cobra.Command {
+	var watch bool
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start all configured mock servers",
@@ -63,11 +64,12 @@ func startCmd() *cobra.Command {
 				cfg.Mockly.API.Port = apiPort
 			}
 
-			return runServers(cfg)
+			return runServers(cfg, watch)
 		},
 	}
 	cmd.Flags().IntVar(&uiPort, "ui-port", 0, "Override UI port")
 	cmd.Flags().IntVar(&apiPort, "api-port", 0, "Override API port")
+	cmd.Flags().BoolVar(&watch, "watch", false, "Watch the config file (and any included files) for changes and reload mocks in place, without restarting")
 	return cmd
 }
 
@@ -79,7 +81,7 @@ func launch(ctx context.Context, errCh chan<- error, start func(context.Context)
 	go func() { errCh <- start(ctx) }()
 }
 
-func runServers(cfg *config.Config) error {
+func runServers(cfg *config.Config, watch bool) error {
 	store := state.New()
 	sc := scenarios.New(cfg.Scenarios)
 	log := logger.New(500)
@@ -291,6 +293,81 @@ func runServers(cfg *config.Config) error {
 	fmt.Printf("→ Management API    on http://localhost:%d/api\n", cfg.Mockly.API.Port)
 	if cfg.Mockly.UI.Enabled {
 		fmt.Printf("→ Web UI            on http://localhost:%d\n", cfg.Mockly.API.Port)
+	}
+
+	if watch {
+		applyReload := func(newCfg *config.Config) {
+			if httpSrv != nil && newCfg.Protocols.HTTP != nil {
+				httpSrv.SetMocks(newCfg.Protocols.HTTP.Mocks)
+			}
+			if wsSrv != nil && newCfg.Protocols.WebSocket != nil {
+				wsSrv.SetMocks(newCfg.Protocols.WebSocket.Mocks)
+			}
+			if grpcSrv != nil && newCfg.Protocols.GRPC != nil {
+				var mocks []config.GRPCMock
+				for _, svc := range newCfg.Protocols.GRPC.Services {
+					mocks = append(mocks, svc.Mocks...)
+				}
+				grpcSrv.SetMocks(mocks)
+			}
+			if graphqlSrv != nil && newCfg.Protocols.GraphQL != nil {
+				graphqlSrv.SetMocks(newCfg.Protocols.GraphQL.Mocks)
+			}
+			if tcpSrv != nil && newCfg.Protocols.TCP != nil {
+				tcpSrv.SetMocks(newCfg.Protocols.TCP.Mocks)
+			}
+			if redisSrv != nil && newCfg.Protocols.Redis != nil {
+				redisSrv.SetMocks(newCfg.Protocols.Redis.Mocks)
+			}
+			if smtpSrv != nil && newCfg.Protocols.SMTP != nil {
+				smtpSrv.SetRules(newCfg.Protocols.SMTP.Rules)
+			}
+			if mqttSrv != nil && newCfg.Protocols.MQTT != nil {
+				mqttSrv.SetMocks(newCfg.Protocols.MQTT.Mocks)
+			}
+			if natsSrv != nil && newCfg.Protocols.NATS != nil {
+				natsSrv.SetMocks(newCfg.Protocols.NATS.Mocks)
+			}
+			if snmpSrv != nil && newCfg.Protocols.SNMP != nil {
+				snmpSrv.SetMocks(newCfg.Protocols.SNMP.Mocks)
+				snmpSrv.SetTraps(newCfg.Protocols.SNMP.Traps)
+			}
+			if dnsSrv != nil && newCfg.Protocols.DNS != nil {
+				dnsSrv.SetMocks(newCfg.Protocols.DNS.Mocks)
+			}
+			if amqpSrv != nil && newCfg.Protocols.AMQP != nil {
+				amqpSrv.SetMocks(newCfg.Protocols.AMQP.Mocks)
+			}
+			if kafkaSrv != nil && newCfg.Protocols.Kafka != nil {
+				kafkaSrv.SetMocks(newCfg.Protocols.Kafka.Mocks)
+			}
+			if ldapSrv != nil && newCfg.Protocols.LDAP != nil {
+				ldapSrv.SetMocks(newCfg.Protocols.LDAP.Mocks)
+			}
+			if imapSrv != nil && newCfg.Protocols.IMAP != nil {
+				imapSrv.SetMailboxes(newCfg.Protocols.IMAP.Mailboxes)
+			}
+			if ftpSrv != nil && newCfg.Protocols.FTP != nil {
+				ftpSrv.SetFiles(newCfg.Protocols.FTP.Files)
+			}
+			if memcachedSrv != nil && newCfg.Protocols.Memcached != nil {
+				memcachedSrv.SetMocks(newCfg.Protocols.Memcached.Mocks)
+			}
+			if stompSrv != nil && newCfg.Protocols.STOMP != nil {
+				stompSrv.SetMocks(newCfg.Protocols.STOMP.Mocks)
+			}
+			if coapSrv != nil && newCfg.Protocols.CoAP != nil {
+				coapSrv.SetMocks(newCfg.Protocols.CoAP.Mocks)
+			}
+			if sipSrv != nil && newCfg.Protocols.SIP != nil {
+				sipSrv.SetMocks(newCfg.Protocols.SIP.Mocks)
+			}
+		}
+		go func() {
+			if err := watchConfig(ctx, cfgFile, applyReload); err != nil {
+				fmt.Fprintln(os.Stderr, "error: config watcher stopped:", err)
+			}
+		}()
 	}
 
 	select {

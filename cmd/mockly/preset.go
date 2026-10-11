@@ -78,7 +78,7 @@ Examples:
 			}
 
 			fmt.Printf("Starting preset: %s\n", args[0])
-			return runServers(cfg)
+			return runServers(cfg, false)
 		},
 	}
 	cmd.Flags().IntVar(&httpPort, "http-port", 0, "Override the HTTP mock server port")

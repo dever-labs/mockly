@@ -2167,3 +2167,199 @@ func TestHTTPServer_PerMockFault_RateLimit_IndependentPerMock(t *testing.T) {
 		t.Errorf("mock b's first request should not be rate limited (independent from mock a), got %d", respB1.StatusCode)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Per-listener TLS/mock scoping tests
+// ---------------------------------------------------------------------------
+
+func freePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+	return port
+}
+
+// TestHTTPServer_NamedListener_MockOnlyReachableOnItsOwnListener verifies
+// that a mock assigned to a named listener is reachable there, but not on
+// the default listener — and that a mock without a Listener stays reachable
+// only on the default listener, not the named one.
+func TestHTTPServer_NamedListener_MockOnlyReachableOnItsOwnListener(t *testing.T) {
+	defaultPort := freePort(t)
+	securePort := freePort(t)
+
+	cfg := &config.HTTPConfig{
+		Enabled: true,
+		Port:    defaultPort,
+		Listeners: []config.HTTPListener{
+			{Name: "secure", Port: securePort},
+		},
+		Mocks: []config.HTTPMock{
+			{
+				ID:       "public",
+				Request:  config.HTTPRequest{Method: "GET", Path: "/public"},
+				Response: config.HTTPResponse{Status: 200, Body: "public"},
+			},
+			{
+				ID:       "secret",
+				Listener: "secure",
+				Request:  config.HTTPRequest{Method: "GET", Path: "/secret"},
+				Response: config.HTTPResponse{Status: 200, Body: "secret"},
+			},
+		},
+	}
+	store := state.New()
+	sc := scenarios.New(nil)
+	log := logger.New(100)
+	srv := httpserver.New(cfg, store, sc, log, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go srv.Start(ctx) //nolint:errcheck
+
+	defaultBase := fmt.Sprintf("http://127.0.0.1:%d", defaultPort)
+	secureBase := fmt.Sprintf("http://127.0.0.1:%d", securePort)
+	waitForHTTP(t, defaultBase, 2*time.Second)
+	waitForHTTP(t, secureBase, 2*time.Second)
+
+	// "public" (no Listener) is reachable on the default listener...
+	resp, err := http.Get(defaultBase + "/public")
+	if err != nil {
+		t.Fatalf("GET default/public: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != 200 {
+		t.Errorf("default/public: want 200, got %d", resp.StatusCode)
+	}
+
+	// ...but NOT on the "secure" named listener.
+	resp2, err := http.Get(secureBase + "/public")
+	if err != nil {
+		t.Fatalf("GET secure/public: %v", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Errorf("secure/public: want 404 (not scoped to this listener), got %d", resp2.StatusCode)
+	}
+
+	// "secret" (Listener: secure) is reachable on the secure listener...
+	resp3, err := http.Get(secureBase + "/secret")
+	if err != nil {
+		t.Fatalf("GET secure/secret: %v", err)
+	}
+	defer resp3.Body.Close() //nolint:errcheck
+	if resp3.StatusCode != 200 {
+		t.Errorf("secure/secret: want 200, got %d", resp3.StatusCode)
+	}
+
+	// ...but NOT on the default listener.
+	resp4, err := http.Get(defaultBase + "/secret")
+	if err != nil {
+		t.Fatalf("GET default/secret: %v", err)
+	}
+	defer resp4.Body.Close() //nolint:errcheck
+	if resp4.StatusCode != http.StatusNotFound {
+		t.Errorf("default/secret: want 404 (not on default listener), got %d", resp4.StatusCode)
+	}
+}
+
+// TestHTTPServer_NamedListener_OwnTLS verifies a named listener can carry
+// its own TLS config, independent of (and even when) the default listener
+// has none.
+func TestHTTPServer_NamedListener_OwnTLS(t *testing.T) {
+	dir := t.TempDir()
+	certFile := dir + "/cert.pem"
+	keyFile := dir + "/key.pem"
+	if err := testutil.WriteSelfSignedCert(certFile, keyFile); err != nil {
+		t.Fatalf("generate cert: %v", err)
+	}
+
+	defaultPort := freePort(t)
+	securePort := freePort(t)
+
+	cfg := &config.HTTPConfig{
+		Enabled: true,
+		Port:    defaultPort, // no TLS on the default listener
+		Listeners: []config.HTTPListener{
+			{
+				Name: "secure",
+				Port: securePort,
+				TLS:  &config.TLSConfig{Enabled: true, CertFile: certFile, KeyFile: keyFile},
+			},
+		},
+		Mocks: []config.HTTPMock{
+			{
+				ID:       "unscoped",
+				Request:  config.HTTPRequest{Method: "GET", Path: "/ping"},
+				Response: config.HTTPResponse{Status: 200, Body: "pong-default"},
+			},
+			{
+				ID:       "ping",
+				Listener: "secure",
+				Request:  config.HTTPRequest{Method: "GET", Path: "/ping"},
+				Response: config.HTTPResponse{Status: 200, Body: "pong"},
+			},
+		},
+	}
+	store := state.New()
+	sc := scenarios.New(nil)
+	log := logger.New(100)
+	srv := httpserver.New(cfg, store, sc, log, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go srv.Start(ctx) //nolint:errcheck
+
+	// Plain HTTP works against the default (non-TLS) listener.
+	defaultBase := fmt.Sprintf("http://127.0.0.1:%d", defaultPort)
+	waitForHTTP(t, defaultBase, 2*time.Second)
+	resp, err := http.Get(defaultBase + "/ping")
+	if err != nil {
+		t.Fatalf("GET default/ping (plain): %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != 200 {
+		t.Errorf("default/ping: want 200, got %d", resp.StatusCode)
+	}
+
+	// The "secure" listener requires TLS: a plain HTTP request against it
+	// must not get our mock's normal 200 response (Go's http.Server detects
+	// a plain-text request on a TLS listener and answers 400 itself rather
+	// than returning a connection error).
+	plainResp, plainErr := http.Get(fmt.Sprintf("http://127.0.0.1:%d/ping", securePort))
+	if plainErr == nil {
+		defer plainResp.Body.Close() //nolint:errcheck
+		if plainResp.StatusCode == 200 {
+			t.Fatal("expected a plain HTTP request to the TLS-only listener to be rejected, got 200")
+		}
+	}
+
+	// A TLS client (skipping verification, since it's self-signed) can
+	// reach "secure".
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+		},
+	}
+	secureBase := fmt.Sprintf("https://127.0.0.1:%d", securePort)
+	deadline := time.Now().Add(2 * time.Second)
+	var tlsResp *http.Response
+	var tlsErr error
+	for time.Now().Before(deadline) {
+		tlsResp, tlsErr = client.Get(secureBase + "/ping")
+		if tlsErr == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if tlsErr != nil {
+		t.Fatalf("GET secure/ping (TLS): %v", tlsErr)
+	}
+	defer tlsResp.Body.Close() //nolint:errcheck
+	if tlsResp.StatusCode != 200 {
+		t.Errorf("secure/ping: want 200, got %d", tlsResp.StatusCode)
+	}
+}

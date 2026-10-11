@@ -26,6 +26,7 @@ func Validate(cfg *Config) []error {
 	errs = append(errs, validateProtocolVersions(cfg)...)
 	errs = append(errs, validateAMQPTopology(cfg)...)
 	errs = append(errs, validateTLSConfigs(cfg)...)
+	errs = append(errs, validateHTTPListeners(cfg)...)
 	return errs
 }
 
@@ -58,6 +59,55 @@ func validateTLSConfigs(cfg *Config) []error {
 	}
 	if cfg.Protocols.TCP != nil {
 		check("protocols.tcp.tls", cfg.Protocols.TCP.TLS)
+	}
+	if cfg.Protocols.HTTP != nil {
+		for i, l := range cfg.Protocols.HTTP.Listeners {
+			check(fmt.Sprintf("protocols.http.listeners[%d] (%q).tls", i, l.Name), l.TLS)
+		}
+	}
+	return errs
+}
+
+// validateHTTPListeners checks protocols.http.listeners and the
+// HTTPMock.listener references into it: every listener needs a non-empty,
+// unique name and a port that doesn't collide with another listener or the
+// protocol's own default port; every mock's listener (if set) must name a
+// listener that's actually declared, otherwise it would silently never be
+// reachable on any listener.
+func validateHTTPListeners(cfg *Config) []error {
+	var errs []error
+	http := cfg.Protocols.HTTP
+	if http == nil || len(http.Listeners) == 0 {
+		return errs
+	}
+
+	names := make(map[string]bool, len(http.Listeners))
+	ports := map[int]string{http.Port: "protocols.http.port"}
+	for i, l := range http.Listeners {
+		field := fmt.Sprintf("protocols.http.listeners[%d]", i)
+		if l.Name == "" {
+			errs = append(errs, fmt.Errorf("%s: name must not be empty", field))
+		} else if names[l.Name] {
+			errs = append(errs, fmt.Errorf("%s: duplicate listener name %q", field, l.Name))
+		} else {
+			names[l.Name] = true
+		}
+		if l.Port == 0 {
+			errs = append(errs, fmt.Errorf("%s (%q): port must be set", field, l.Name))
+		} else if other, ok := ports[l.Port]; ok {
+			errs = append(errs, fmt.Errorf("%s (%q): port %d is already used by %s", field, l.Name, l.Port, other))
+		} else {
+			ports[l.Port] = fmt.Sprintf("%s (%q)", field, l.Name)
+		}
+	}
+
+	for i, m := range http.Mocks {
+		if m.Listener != "" && !names[m.Listener] {
+			errs = append(errs, fmt.Errorf(
+				"protocols.http.mocks[%d] (%q): listener %q is not declared in protocols.http.listeners",
+				i, m.ID, m.Listener,
+			))
+		}
 	}
 	return errs
 }

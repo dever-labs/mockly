@@ -215,6 +215,30 @@ type HTTPConfig struct {
 	// upstream again. This bootstraps a component-test mock set from a real
 	// backend without hand-authoring every response up front.
 	Record *HTTPRecordConfig `yaml:"record,omitempty" json:"record,omitempty"`
+
+	// Listeners configures additional named HTTP listeners, each bound on
+	// its own port with its own optional TLS, alongside the protocol's
+	// default listener (Port/TLS above). A mock opts into a named listener
+	// via HTTPMock.Listener; mocks that leave Listener empty stay on the
+	// default listener — configs that don't use Listeners are unaffected.
+	// This lets e.g. a subset of mocks be served only over TLS (or over a
+	// different TLS cert) while the rest stay on the plain default
+	// listener, without needing a whole separate `protocols.http` block.
+	Listeners []HTTPListener `yaml:"listeners,omitempty" json:"listeners,omitempty"`
+}
+
+// HTTPListener configures one additional named HTTP listener (see
+// HTTPConfig.Listeners).
+type HTTPListener struct {
+	// Name identifies this listener; HTTPMock.Listener references it.
+	// Must be non-empty and unique among a config's listeners.
+	Name string `yaml:"name" json:"name"`
+	// Port is the TCP port this listener binds, independent of the
+	// protocol's default Port.
+	Port int `yaml:"port" json:"port"`
+	// TLS optionally enables TLS on this listener only, independent of the
+	// default listener's TLS config.
+	TLS *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
 }
 
 // HTTPRecordConfig configures HTTP record mode (see HTTPConfig.Record).
@@ -255,6 +279,13 @@ type HTTPMock struct {
 	// mocks (across any preset) can attach webhooks; the mechanism is generic
 	// and not tied to any specific API shape.
 	Webhooks []Webhook `yaml:"webhooks,omitempty" json:"webhooks,omitempty"`
+
+	// Listener, if set, restricts this mock to a named listener declared in
+	// HTTPConfig.Listeners — it's only matched against requests that
+	// arrived on that listener. Left empty (the default), the mock stays on
+	// the protocol's default listener, unchanged from before Listeners
+	// existed.
+	Listener string `yaml:"listener,omitempty" json:"listener,omitempty"`
 }
 
 // MockFault injects latency or error responses for a specific mock.

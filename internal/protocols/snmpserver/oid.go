@@ -7,17 +7,19 @@ import (
 	"strings"
 )
 
-// byteString is a parsed OID: one int per dotted component. Comparing OIDs
+// byteString is a parsed OID: one int64 per dotted component. Comparing OIDs
 // component-wise numerically (rather than as raw strings) is required for
 // correct ordering — e.g. the component 10 must sort after 2, which a plain
-// string comparison would get backwards.
-type byteString []int
+// string comparison would get backwards. int64 is used (rather than int,
+// which can be 32 bits wide on some platforms) because RFC 3416 §2 allows
+// sub-identifiers up to 2**32-1, which doesn't fit in a 32-bit signed int.
+type byteString []int64
 
 // oidToByteString parses a dotted OID string (e.g. "1.3.6.1.2.1.1.1.0",
 // optionally with a leading dot) into its numeric components.
 func oidToByteString(oid string) (byteString, error) {
 	parts := strings.Split(oid, ".")
-	out := make([]int, 0, len(parts))
+	out := make([]int64, 0, len(parts))
 	for i, p := range parts {
 		if p == "" {
 			if i == 0 {
@@ -29,7 +31,7 @@ func oidToByteString(oid string) (byteString, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid oid %q: %w", oid, err)
 		}
-		out = append(out, int(n))
+		out = append(out, int64(n)) //nolint:gosec // bounded by ParseUint(..., 32), always fits in int64
 	}
 	return out, nil
 }

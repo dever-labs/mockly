@@ -507,6 +507,40 @@ All `generate` fields are optional; omitted ones fall back to
 `common_name: localhost`, `dns_names: [localhost]`,
 `ip_addresses: [127.0.0.1, "::1"]`, and `valid_for: 8760h`.
 
+**Per-listener TLS (HTTP only).** `protocols.http.listeners` adds extra
+named listeners, each on its own port with its own optional `tls:` config,
+alongside the protocol's default listener (`protocols.http.port`/`tls`).
+A mock opts into a named listener via `listener: <name>`; mocks that
+leave `listener` unset stay on the default listener exactly as before —
+configs that don't use `listeners` are unaffected.
+
+```yaml
+protocols:
+  http:
+    enabled: true
+    port: 8080 # default listener: plain HTTP
+    listeners:
+      - name: secure
+        port: 8443
+        tls:
+          enabled: true # auto-generates a cert if none is configured
+    mocks:
+      - id: public
+        request: { method: GET, path: /public }
+        response: { status: 200, body: "ok" }
+      - id: admin
+        listener: secure # only reachable on :8443, over TLS
+        request: { method: GET, path: /admin }
+        response: { status: 200, body: "ok" }
+```
+
+This lets a subset of mocks be served only over TLS (or a different TLS
+cert/listener) while the rest stay on the plain default listener, without
+a whole separate `protocols.http` block. `mockly config validate` rejects
+listener names that are empty or duplicated, ports that collide with
+another listener or the default port, and a `listener:` on a mock that
+doesn't match a declared listener.
+
 ---
 
 ## Protocols

@@ -235,3 +235,110 @@ func TestValidateTLSConfigs_AllowsBothSetOrBothEmpty(t *testing.T) {
 		t.Fatalf("expected no errors, got %v", errs)
 	}
 }
+
+func TestValidateHTTPListeners_ValidConfig(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.HTTP = &HTTPConfig{
+		Enabled: true,
+		Port:    8080,
+		Listeners: []HTTPListener{
+			{Name: "secure", Port: 8443},
+		},
+		Mocks: []HTTPMock{
+			{ID: "public", Request: HTTPRequest{Method: "GET", Path: "/public"}},
+			{ID: "secret", Listener: "secure", Request: HTTPRequest{Method: "GET", Path: "/secret"}},
+		},
+	}
+	if errs := Validate(&cfg); len(errs) != 0 {
+		t.Fatalf("expected no errors, got %v", errs)
+	}
+}
+
+func TestValidateHTTPListeners_EmptyName(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.HTTP = &HTTPConfig{
+		Enabled:   true,
+		Port:      8080,
+		Listeners: []HTTPListener{{Name: "", Port: 8443}},
+	}
+	errs := Validate(&cfg)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "name must not be empty") {
+		t.Fatalf("expected a 'name must not be empty' error, got %v", errs)
+	}
+}
+
+func TestValidateHTTPListeners_DuplicateName(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.HTTP = &HTTPConfig{
+		Enabled: true,
+		Port:    8080,
+		Listeners: []HTTPListener{
+			{Name: "secure", Port: 8443},
+			{Name: "secure", Port: 8444},
+		},
+	}
+	errs := Validate(&cfg)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "duplicate listener name") {
+		t.Fatalf("expected a 'duplicate listener name' error, got %v", errs)
+	}
+}
+
+func TestValidateHTTPListeners_PortCollidesWithDefault(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.HTTP = &HTTPConfig{
+		Enabled:   true,
+		Port:      8080,
+		Listeners: []HTTPListener{{Name: "secure", Port: 8080}},
+	}
+	errs := Validate(&cfg)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "already used by") {
+		t.Fatalf("expected a port-collision error, got %v", errs)
+	}
+}
+
+func TestValidateHTTPListeners_PortCollidesBetweenListeners(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.HTTP = &HTTPConfig{
+		Enabled: true,
+		Port:    8080,
+		Listeners: []HTTPListener{
+			{Name: "a", Port: 9000},
+			{Name: "b", Port: 9000},
+		},
+	}
+	errs := Validate(&cfg)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "already used by") {
+		t.Fatalf("expected a port-collision error, got %v", errs)
+	}
+}
+
+func TestValidateHTTPListeners_MockReferencesUnknownListener(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.HTTP = &HTTPConfig{
+		Enabled:   true,
+		Port:      8080,
+		Listeners: []HTTPListener{{Name: "secure", Port: 8443}},
+		Mocks: []HTTPMock{
+			{ID: "bad", Listener: "nonexistent", Request: HTTPRequest{Method: "GET", Path: "/x"}},
+		},
+	}
+	errs := Validate(&cfg)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "is not declared") {
+		t.Fatalf("expected an unknown-listener error, got %v", errs)
+	}
+}
+
+func TestValidateHTTPListeners_OwnTLSBothOrNeitherEnforced(t *testing.T) {
+	cfg := defaults()
+	cfg.Protocols.HTTP = &HTTPConfig{
+		Enabled: true,
+		Port:    8080,
+		Listeners: []HTTPListener{
+			{Name: "secure", Port: 8443, TLS: &TLSConfig{Enabled: true, CertFile: "cert.pem"}},
+		},
+	}
+	errs := Validate(&cfg)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "protocols.http.listeners[0]") {
+		t.Fatalf("expected a listener TLS cert/key error, got %v", errs)
+	}
+}

@@ -38,8 +38,6 @@ type Server struct {
 	callCounts map[string]int64 // mock ID → total call count (for sequences + API)
 
 	recorder *recorder // non-nil when HTTP record mode is enabled
-
-	server *http.Server
 }
 
 // New creates a Server. The mocks slice is taken from cfg initially but can
@@ -92,34 +90,117 @@ func (s *Server) ResetCallCounts() {
 }
 
 // Start begins listening. It blocks until ctx is cancelled.
+// httpListener is a single bound listener: the default one (name "")
+// configured via HTTPConfig.Port/TLS, or one of HTTPConfig.Listeners.
+type httpListener struct {
+	name string // "" = default listener
+	port int
+	tls  *config.TLSConfig
+}
+
+// listenerCtxKey is the context key under which the originating listener's
+// name is stored on each request, so handleRequest can restrict matching to
+// mocks assigned to that listener (see Server.mocksForListener).
+type listenerCtxKey struct{}
+
+// Start begins listening on the default listener (cfg.Port/cfg.TLS) and any
+// additional listeners configured via cfg.Listeners. It blocks until ctx is
+// cancelled, at which point every listener is shut down gracefully.
 func (s *Server) Start(ctx context.Context) error {
-	r := chi.NewRouter()
-	r.Use(middleware.Recoverer)
-	r.HandleFunc("/*", s.handleRequest)
-
-	addr := fmt.Sprintf(":%d", s.cfg.Port)
-	s.server = &http.Server{Addr: addr, Handler: r, ReadHeaderTimeout: 5 * time.Second}
-
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("http mock server listen %s: %w", addr, err)
-	}
-	ln, err = tlsutil.WrapListener(ln, s.cfg.TLS)
-	if err != nil {
-		return fmt.Errorf("http mock server tls: %w", err)
+	listeners := make([]httpListener, 0, 1+len(s.cfg.Listeners))
+	listeners = append(listeners, httpListener{name: "", port: s.cfg.Port, tls: s.cfg.TLS})
+	for _, l := range s.cfg.Listeners {
+		listeners = append(listeners, httpListener{name: l.Name, port: l.Port, tls: l.TLS})
 	}
 
-	errCh := make(chan error, 1)
-	go func() { errCh <- s.server.Serve(ln) }()
+	servers := make([]*http.Server, 0, len(listeners))
+	lns := make([]net.Listener, 0, len(listeners))
+	for _, l := range listeners {
+		r := chi.NewRouter()
+		r.Use(middleware.Recoverer)
+		r.HandleFunc("/*", s.handlerFor(l.name))
+
+		addr := fmt.Sprintf(":%d", l.port)
+		srv := &http.Server{Addr: addr, Handler: r, ReadHeaderTimeout: 5 * time.Second}
+
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return fmt.Errorf("http mock server listen %s (listener %s): %w", addr, listenerLabel(l.name), err)
+		}
+		ln, err = tlsutil.WrapListener(ln, l.tls)
+		if err != nil {
+			return fmt.Errorf("http mock server tls (listener %s): %w", listenerLabel(l.name), err)
+		}
+
+		servers = append(servers, srv)
+		lns = append(lns, ln)
+	}
+
+	errCh := make(chan error, len(servers))
+	for i := range servers {
+		srv, ln := servers[i], lns[i]
+		go func() { errCh <- srv.Serve(ln) }()
+	}
 
 	select {
 	case <-ctx.Done():
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return s.server.Shutdown(shutCtx)
+		var firstErr error
+		for _, srv := range servers {
+			if err := srv.Shutdown(shutCtx); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		return firstErr
 	case err := <-errCh:
 		return err
 	}
+}
+
+// listenerLabel renders a listener name for error messages: the default
+// listener (name "") is labeled "default" instead of an empty string.
+func listenerLabel(name string) string {
+	if name == "" {
+		return "default"
+	}
+	return fmt.Sprintf("%q", name)
+}
+
+// handlerFor returns an http.HandlerFunc bound to the named listener (""
+// for the default listener), tagging each request's context so
+// handleRequest only matches mocks assigned to that listener.
+func (s *Server) handlerFor(listenerName string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(context.WithValue(r.Context(), listenerCtxKey{}, listenerName))
+		s.handleRequest(w, r)
+	}
+}
+
+// mocksForListener filters mocks down to the ones reachable on listenerName:
+// mocks with no Listener set stay on the default listener (listenerName ""),
+// mocks with Listener set only match requests that arrived on that same
+// named listener.
+func mocksForListener(mocks []config.HTTPMock, listenerName string) []config.HTTPMock {
+	if listenerName == "" {
+		allDefault := true
+		for i := range mocks {
+			if mocks[i].Listener != "" {
+				allDefault = false
+				break
+			}
+		}
+		if allDefault {
+			return mocks
+		}
+	}
+	filtered := make([]config.HTTPMock, 0, len(mocks))
+	for i := range mocks {
+		if mocks[i].Listener == listenerName {
+			filtered = append(filtered, mocks[i])
+		}
+	}
+	return filtered
 }
 
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +248,8 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	mocks := s.mocks
 	s.mu.RUnlock()
+	listenerName, _ := r.Context().Value(listenerCtxKey{}).(string)
+	mocks = mocksForListener(mocks, listenerName)
 
 	// NTLM pre-flight: if any mock for this path/method requires NTLM auth,
 	// handle the 3-step handshake before normal matching.
@@ -578,13 +661,25 @@ func (s *Server) StatusInfo() map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	tlsEnabled := s.cfg.TLS != nil && s.cfg.TLS.Enabled
-	return map[string]interface{}{
+	info := map[string]interface{}{
 		"protocol": "http",
 		"enabled":  s.cfg.Enabled,
 		"port":     s.cfg.Port,
 		"tls":      tlsEnabled,
 		"mocks":    len(s.mocks),
 	}
+	if len(s.cfg.Listeners) > 0 {
+		listeners := make([]map[string]interface{}, len(s.cfg.Listeners))
+		for i, l := range s.cfg.Listeners {
+			listeners[i] = map[string]interface{}{
+				"name": l.Name,
+				"port": l.Port,
+				"tls":  l.TLS != nil && l.TLS.Enabled,
+			}
+		}
+		info["listeners"] = listeners
+	}
+	return info
 }
 
 // MarshalMocks returns the mock list as JSON bytes.

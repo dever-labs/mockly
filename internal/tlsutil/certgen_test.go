@@ -1,10 +1,12 @@
 package tlsutil
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -192,5 +194,44 @@ func TestResolveCertificate_WriteFailureReturnsError(t *testing.T) {
 	}
 	if _, err := resolveCertificate(cfg); err == nil {
 		t.Fatal("expected an error when the generated cert/key can't be written, got nil")
+	}
+}
+
+// TestResolveCertificate_ConcurrentCallsShareSameConsistentCert verifies
+// that multiple goroutines calling resolveCertificate concurrently for the
+// same not-yet-existing cert_file/key_file pair (e.g. two listeners/
+// protocols intentionally configured to share one generated certificate,
+// started concurrently by cmd/mockly/start.go) don't race: every call must
+// end up with a valid, self-consistent certificate, and the files on disk
+// must themselves parse as a matching cert/key pair afterward.
+func TestResolveCertificate_ConcurrentCallsShareSameConsistentCert(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "shared-cert.pem")
+	keyFile := filepath.Join(dir, "shared-key.pem")
+	cfg := &config.TLSConfig{Enabled: true, CertFile: certFile, KeyFile: keyFile}
+
+	const goroutines = 10
+	errCh := make(chan error, goroutines)
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			if _, err := resolveCertificate(cfg); err != nil {
+				errCh <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Errorf("resolveCertificate: %v", err)
+	}
+
+	// The persisted files must themselves form a valid, matching keypair -
+	// if two goroutines had raced and written mismatched cert/key halves,
+	// this would fail.
+	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+		t.Fatalf("persisted cert/key files are not a valid matching pair: %v", err)
 	}
 }

@@ -2363,3 +2363,63 @@ func TestHTTPServer_NamedListener_OwnTLS(t *testing.T) {
 		t.Errorf("secure/ping: want 200, got %d", tlsResp.StatusCode)
 	}
 }
+
+// TestHTTPServer_Start_ClosesEarlierListenersWhenLaterOneFailsToBind
+// verifies that when a later listener in the configured list fails to
+// bind, Start() closes every listener it had already opened instead of
+// leaking their file descriptors/Serve goroutines. We occupy the named
+// listener's port so its net.Listen call fails after the default listener
+// has already been successfully bound, then assert the default listener's
+// port is free again once Start returns its error.
+func TestHTTPServer_Start_ClosesEarlierListenersWhenLaterOneFailsToBind(t *testing.T) {
+	defaultPort := freePort(t)
+	securePort := freePort(t)
+
+	// Occupy the "secure" listener's port so the server's own bind attempt
+	// for it fails with "address already in use".
+	occupied, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", securePort))
+	if err != nil {
+		t.Fatalf("failed to occupy port: %v", err)
+	}
+	defer occupied.Close() //nolint:errcheck
+
+	cfg := &config.HTTPConfig{
+		Enabled: true,
+		Port:    defaultPort,
+		Listeners: []config.HTTPListener{
+			{Name: "secure", Port: securePort},
+		},
+	}
+	store := state.New()
+	sc := scenarios.New(nil)
+	log := logger.New(100)
+	srv := httpserver.New(cfg, store, sc, log, nil)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Start(context.Background()) }()
+
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("expected Start to fail because the named listener's port is occupied")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return within 5s after a listener bind failure")
+	}
+
+	// The default listener (bound successfully before the failure) must
+	// have been closed too, not leaked: a fresh bind to the same port
+	// should now succeed.
+	deadline := time.Now().Add(2 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", defaultPort))
+		if err == nil {
+			_ = ln.Close()
+			return
+		}
+		lastErr = err
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("default listener's port never became free again (leaked): %v", lastErr)
+}

@@ -122,25 +122,34 @@ func (rec *recorder) forward(r *http.Request, body []byte) (status int, headers 
 // the full recorded set to disk. The returned mock still needs to be added
 // to the live server's mock list by the caller so it's immediately replayed.
 //
-// If an equivalent request (same method/path/query) was already recorded —
-// e.g. two concurrent requests for the same not-yet-recorded endpoint raced
-// each other — the existing mock is returned unchanged instead of appending
-// a duplicate, so the recorded set (and save_to file) stays de-duplicated.
-func (rec *recorder) capture(method, path string, query map[string]string, status int, headers map[string]string, body []byte) config.HTTPMock {
+// listener is the name of the listener the originating request arrived on
+// ("" for the default listener); it's stamped onto the recorded mock so
+// replay stays correctly scoped when record mode is combined with named
+// HTTP listeners (see HTTPConfig.Listeners) — without it, a mock recorded
+// from a named listener would default to the default listener's scope and
+// never be visible (so never replayed) on the listener it was captured on.
+//
+// If an equivalent request (same listener/method/path/query) was already
+// recorded — e.g. two concurrent requests for the same not-yet-recorded
+// endpoint raced each other — the existing mock is returned unchanged
+// instead of appending a duplicate, so the recorded set (and save_to file)
+// stays de-duplicated.
+func (rec *recorder) capture(listener, method, path string, query map[string]string, status int, headers map[string]string, body []byte) config.HTTPMock {
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
 
 	if len(query) == 0 {
 		query = nil
 	}
-	if existing, ok := rec.findLocked(method, path, query); ok {
+	if existing, ok := rec.findLocked(listener, method, path, query); ok {
 		return existing
 	}
 
 	rec.counter++
 	mock := config.HTTPMock{
-		ID:      fmt.Sprintf("recorded-%d", rec.counter),
-		Request: config.HTTPRequest{Method: method, Path: path, Query: query},
+		ID:       fmt.Sprintf("recorded-%d", rec.counter),
+		Listener: listener,
+		Request:  config.HTTPRequest{Method: method, Path: path, Query: query},
 		Response: config.HTTPResponse{
 			Status:  status,
 			Headers: headers,
@@ -158,10 +167,10 @@ func (rec *recorder) capture(method, path string, query map[string]string, statu
 }
 
 // findLocked returns a previously recorded mock matching the given
-// method/path/query, if any. Must be called with rec.mu held.
-func (rec *recorder) findLocked(method, path string, query map[string]string) (config.HTTPMock, bool) {
+// listener/method/path/query, if any. Must be called with rec.mu held.
+func (rec *recorder) findLocked(listener, method, path string, query map[string]string) (config.HTTPMock, bool) {
 	for _, m := range rec.recorded {
-		if m.Request.Method == method && m.Request.Path == path && queryEqual(m.Request.Query, query) {
+		if m.Listener == listener && m.Request.Method == method && m.Request.Path == path && queryEqual(m.Request.Query, query) {
 			return m, true
 		}
 	}

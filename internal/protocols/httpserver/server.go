@@ -115,6 +115,14 @@ func (s *Server) Start(ctx context.Context) error {
 
 	servers := make([]*http.Server, 0, len(listeners))
 	lns := make([]net.Listener, 0, len(listeners))
+	// closeOpened closes every listener bound so far, used both when setup
+	// fails partway through (lines below) and when one already-serving
+	// listener errors out while others are still running (see errCh case).
+	closeOpened := func() {
+		for _, ln := range lns {
+			_ = ln.Close()
+		}
+	}
 	for _, l := range listeners {
 		r := chi.NewRouter()
 		r.Use(middleware.Recoverer)
@@ -125,10 +133,13 @@ func (s *Server) Start(ctx context.Context) error {
 
 		ln, err := net.Listen("tcp", addr)
 		if err != nil {
+			closeOpened()
 			return fmt.Errorf("http mock server listen %s (listener %s): %w", addr, listenerLabel(l.name), err)
 		}
 		ln, err = tlsutil.WrapListener(ln, l.tls)
 		if err != nil {
+			_ = ln.Close()
+			closeOpened()
 			return fmt.Errorf("http mock server tls (listener %s): %w", listenerLabel(l.name), err)
 		}
 
@@ -142,8 +153,7 @@ func (s *Server) Start(ctx context.Context) error {
 		go func() { errCh <- srv.Serve(ln) }()
 	}
 
-	select {
-	case <-ctx.Done():
+	shutdownAll := func() error {
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		var firstErr error
@@ -153,10 +163,20 @@ func (s *Server) Start(ctx context.Context) error {
 			}
 		}
 		return firstErr
+	}
+
+	select {
+	case <-ctx.Done():
+		return shutdownAll()
 	case err := <-errCh:
+		// One listener's Serve returned (e.g. a non-shutdown accept error)
+		// before ctx was cancelled: stop every other listener too instead
+		// of leaving them bound and their Serve goroutines running.
+		_ = shutdownAll()
 		return err
 	}
 }
+
 
 // listenerLabel renders a listener name for error messages: the default
 // listener (name "") is labeled "default" instead of an empty string.
@@ -265,7 +285,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// again. Falls through to the normal "no mock matched" response if the
 	// upstream can't be reached.
 	if !matched && s.recorder != nil {
-		if s.recordAndServe(w, r, hdrs, querySingle, body, start) {
+		if s.recordAndServe(w, r, listenerName, hdrs, querySingle, body, start) {
 			return
 		}
 	}
@@ -525,23 +545,26 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 // recordAndServe proxies r to the recorder's Target, writes the real
 // response back to w, and captures it as a new mock appended to s.mocks so
 // subsequent identical requests are replayed without reaching Target again.
+// listenerName is the listener r arrived on ("" for the default listener);
+// it's stamped onto the captured mock so replay stays scoped to that same
+// listener (see recorder.capture).
 // Returns false (writing nothing) if the upstream couldn't be reached, so
 // the caller can fall back to the normal "no mock matched" response.
-func (s *Server) recordAndServe(w http.ResponseWriter, r *http.Request, hdrs map[string]string, query map[string]string, body []byte, start time.Time) bool {
+func (s *Server) recordAndServe(w http.ResponseWriter, r *http.Request, listenerName string, hdrs map[string]string, query map[string]string, body []byte, start time.Time) bool {
 	status, respHdrs, respBody, err := s.recorder.forward(r, body)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warn: %v\n", err)
 		return false
 	}
 
-	mock := s.recorder.capture(r.Method, r.URL.Path, query, status, respHdrs, respBody)
+	mock := s.recorder.capture(listenerName, r.Method, r.URL.Path, query, status, respHdrs, respBody)
 
 	s.mu.Lock()
 	// A concurrent request for the same not-yet-recorded endpoint may have
 	// already been proxied and appended its own mock while we were waiting
 	// on the upstream response above; skip appending a duplicate in that
 	// case so the recorded set (and save_to file) stays de-duplicated.
-	if !s.hasEquivalentMockLocked(mock.Request) {
+	if !s.hasEquivalentMockLocked(mock.Listener, mock.Request) {
 		s.mocks = append(s.mocks, mock)
 	}
 	s.mu.Unlock()
@@ -565,14 +588,14 @@ func (s *Server) recordAndServe(w http.ResponseWriter, r *http.Request, hdrs map
 	return true
 }
 
-// hasEquivalentMockLocked reports whether s.mocks already contains a mock
-// with the same method/path/query as req. Used by recordAndServe to avoid
-// appending a duplicate when a concurrent request for the same endpoint (or
-// a mock added via the Management API while the proxy call was in flight)
-// got there first. Must be called with s.mu held.
-func (s *Server) hasEquivalentMockLocked(req config.HTTPRequest) bool {
+// hasEquivalentMockLocked reports whether s.mocks already contains a mock on
+// the same listener with the same method/path/query as req. Used by
+// recordAndServe to avoid appending a duplicate when a concurrent request
+// for the same endpoint (or a mock added via the Management API while the
+// proxy call was in flight) got there first. Must be called with s.mu held.
+func (s *Server) hasEquivalentMockLocked(listener string, req config.HTTPRequest) bool {
 	for _, m := range s.mocks {
-		if m.Request.Method == req.Method && m.Request.Path == req.Path && queryEqual(m.Request.Query, req.Query) {
+		if m.Listener == listener && m.Request.Method == req.Method && m.Request.Path == req.Path && queryEqual(m.Request.Query, req.Query) {
 			return true
 		}
 	}

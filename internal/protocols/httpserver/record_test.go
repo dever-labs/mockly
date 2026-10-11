@@ -261,3 +261,118 @@ func contains(haystack, needle string) bool {
 		return false
 	})()
 }
+
+// TestHTTPServer_RecordMode_ScopedToOriginatingListener verifies that a mock
+// captured via record mode on a named listener is stamped with that
+// listener and is replayed locally (not re-proxied) on subsequent requests
+// to the same listener, while staying invisible on the default listener.
+func TestHTTPServer_RecordMode_ScopedToOriginatingListener(t *testing.T) {
+	var upstreamHits int
+	var mu sync.Mutex
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/widgets/1" {
+			// Ignore incidental requests (e.g. the test helper's readiness
+			// probe against "/") — only the path under test is counted.
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		mu.Lock()
+		upstreamHits++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	defaultLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defaultPort := defaultLn.Addr().(*net.TCPAddr).Port
+	_ = defaultLn.Close()
+
+	namedLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	namedPort := namedLn.Addr().(*net.TCPAddr).Port
+	_ = namedLn.Close()
+
+	cfg := &config.HTTPConfig{
+		Enabled:   true,
+		Port:      defaultPort,
+		Listeners: []config.HTTPListener{{Name: "secure", Port: namedPort}},
+		Record:    &config.HTTPRecordConfig{Enabled: true, Target: upstream.URL},
+	}
+	store := state.New()
+	log := logger.New(100)
+	srv := httpserver.New(cfg, store, scenarios.New(nil), log, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go srv.Start(ctx) //nolint:errcheck
+
+	namedBase := fmt.Sprintf("http://127.0.0.1:%d", namedPort)
+	defaultBase := fmt.Sprintf("http://127.0.0.1:%d", defaultPort)
+	waitForHTTP(t, namedBase, 2*time.Second)
+	waitForHTTP(t, defaultBase, 2*time.Second)
+
+	// First request on the named listener: proxied and captured.
+	resp1, err := http.Get(namedBase + "/widgets/1")
+	if err != nil {
+		t.Fatalf("GET named/widgets/1 (1st): %v", err)
+	}
+	_ = resp1.Body.Close()
+
+	// Second identical request on the SAME named listener: must be
+	// replayed locally (no new upstream hit) — this is the behavior that
+	// was broken when captured mocks weren't stamped with their listener.
+	resp2, err := http.Get(namedBase + "/widgets/1")
+	if err != nil {
+		t.Fatalf("GET named/widgets/1 (2nd): %v", err)
+	}
+	_ = resp2.Body.Close()
+
+	mu.Lock()
+	hits := upstreamHits
+	mu.Unlock()
+	if hits != 1 {
+		t.Errorf("expected exactly 1 upstream hit (2nd request replayed locally), got %d", hits)
+	}
+
+	// The same path on the DEFAULT listener must still be a cache miss
+	// (the recorded mock is scoped to "secure", not visible on default).
+	resp3, err := http.Get(defaultBase + "/widgets/1")
+	if err != nil {
+		t.Fatalf("GET default/widgets/1: %v", err)
+	}
+	_ = resp3.Body.Close()
+
+	mu.Lock()
+	hits = upstreamHits
+	mu.Unlock()
+	if hits != 2 {
+		t.Errorf("expected the default listener to miss and re-proxy (2 total upstream hits), got %d", hits)
+	}
+
+	mocks := srv.GetMocks()
+	var namedCount, defaultCount int
+	for _, m := range mocks {
+		if m.Request.Path != "/widgets/1" {
+			continue
+		}
+		switch m.Listener {
+		case "secure":
+			namedCount++
+		case "":
+			defaultCount++
+		}
+	}
+	if namedCount != 1 {
+		t.Errorf("expected exactly 1 mock scoped to the 'secure' listener, got %d", namedCount)
+	}
+	if defaultCount != 1 {
+		t.Errorf("expected exactly 1 mock scoped to the default listener, got %d", defaultCount)
+	}
+}

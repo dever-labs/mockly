@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"net"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/dever-labs/mockly/internal/config"
@@ -115,6 +116,16 @@ func generateSelfSigned(gen *config.TLSGenerate) (certPEM, keyPEM []byte, err er
 	return certPEM, keyPEM, nil
 }
 
+// certGenMu serializes certificate resolution (the check-exists /
+// generate / write sequence below). Protocols are started concurrently
+// (see cmd/mockly/start.go), so two listeners/protocols configured to
+// share the same not-yet-existing cert_file/key_file pair could otherwise
+// race: both would see the files missing, generate different keypairs, and
+// write concurrently, leaving a mismatched cert/key pair on disk. This is
+// an uncontended, startup-only lock, so a single global mutex is simplest
+// and has no meaningful runtime cost.
+var certGenMu sync.Mutex
+
 // resolveCertificate returns the tls.Certificate to serve for cfg. It loads
 // CertFile/KeyFile from disk when both are set and both files exist.
 // Otherwise it generates a self-signed certificate: if CertFile/KeyFile are
@@ -122,6 +133,9 @@ func generateSelfSigned(gen *config.TLSGenerate) (certPEM, keyPEM []byte, err er
 // starts reuse the same certificate; if both are empty, the certificate is
 // kept in-memory only and regenerated fresh on every start.
 func resolveCertificate(cfg *config.TLSConfig) (tls.Certificate, error) {
+	certGenMu.Lock()
+	defer certGenMu.Unlock()
+
 	if cfg.CertFile != "" && cfg.KeyFile != "" && fileExists(cfg.CertFile) && fileExists(cfg.KeyFile) {
 		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 		if err != nil {

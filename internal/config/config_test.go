@@ -490,6 +490,45 @@ func TestLoad_DirectoryModeRequiresMocklyYAML(t *testing.T) {
 	}
 }
 
+func TestResolvedFiles_DirectoryModeListsMainAndAutoIncludedSiblings(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "mockly.yaml", "protocols:\n  http: { enabled: true, mocks: [] }\n")
+	writeFile(t, dir, "orders.yaml", "protocols:\n  http: { mocks: [] }\n")
+	writeFile(t, dir, "users.yaml", "protocols:\n  http: { mocks: [] }\n")
+
+	files, err := config.ResolvedFiles(dir)
+	if err != nil {
+		t.Fatalf("ResolvedFiles(dir): %v", err)
+	}
+	want := []string{
+		filepath.Join(dir, "mockly.yaml"),
+		filepath.Join(dir, "orders.yaml"),
+		filepath.Join(dir, "users.yaml"),
+	}
+	if len(files) != len(want) {
+		t.Fatalf("files = %v, want %v", files, want)
+	}
+	for i, f := range files {
+		if f != want[i] {
+			t.Errorf("files[%d] = %q, want %q", i, f, want[i])
+		}
+	}
+}
+
+func TestResolvedFiles_ExplicitIncludeIsListedOnce(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "mockly.yaml", "include:\n  - extra.yaml\nprotocols:\n  http: { enabled: true, mocks: [] }\n")
+	writeFile(t, dir, "extra.yaml", "protocols:\n  http: { mocks: [] }\n")
+
+	files, err := config.ResolvedFiles(filepath.Join(dir, "mockly.yaml"))
+	if err != nil {
+		t.Fatalf("ResolvedFiles: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("files = %v, want 2 (main + extra.yaml, no duplicates)", files)
+	}
+}
+
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {

@@ -5,6 +5,7 @@ go 1.26.9
 require (
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/emersion/go-smtp v0.25.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getkin/kin-openapi v0.149.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/go-chi/cors v1.2.2

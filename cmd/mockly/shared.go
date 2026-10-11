@@ -23,7 +23,15 @@ func loadResolvedConfig(path string) (*config.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	warnings, err := configgen.Resolve(cfg, filepath.Dir(path))
+	// Inline schema refs (openapi/asyncapi/proto) are relative to the
+	// directory holding mockly.yaml: for a file path that's its parent
+	// directory, but for directory-mode (path names the directory itself,
+	// e.g. "--config configs/") it's path itself, not its parent.
+	baseDir := filepath.Dir(path)
+	if info, statErr := os.Stat(path); statErr == nil && info.IsDir() {
+		baseDir = path
+	}
+	warnings, err := configgen.Resolve(cfg, baseDir)
 	for _, w := range warnings {
 		fmt.Fprintln(os.Stderr, "warn:", w)
 	}

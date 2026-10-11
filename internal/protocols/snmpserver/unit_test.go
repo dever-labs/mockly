@@ -382,11 +382,11 @@ func TestCheckTimeliness(t *testing.T) {
 	}
 }
 
-// TestServeSet_ReadOnlyItem_Rejected is a white-box test for the ReadOnly
-// branch of serveSet: mockly's own config always makes every mock writable
-// (buildOIDs never leaves onSet nil), so this branch — defensively kept for
-// any future read-only pduItem — has no path through the real server config
-// and must be exercised directly.
+// TestServeSet_ReadOnlyItem_Rejected is a white-box test for the
+// not-writable branch of serveSet: mockly's own config always makes every
+// mock writable (buildOIDs never leaves onSet nil), so this branch —
+// defensively kept for any future read-only pduItem — has no path through
+// the real server config and must be exercised directly.
 func TestServeSet_ReadOnlyItem_Rejected(t *testing.T) {
 	item := &pduItem{oid: "1.3.6.1.4.1.9999.3.0", typ: gosnmp.OctetString, onGet: func() (interface{}, error) { return "ro", nil }}
 	ag := newAgent("public", false, nil, "engineid", func() uint32 { return 0 }, []*pduItem{item})
@@ -399,8 +399,11 @@ func TestServeSet_ReadOnlyItem_Rejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	if resp.Error != gosnmp.ReadOnly {
-		t.Errorf("want ReadOnly error, got %v", resp.Error)
+	// RFC 3416 §4.2.5 case (2): a v2c/v3 Set to a variable that exists but
+	// cannot be modified uses notWritable, not the legacy v1-only readOnly
+	// code.
+	if resp.Error != gosnmp.NotWritable {
+		t.Errorf("want NotWritable error, got %v", resp.Error)
 	}
 	if resp.ErrorIndex != 1 {
 		t.Errorf("want ErrorIndex=1, got %d", resp.ErrorIndex)

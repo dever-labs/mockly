@@ -1221,7 +1221,19 @@ protocols:
           - oid: 1.3.6.1.2.1.1.1.0
             type: string
             value: "Device restarted"
+      - id: cold-start-v1
+        target: "127.0.0.1:1162"
+        version: "1"               # RFC 1157 Trap-PDU requires enterprise/agent_address
+        community: "public"
+        oid: 1.3.6.1.6.3.1.1.5.1
+        enterprise: "1.3.6.1.4.1.9999"   # optional; defaults to `oid` if omitted
+        agent_address: "10.0.0.5"       # optional; defaults to the agent's outbound local IP
+        generic_trap: 0                 # optional; 0 = coldStart (RFC 1157 generic-trap enum)
+        specific_trap: 0                # optional; used only when generic_trap = 6 (enterpriseSpecific)
 ```
+
+`enterprise`, `agent_address`, `generic_trap`, and `specific_trap` only apply to `version: "1"` traps (ignored for v2c/v3).
+
 
 **Supported OID types:**
 

@@ -418,6 +418,26 @@ func (s *Server) sendTrap(trap *config.SNMPTrap) error {
 	snmpTrap := gosnmp.SnmpTrap{
 		Variables: pdus,
 	}
+	if version == gosnmp.Version1 {
+		// RFC 1157 §4.1.6 (Trap-PDU): Enterprise and AgentAddress are
+		// mandatory fields for a v1 trap (gosnmp.SendTrap errors out
+		// without them). Fall back to sane defaults so a v1 trap works
+		// out of the box without requiring every field to be configured.
+		enterprise := trap.Enterprise
+		if enterprise == "" {
+			enterprise = trap.OID
+		}
+		agentAddress := trap.AgentAddress
+		if agentAddress == "" {
+			if udpAddr, ok := g.Conn.LocalAddr().(*net.UDPAddr); ok {
+				agentAddress = udpAddr.IP.String()
+			}
+		}
+		snmpTrap.Enterprise = enterprise
+		snmpTrap.AgentAddress = agentAddress
+		snmpTrap.GenericTrap = trap.GenericTrap
+		snmpTrap.SpecificTrap = trap.SpecificTrap
+	}
 
 	_, err = g.SendTrap(snmpTrap)
 	if err != nil {

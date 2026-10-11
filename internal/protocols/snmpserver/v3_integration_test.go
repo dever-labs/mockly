@@ -178,7 +178,9 @@ func TestSNMPServer_V3Only_RejectsV2c(t *testing.T) {
 // USM anti-replay check (RFC 3414 §3.2 step 7): a validly-signed request
 // claiming an older AuthoritativeEngineTime than one already accepted from
 // the same user (simulating a captured-and-replayed older message) must be
-// dropped, even though its digest is perfectly valid.
+// rejected, even though its digest is perfectly valid. RFC 3414 §3.2 step
+// 7(a) requires a signed Report PDU carrying usmStatsNotInTimeWindows (not
+// a silent drop), so a legitimate client can resynchronize and retry.
 func TestSNMPServer_V3_StaleReplayedTime_Dropped(t *testing.T) {
 	const passphrase = "realpassphrase123"
 	user := config.SNMPUser{Username: "admin", AuthProtocol: "sha", AuthPassphrase: passphrase}
@@ -225,8 +227,23 @@ func TestSNMPServer_V3_StaleReplayedTime_Dropped(t *testing.T) {
 	if resp := buildAndSend(t, 1, 100); resp == nil {
 		t.Fatal("a valid, well-timed request was unexpectedly dropped")
 	}
-	if resp := buildAndSend(t, 2, 50); resp != nil {
-		t.Fatal("an older, replayed engineTime (behind one already accepted from this user) was not dropped")
+	resp := buildAndSend(t, 2, 50)
+	if resp == nil {
+		t.Fatal("want a signed Report PDU for a stale/replayed time, got a silent drop")
+	}
+	probe := &gosnmp.GoSNMP{
+		Version: gosnmp.Version3, SecurityModel: gosnmp.UserSecurityModel,
+		SecurityParameters: &gosnmp.UsmSecurityParameters{UserName: user.Username, AuthenticationProtocol: gosnmp.SHA, AuthenticationPassphrase: passphrase, PrivacyProtocol: gosnmp.NoPriv},
+	}
+	decoded, err := probe.SnmpDecodePacket(resp)
+	if err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if decoded.PDUType != gosnmp.Report {
+		t.Errorf("want a Report PDU, got %v", decoded.PDUType)
+	}
+	if len(decoded.Variables) != 1 || decoded.Variables[0].Name != ".1.3.6.1.6.3.15.1.1.2.0" {
+		t.Errorf("want usmStatsNotInTimeWindows varbind, got %+v", decoded.Variables)
 	}
 }
 // server's USM authentication check: it crafts a GetRequest for a real,

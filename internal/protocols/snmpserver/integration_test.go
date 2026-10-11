@@ -350,11 +350,12 @@ func TestSNMPServer_GETBULK_DuplicateRepeaterOID(t *testing.T) {
 	}
 }
 
-// TestSNMPServer_GET_ErrorIndexIsOneBased verifies that error-index on a
-// NoSuchName response is the 1-based position of the offending
-// variable-binding, per RFC 1905 §4.2.1 / RFC 3416 §3 — not the raw 0-based
-// slice index.
-func TestSNMPServer_GET_ErrorIndexIsOneBased(t *testing.T) {
+// TestSNMPServer_GET_NoSuchObject_V2c verifies RFC 3416 §4.2.1 case (2)
+// semantics for v2c/v3: a missing OID leaves the packet's error-status at
+// noError and is instead signalled via a noSuchObject exception value on
+// just that variable binding, so other (found) variables in the same
+// request remain usable by the client.
+func TestSNMPServer_GET_NoSuchObject_V2c(t *testing.T) {
 	port := freeUDPPort()
 	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
 	srv := New(cfg, state.New(), nil, logger.New(10))
@@ -367,14 +368,19 @@ func TestSNMPServer_GET_ErrorIndexIsOneBased(t *testing.T) {
 	}
 	defer g.Conn.Close() //nolint:errcheck
 
-	// A known OID followed by an unknown one: the unknown one is at
-	// 1-based position 2.
+	// A known OID followed by an unknown one.
 	resp, err := g.Get([]string{"1.3.6.1.2.1.1.1.0", "1.3.6.1.2.1.1.99.0"})
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	if resp.ErrorIndex != 2 {
-		t.Errorf("want ErrorIndex=2 (1-based), got %d", resp.ErrorIndex)
+	if resp.Error != gosnmp.NoError {
+		t.Errorf("want error-status=noError, got %v", resp.Error)
+	}
+	if len(resp.Variables) != 2 {
+		t.Fatalf("want 2 variable bindings, got %d", len(resp.Variables))
+	}
+	if resp.Variables[1].Type != gosnmp.NoSuchObject {
+		t.Errorf("want noSuchObject exception value on the missing OID, got %v", resp.Variables[1].Type)
 	}
 }
 
@@ -463,10 +469,11 @@ func TestSNMPServer_SET_UpdatesValue(t *testing.T) {
 	}
 }
 
-// TestSNMPServer_SET_UnknownOID_NoSuchName verifies a SET to an OID not in
-// the mock table returns a packet-level NoSuchName error (1-based
-// ErrorIndex), rather than silently succeeding or crashing.
-func TestSNMPServer_SET_UnknownOID_NoSuchName(t *testing.T) {
+// TestSNMPServer_SET_UnknownOID_NotWritable verifies a SET to an OID not in
+// the mock table returns a packet-level NotWritable error (RFC 3416
+// §4.2.5 case (2): no variable with this OID's prefix can be created or
+// modified), rather than silently succeeding or crashing.
+func TestSNMPServer_SET_UnknownOID_NotWritable(t *testing.T) {
 	port := freeUDPPort()
 	mocks := []config.SNMPMock{
 		{ID: "writable", OID: "1.3.6.1.4.1.9999.2.0", Type: "string", Value: "original"},
@@ -487,8 +494,8 @@ func TestSNMPServer_SET_UnknownOID_NoSuchName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SET: %v", err)
 	}
-	if resp.Error != gosnmp.NoSuchName {
-		t.Errorf("want NoSuchName error-status for an unknown OID, got %v", resp.Error)
+	if resp.Error != gosnmp.NotWritable {
+		t.Errorf("want NotWritable error-status for an unknown OID, got %v", resp.Error)
 	}
 }
 
@@ -622,6 +629,59 @@ func TestSNMPServer_GetTraps_Roundtrip(t *testing.T) {
 	}
 	if got[0].ID != "t1" {
 		t.Errorf("trap ID = %q, want t1", got[0].ID)
+	}
+}
+
+// TestSNMPServer_SendTrap_V1_DeliversRealPacket verifies that a Version 1
+// trap actually sends (rather than erroring, since gosnmp.SendTrap requires
+// Enterprise/AgentAddress to be populated for v1 — RFC 1157 §4.1.6) and
+// that mockly supplies sane defaults for both when they aren't explicitly
+// configured.
+func TestSNMPServer_SendTrap_V1_DeliversRealPacket(t *testing.T) {
+	trapPort := freeUDPPort()
+
+	received := make(chan *gosnmp.SnmpPacket, 1)
+	tl := gosnmp.NewTrapListener()
+	defer tl.Close()
+	tl.Params = &gosnmp.GoSNMP{Community: "public-trap", Version: gosnmp.Version1, Logger: gosnmp.NewLogger(logAdapter{})}
+	tl.OnNewTrap = func(packet *gosnmp.SnmpPacket, _ *net.UDPAddr) {
+		received <- packet
+	}
+	go func() { _ = tl.Listen(fmt.Sprintf("127.0.0.1:%d", trapPort)) }()
+	select {
+	case <-tl.Listening():
+	case <-time.After(2 * time.Second):
+		t.Fatal("trap listener never became ready")
+	}
+
+	port := freeUDPPort()
+	traps := []config.SNMPTrap{{
+		ID:        "coldStart",
+		Target:    fmt.Sprintf("127.0.0.1:%d", trapPort),
+		Version:   "1",
+		Community: "public-trap",
+		OID:       "1.3.6.1.6.3.1.1.5.1",
+	}}
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Traps: traps}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+
+	if err := srv.SendTrap("coldStart"); err != nil {
+		t.Fatalf("SendTrap: %v", err)
+	}
+
+	select {
+	case packet := <-received:
+		if packet.Version != gosnmp.Version1 {
+			t.Errorf("received trap version = %v, want Version1", packet.Version)
+		}
+		if packet.Enterprise == "" {
+			t.Error("want a non-empty Enterprise OID (should default to the trap OID)")
+		}
+		if packet.AgentAddress == "" {
+			t.Error("want a non-empty AgentAddress (should default to the outbound local address)")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting to receive v1 trap")
 	}
 }
 

@@ -206,11 +206,32 @@ func (a *agent) respondV3(req *gosnmp.SnmpPacket, raw []byte, decodeErr error) (
 			return nil, nil
 		}
 		if !a.checkTimeliness(usp) {
-			// Digest is valid but the claimed boots/time are stale, too far
-			// outside the window, or a replay of an older accepted message:
-			// drop silently rather than confirming a forged/replayed
-			// request was otherwise well-formed.
-			return nil, nil
+			// Digest is valid (the request is genuinely from this user) but
+			// the claimed boots/time are stale, too far outside the
+			// window, or a replay of an older accepted message. RFC 3414
+			// §3.2 step 7(a)/§4 requires responding with a Report PDU
+			// carrying usmStatsNotInTimeWindows — signed with our real
+			// engine's authoritative boots/time — so a legitimate client
+			// can resynchronize its clock and retry, rather than being
+			// left to time out and guess why.
+			report := &gosnmp.SnmpPacket{
+				Version:            gosnmp.Version3,
+				MsgID:              req.MsgID,
+				MsgMaxSize:         req.MsgMaxSize,
+				SecurityModel:      req.SecurityModel,
+				MsgFlags:           gosnmp.AuthNoPriv,
+				ContextEngineID:    req.ContextEngineID,
+				ContextName:        req.ContextName,
+				PDUType:            gosnmp.Report,
+				RequestID:          req.RequestID,
+				Variables:          []gosnmp.SnmpPDU{notInTimeWindowsVariable()},
+			}
+			localUser.AuthoritativeEngineTime = a.engineTime()
+			if err := localUser.InitPacket(report); err != nil {
+				return nil, fmt.Errorf("init report packet salt: %w", err)
+			}
+			report.SecurityParameters = &localUser
+			return report.MarshalMsg()
 		}
 	}
 
@@ -331,12 +352,26 @@ func helloVariable() gosnmp.SnmpPDU {
 	return gosnmp.SnmpPDU{Name: "1.3.6.1.6.3.15.1.1.4.0", Type: gosnmp.Counter32, Value: uint32(0)}
 }
 
+func notInTimeWindowsVariable() gosnmp.SnmpPDU {
+	// usmStatsNotInTimeWindows — http://oidref.com/1.3.6.1.6.3.15.1.1.2.0
+	return gosnmp.SnmpPDU{Name: "1.3.6.1.6.3.15.1.1.2.0", Type: gosnmp.Counter32, Value: uint32(0)}
+}
+
 func endOfMibView(name string) gosnmp.SnmpPDU {
 	return gosnmp.SnmpPDU{Name: name, Type: gosnmp.EndOfMibView, Value: nil}
 }
 
 func noSuchInstance(name string) gosnmp.SnmpPDU {
 	return gosnmp.SnmpPDU{Name: name, Type: gosnmp.NoSuchInstance, Value: nil}
+}
+
+// noSuchObject marks a v2c/v3 exception where no variable at all shares the
+// queried name's OBJECT IDENTIFIER prefix (RFC 3416 §4.2.1 case (2)).
+// mockly's OID table is a flat set of fully-instantiated leaf OIDs with no
+// separate notion of an object-type prefix, so any miss is always this case
+// rather than noSuchInstance (case (3): prefix known, instance missing).
+func noSuchObject(name string) gosnmp.SnmpPDU {
+	return gosnmp.SnmpPDU{Name: name, Type: gosnmp.NoSuchObject, Value: nil}
 }
 
 func nilPDU(name string) gosnmp.SnmpPDU {
@@ -400,11 +435,23 @@ func (a *agent) serveGet(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error) {
 	for idx, v := range req.Variables {
 		item, _ := findOID(a.oids, v.Name)
 		if item == nil {
-			if resp.Error == gosnmp.NoError {
-				resp.Error = gosnmp.NoSuchName
-				resp.ErrorIndex = uint8(idx + 1) //nolint:gosec // idx+1 is bounded by request variable count (1-based per RFC 1905 §4.2.1)
+			if req.Version == gosnmp.Version1 {
+				// RFC 1157 §4.1.2: v1 has no per-varbind exception values;
+				// a missing OID is a packet-level noSuchName error (the
+				// serve() wrapper then echoes the original request's
+				// variable-bindings unchanged).
+				if resp.Error == gosnmp.NoError {
+					resp.Error = gosnmp.NoSuchName
+					resp.ErrorIndex = uint8(idx + 1) //nolint:gosec // idx+1 is bounded by request variable count (1-based per RFC 1905 §4.2.1)
+				}
+				resp.Variables = append(resp.Variables, noSuchInstance(v.Name))
+				continue
 			}
-			resp.Variables = append(resp.Variables, noSuchInstance(v.Name))
+			// RFC 3416 §4.2.1 case (2): error-status stays noError; the
+			// miss is only indicated by this variable binding's own
+			// exception value, so other (found) variables in the same
+			// request remain usable by the client.
+			resp.Variables = append(resp.Variables, noSuchObject(v.Name))
 			continue
 		}
 		resp.Variables = append(resp.Variables, a.get(item))
@@ -523,18 +570,33 @@ func (a *agent) serveGetBulk(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error)
 
 func (a *agent) serveSet(req *gosnmp.SnmpPacket) (*gosnmp.SnmpPacket, error) {
 	resp := responseFor(req)
+	v1 := req.Version == gosnmp.Version1
 	for idx, v := range req.Variables {
 		item, _ := findOID(a.oids, v.Name)
 		switch {
 		case item == nil:
+			// RFC 3416 §4.2.5 case (2): "no variables which share the same
+			// OBJECT IDENTIFIER prefix ... able to be created or modified"
+			// covers both an entirely unknown OID and (below) one that
+			// exists but has no writable variable — both map to
+			// notWritable for v2c/v3. v1 predates that unified code and
+			// still uses noSuchName for a missing OID (RFC 1157 §4.1.5).
 			if resp.Error == gosnmp.NoError {
-				resp.Error = gosnmp.NoSuchName
+				if v1 {
+					resp.Error = gosnmp.NoSuchName
+				} else {
+					resp.Error = gosnmp.NotWritable
+				}
 				resp.ErrorIndex = uint8(idx + 1) //nolint:gosec // idx+1 is bounded by request variable count (1-based per RFC 1905 §4.2.1)
 			}
 			resp.Variables = append(resp.Variables, noSuchInstance(v.Name))
 		case item.onSet == nil:
 			if resp.Error == gosnmp.NoError {
-				resp.Error = gosnmp.ReadOnly
+				if v1 {
+					resp.Error = gosnmp.ReadOnly
+				} else {
+					resp.Error = gosnmp.NotWritable
+				}
 				resp.ErrorIndex = uint8(idx + 1) //nolint:gosec // idx+1 is bounded by request variable count (1-based per RFC 1905 §4.2.1)
 			}
 			resp.Variables = append(resp.Variables, nilPDU(v.Name))

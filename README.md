@@ -361,6 +361,64 @@ protocols:
   further expanded (no recursive `${...}` resolution inside a `vars:`
   entry's value).
 
+### Splitting mocks across multiple files
+
+A large mock set doesn't have to live in one monolithic file. Two
+equivalent ways to split it up:
+
+**`include:`** — list additional YAML files (glob patterns, resolved
+relative to the file that declares them) in the main config:
+
+```yaml
+mockly:
+  api:
+    port: 9091
+
+protocols:
+  http:
+    enabled: true
+    port: 8080
+
+include:
+  - orders.yaml
+  - users.yaml
+  - services/*.yaml
+```
+
+**Directory mode** — point `--config`/`-c` at a directory instead of a
+file. It must contain a `mockly.yaml` (the main file, same as above);
+every other `*.yaml`/`*.yml` file directly inside that same directory is
+automatically included, in filename order — no explicit `include:` list
+needed:
+
+```
+mocks/
+├── mockly.yaml   # mockly:/protocols: top-level settings, ports, enabled flags
+├── orders.yaml   # protocols.http.mocks only
+└── users.yaml    # protocols.ldap: a protocol mockly.yaml never mentions
+```
+
+```bash
+mockly start -c ./mocks/
+```
+
+Each included file is parsed with the exact same schema as a normal
+config, but only two things from it are actually used:
+
+- **A protocol section not yet configured anywhere else** (port, enabled,
+  users, everything) is adopted as-is from the first file that defines it.
+- **Mocks for a protocol that's already configured** (in the main file or
+  an earlier include) are merged in: an included mock whose `id` matches
+  an existing one overrides it in place, anything else is appended —
+  the same override-by-`id` rule used for OpenAPI/AsyncAPI/`.proto`
+  generated mocks layered under hand-written ones.
+
+Everything else in an included file (a different `mockly:` section, a
+different port/enabled for a protocol the main file already configures)
+is ignored, so there's always exactly one place that's authoritative for
+where a protocol listens. An included file's own `include:` field is
+ignored too — include chains can't form.
+
 ---
 
 ## Protocols

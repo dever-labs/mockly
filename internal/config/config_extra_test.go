@@ -27,12 +27,29 @@ func TestLoad_InvalidYAML(t *testing.T) {
 }
 
 func TestLoad_ReadError(t *testing.T) {
-	// Pass a path to a directory (not a file) — ReadFile on a dir returns an error
-	// that is not os.IsNotExist, triggering the read-error branch.
+	// Pass a path to an empty directory: directory mode requires a
+	// mockly.yaml inside it, so this is an error rather than silently
+	// falling back to defaults.
 	dir := t.TempDir()
-	_, err := config.Load(dir) // dir is readable but ReadFile returns "is a directory"
+	_, err := config.Load(dir)
 	if err == nil {
-		t.Fatal("expected error when reading a directory, got nil")
+		t.Fatal("expected error when reading a directory with no mockly.yaml, got nil")
+	}
+}
+
+func TestLoad_ReadErrorOnMainFile(t *testing.T) {
+	// Make "mockly.yaml" itself a directory (not a file) inside the config
+	// dir, so resolveConfigPath's existence check passes (it exists) but
+	// the subsequent os.ReadFile in loadFile fails with a non-ENOENT error
+	// ("is a directory") — the original scenario this test exercised
+	// before directory-mode config loading existed.
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "mockly.yaml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := config.Load(dir)
+	if err == nil {
+		t.Fatal("expected error when mockly.yaml is itself a directory, got nil")
 	}
 }
 

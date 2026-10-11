@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.16.0](https://github.com/dever-labs/mockly/compare/v0.15.0...v0.16.0) (2026-10-11)
+
+
+### Features
+
+* **amqp:** add configurable exchange/binding topology ([#219](https://github.com/dever-labs/mockly/issues/219)) ([#334](https://github.com/dever-labs/mockly/issues/334)) ([f2716db](https://github.com/dever-labs/mockly/commit/f2716db932fe10499c69d2a11a261385837c588e))
+* inline schema references in mockly.yaml + e2e protocol coverage ([#281](https://github.com/dever-labs/mockly/issues/281)) ([6ca93f8](https://github.com/dever-labs/mockly/commit/6ca93f8da70c1020741dd24c34f30b4d7701ac2c))
+* **protocols:** add optional protocolVersion pin per protocol ([#237](https://github.com/dever-labs/mockly/issues/237)) ([#332](https://github.com/dever-labs/mockly/issues/332)) ([7d39ed8](https://github.com/dever-labs/mockly/commit/7d39ed8ae254dda29e36178603cb62d18a481888))
+
+
+### Bug Fixes
+
+* **docker,ci:** run container as non-root, add govulncheck + coverage gate ([#285](https://github.com/dever-labs/mockly/issues/285)) ([64ff87c](https://github.com/dever-labs/mockly/commit/64ff87c2eaf1933c8b21d1c984ab9a7470e7aae8))
+* **node:** add explicit types:node to tsconfig for TypeScript 7 compat ([#330](https://github.com/dever-labs/mockly/issues/330)) ([0a30af6](https://github.com/dever-labs/mockly/commit/0a30af67e44291ab137cf34c5743df2f051bcad3))
+* **node:** resync package-lock.json with optional driver deps ([#321](https://github.com/dever-labs/mockly/issues/321)) ([f5bf230](https://github.com/dever-labs/mockly/commit/f5bf230765a2cb0bc4367bb65687b2402e6cd01e))
+
 ## [0.15.0](https://github.com/dever-labs/mockly/compare/v0.14.0...v0.15.0) (2026-10-07)
 
 

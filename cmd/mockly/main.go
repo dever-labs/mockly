@@ -27,7 +27,7 @@ LDAP, IMAP, FTP, Memcached, STOMP, CoAP, and SIP protocols in a single
 binary with a built-in web UI and REST management API.`,
 	}
 
-	root.PersistentFlags().StringVarP(&cfgFile, "config", "c", "mockly.yaml", "Config file path")
+	root.PersistentFlags().StringVarP(&cfgFile, "config", "c", "mockly.yaml", "Config file path, or a directory containing a mockly.yaml plus additional *.yaml mock files")
 
 	root.AddCommand(
 		startCmd(),

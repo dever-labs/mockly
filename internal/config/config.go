@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,6 +48,15 @@ type Config struct {
 	Mockly    MocklyConfig      `yaml:"mockly" json:"mockly"`
 	Protocols ProtocolsConfig   `yaml:"protocols" json:"protocols"`
 	Scenarios []Scenario        `yaml:"scenarios,omitempty" json:"scenarios,omitempty"`
+	// Include lists additional YAML files (glob patterns, resolved relative
+	// to this file's own directory) whose protocol mocks/scenarios are
+	// merged into this one at load time — see mergeIncludedConfig for the
+	// exact merge rule. Lets a large mock set be split across multiple
+	// files (e.g. one per external service being mocked) instead of living
+	// in a single monolithic config. Only processed on the top-level file
+	// passed to Load; an included file's own Include field is ignored, so
+	// include chains can't form (accidentally or otherwise).
+	Include []string `yaml:"include,omitempty" json:"include,omitempty"`
 }
 
 type MocklyConfig struct {
@@ -1426,8 +1437,84 @@ func Defaults() Config {
 	return defaults()
 }
 
-// Load reads and parses a YAML config file. Missing file returns defaults.
+// Load reads and parses a YAML config file (or a directory — see below).
+// Missing file returns defaults.
+//
+// If path is a directory, it must contain a "mockly.yaml" file (the main
+// config); every other *.yaml/*.yml file directly inside that same
+// directory is automatically merged in, in filename order, exactly as if
+// each had been listed under the main file's Include field. This is the
+// zero-configuration way to split a mock set across one file per service:
+// `mockly start -c ./mocks/` with `./mocks/mockly.yaml` (ports/protocol
+// enablement) alongside `./mocks/orders.yaml`, `./mocks/users.yaml`, etc.
+//
+// Either way, the resolved main file's own Include field (explicit glob
+// patterns, resolved relative to the main file's directory) is merged in
+// afterward. See mergeIncludedConfig for the exact per-protocol merge rule.
 func Load(path string) (*Config, error) {
+	mainPath, autoIncludes, err := resolveConfigPath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := loadFile(mainPath)
+	if err != nil {
+		return nil, err
+	}
+
+	mainAbs, err := filepath.Abs(mainPath)
+	if err != nil {
+		mainAbs = mainPath
+	}
+	patterns := append(append([]string{}, autoIncludes...), cfg.Include...)
+	if err := mergeIncludes(cfg, filepath.Dir(mainPath), mainAbs, patterns); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// resolveConfigPath inspects path and, if it names a directory, returns the
+// required "mockly.yaml" inside it plus the sorted list of every other
+// *.yaml/*.yml file directly in that directory (to be auto-included). For
+// anything else (a file, or a path that doesn't exist yet — preserving
+// Load's existing "missing file = defaults" behavior) it's returned as-is
+// with no auto-includes.
+func resolveConfigPath(path string) (mainPath string, autoIncludes []string, err error) {
+	info, statErr := os.Stat(path)
+	if statErr != nil || !info.IsDir() {
+		return path, nil, nil
+	}
+
+	mainPath = filepath.Join(path, "mockly.yaml")
+	if _, err := os.Stat(mainPath); err != nil {
+		return "", nil, fmt.Errorf("config directory %q: no mockly.yaml found (directory mode requires a mockly.yaml alongside any additional *.yaml mock files)", path)
+	}
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return "", nil, fmt.Errorf("reading config directory %q: %w", path, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if name == "mockly.yaml" {
+			continue
+		}
+		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+			continue
+		}
+		autoIncludes = append(autoIncludes, name)
+	}
+	sort.Strings(autoIncludes)
+	return mainPath, autoIncludes, nil
+}
+
+// loadFile is Load's original single-file logic (read, expand vars, parse,
+// apply defaults), factored out so it can also be used to parse each
+// included file the same way the main file is parsed.
+func loadFile(path string) (*Config, error) {
 	cfg := defaults()
 
 	data, err := os.ReadFile(path) // #nosec G304 -- path is user-supplied config file, intentional
@@ -1449,6 +1536,234 @@ func Load(path string) (*Config, error) {
 
 	ApplyDefaults(&cfg)
 	return &cfg, nil
+}
+
+// mergeIncludes resolves each glob pattern relative to baseDir, loads every
+// matched file (skipping the main file itself and any file already merged,
+// so a pattern that happens to also match the main config is a no-op
+// rather than double-merging it), and folds each one into cfg in turn.
+func mergeIncludes(cfg *Config, baseDir, mainAbs string, patterns []string) error {
+	seen := map[string]bool{mainAbs: true}
+	for _, pattern := range patterns {
+		full := pattern
+		if !filepath.IsAbs(full) {
+			full = filepath.Join(baseDir, pattern)
+		}
+		matches, err := filepath.Glob(full)
+		if err != nil {
+			return fmt.Errorf("include %q: %w", pattern, err)
+		}
+		if len(matches) == 0 {
+			return fmt.Errorf("include %q: no files matched", pattern)
+		}
+		sort.Strings(matches)
+		for _, m := range matches {
+			abs, err := filepath.Abs(m)
+			if err != nil {
+				abs = m
+			}
+			if seen[abs] {
+				continue
+			}
+			seen[abs] = true
+
+			inc, err := loadFile(m)
+			if err != nil {
+				return fmt.Errorf("include %q: %w", m, err)
+			}
+			mergeIncludedConfig(cfg, inc)
+		}
+	}
+	return nil
+}
+
+// mergeIncludedConfig folds inc's protocol mocks and scenarios into base.
+// For each protocol: if base doesn't already have that protocol configured,
+// inc's whole section (port, enabled, mocks, everything) is adopted as-is;
+// otherwise only inc's mocks are merged into base's existing section,
+// overriding an existing mock with the same ID (same "layer by ID"
+// convention used for OpenAPI/AsyncAPI/.proto-derived mocks — see
+// HTTPConfig.OpenAPI) and appending anything else. This keeps exactly one
+// place (the file that first configures a protocol) authoritative for its
+// port/enabled/etc, while still letting any number of files contribute
+// mocks to it.
+func mergeIncludedConfig(base, inc *Config) {
+	base.Scenarios = append(base.Scenarios, inc.Scenarios...)
+
+	if inc.Protocols.HTTP != nil {
+		if base.Protocols.HTTP == nil {
+			base.Protocols.HTTP = inc.Protocols.HTTP
+		} else {
+			base.Protocols.HTTP.Mocks = mergeByID(base.Protocols.HTTP.Mocks, inc.Protocols.HTTP.Mocks, func(m HTTPMock) string { return m.ID })
+		}
+	}
+	if inc.Protocols.WebSocket != nil {
+		if base.Protocols.WebSocket == nil {
+			base.Protocols.WebSocket = inc.Protocols.WebSocket
+		} else {
+			base.Protocols.WebSocket.Mocks = mergeByID(base.Protocols.WebSocket.Mocks, inc.Protocols.WebSocket.Mocks, func(m WebSocketMock) string { return m.ID })
+		}
+	}
+	if inc.Protocols.GRPC != nil {
+		if base.Protocols.GRPC == nil {
+			base.Protocols.GRPC = inc.Protocols.GRPC
+		} else {
+			base.Protocols.GRPC.Services = append(base.Protocols.GRPC.Services, inc.Protocols.GRPC.Services...)
+		}
+	}
+	if inc.Protocols.GraphQL != nil {
+		if base.Protocols.GraphQL == nil {
+			base.Protocols.GraphQL = inc.Protocols.GraphQL
+		} else {
+			base.Protocols.GraphQL.Mocks = mergeByID(base.Protocols.GraphQL.Mocks, inc.Protocols.GraphQL.Mocks, func(m GraphQLMock) string { return m.ID })
+		}
+	}
+	if inc.Protocols.TCP != nil {
+		if base.Protocols.TCP == nil {
+			base.Protocols.TCP = inc.Protocols.TCP
+		} else {
+			base.Protocols.TCP.Mocks = mergeByID(base.Protocols.TCP.Mocks, inc.Protocols.TCP.Mocks, func(m TCPMock) string { return m.ID })
+		}
+	}
+	if inc.Protocols.Redis != nil {
+		if base.Protocols.Redis == nil {
+			base.Protocols.Redis = inc.Protocols.Redis
+		} else {
+			base.Protocols.Redis.Mocks = mergeByID(base.Protocols.Redis.Mocks, inc.Protocols.Redis.Mocks, func(m RedisMock) string { return m.ID })
+		}
+	}
+	if inc.Protocols.SMTP != nil {
+		if base.Protocols.SMTP == nil {
+			base.Protocols.SMTP = inc.Protocols.SMTP
+		} else {
+			base.Protocols.SMTP.Rules = mergeByID(base.Protocols.SMTP.Rules, inc.Protocols.SMTP.Rules, func(m SMTPRule) string { return m.ID })
+		}
+	}
+	if inc.Protocols.MQTT != nil {
+		if base.Protocols.MQTT == nil {
+			base.Protocols.MQTT = inc.Protocols.MQTT
+		} else {
+			base.Protocols.MQTT.Mocks = mergeByID(base.Protocols.MQTT.Mocks, inc.Protocols.MQTT.Mocks, func(m MQTTMock) string { return m.ID })
+		}
+	}
+	if inc.Protocols.NATS != nil {
+		if base.Protocols.NATS == nil {
+			base.Protocols.NATS = inc.Protocols.NATS
+		} else {
+			base.Protocols.NATS.Mocks = mergeByID(base.Protocols.NATS.Mocks, inc.Protocols.NATS.Mocks, func(m NATSMock) string { return m.ID })
+		}
+	}
+	if inc.Protocols.SNMP != nil {
+		if base.Protocols.SNMP == nil {
+			base.Protocols.SNMP = inc.Protocols.SNMP
+		} else {
+			base.Protocols.SNMP.Mocks = mergeByID(base.Protocols.SNMP.Mocks, inc.Protocols.SNMP.Mocks, func(m SNMPMock) string { return m.ID })
+			base.Protocols.SNMP.Traps = mergeByID(base.Protocols.SNMP.Traps, inc.Protocols.SNMP.Traps, func(t SNMPTrap) string { return t.ID })
+		}
+	}
+	if inc.Protocols.DNS != nil {
+		if base.Protocols.DNS == nil {
+			base.Protocols.DNS = inc.Protocols.DNS
+		} else {
+			base.Protocols.DNS.Mocks = mergeByID(base.Protocols.DNS.Mocks, inc.Protocols.DNS.Mocks, func(m DNSMock) string { return m.ID })
+		}
+	}
+	if inc.Protocols.AMQP != nil {
+		if base.Protocols.AMQP == nil {
+			base.Protocols.AMQP = inc.Protocols.AMQP
+		} else {
+			base.Protocols.AMQP.Mocks = mergeByID(base.Protocols.AMQP.Mocks, inc.Protocols.AMQP.Mocks, func(m AMQPMock) string { return m.ID })
+			base.Protocols.AMQP.Exchanges = append(base.Protocols.AMQP.Exchanges, inc.Protocols.AMQP.Exchanges...)
+			base.Protocols.AMQP.Bindings = append(base.Protocols.AMQP.Bindings, inc.Protocols.AMQP.Bindings...)
+		}
+	}
+	if inc.Protocols.Kafka != nil {
+		if base.Protocols.Kafka == nil {
+			base.Protocols.Kafka = inc.Protocols.Kafka
+		} else {
+			base.Protocols.Kafka.Mocks = mergeByID(base.Protocols.Kafka.Mocks, inc.Protocols.Kafka.Mocks, func(m KafkaMock) string { return m.ID })
+		}
+	}
+	if inc.Protocols.LDAP != nil {
+		if base.Protocols.LDAP == nil {
+			base.Protocols.LDAP = inc.Protocols.LDAP
+		} else {
+			base.Protocols.LDAP.Mocks = mergeByID(base.Protocols.LDAP.Mocks, inc.Protocols.LDAP.Mocks, func(m LDAPMock) string { return m.ID })
+			base.Protocols.LDAP.Users = append(base.Protocols.LDAP.Users, inc.Protocols.LDAP.Users...)
+		}
+	}
+	if inc.Protocols.IMAP != nil {
+		if base.Protocols.IMAP == nil {
+			base.Protocols.IMAP = inc.Protocols.IMAP
+		} else {
+			base.Protocols.IMAP.Mailboxes = mergeByID(base.Protocols.IMAP.Mailboxes, inc.Protocols.IMAP.Mailboxes, func(m IMAPMailbox) string { return m.ID })
+			base.Protocols.IMAP.Users = append(base.Protocols.IMAP.Users, inc.Protocols.IMAP.Users...)
+		}
+	}
+	if inc.Protocols.FTP != nil {
+		if base.Protocols.FTP == nil {
+			base.Protocols.FTP = inc.Protocols.FTP
+		} else {
+			base.Protocols.FTP.Files = mergeByID(base.Protocols.FTP.Files, inc.Protocols.FTP.Files, func(f FTPFile) string { return f.ID })
+			base.Protocols.FTP.Users = append(base.Protocols.FTP.Users, inc.Protocols.FTP.Users...)
+		}
+	}
+	if inc.Protocols.Memcached != nil {
+		if base.Protocols.Memcached == nil {
+			base.Protocols.Memcached = inc.Protocols.Memcached
+		} else {
+			base.Protocols.Memcached.Mocks = mergeByID(base.Protocols.Memcached.Mocks, inc.Protocols.Memcached.Mocks, func(m MemcachedMock) string { return m.ID })
+		}
+	}
+	if inc.Protocols.STOMP != nil {
+		if base.Protocols.STOMP == nil {
+			base.Protocols.STOMP = inc.Protocols.STOMP
+		} else {
+			base.Protocols.STOMP.Mocks = mergeByID(base.Protocols.STOMP.Mocks, inc.Protocols.STOMP.Mocks, func(m STOMPMock) string { return m.ID })
+		}
+	}
+	if inc.Protocols.CoAP != nil {
+		if base.Protocols.CoAP == nil {
+			base.Protocols.CoAP = inc.Protocols.CoAP
+		} else {
+			base.Protocols.CoAP.Mocks = mergeByID(base.Protocols.CoAP.Mocks, inc.Protocols.CoAP.Mocks, func(m CoAPMock) string { return m.ID })
+		}
+	}
+	if inc.Protocols.SIP != nil {
+		if base.Protocols.SIP == nil {
+			base.Protocols.SIP = inc.Protocols.SIP
+		} else {
+			base.Protocols.SIP.Mocks = mergeByID(base.Protocols.SIP.Mocks, inc.Protocols.SIP.Mocks, func(m SIPMock) string { return m.ID })
+		}
+	}
+}
+
+// mergeByID layers included entries over base ones: an entry whose ID
+// matches a base one overrides it in place (keeping the base ordering),
+// and any other entry is appended after. Mirrors configgen's identically-
+// named/shaped helper for layering generated mocks under hand-written
+// ones; duplicated here rather than shared to avoid an import cycle
+// (configgen already imports config).
+func mergeByID[T any](base, included []T, idOf func(T) string) []T {
+	if len(included) == 0 {
+		return base
+	}
+	index := make(map[string]int, len(base))
+	result := make([]T, len(base))
+	copy(result, base)
+	for i, m := range result {
+		index[idOf(m)] = i
+	}
+	for _, m := range included {
+		id := idOf(m)
+		if idx, ok := index[id]; ok {
+			result[idx] = m
+		} else {
+			index[id] = len(result)
+			result = append(result, m)
+		}
+	}
+	return result
 }
 
 // envVarPattern matches "${NAME}" and "${NAME:-default}" references in raw

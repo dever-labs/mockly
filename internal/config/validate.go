@@ -25,6 +25,40 @@ func Validate(cfg *Config) []error {
 	errs = append(errs, validateRecordConfig(cfg)...)
 	errs = append(errs, validateProtocolVersions(cfg)...)
 	errs = append(errs, validateAMQPTopology(cfg)...)
+	errs = append(errs, validateTLSConfigs(cfg)...)
+	return errs
+}
+
+// validateTLSConfigs checks every TLS-capable protocol's tls block:
+// cert_file and key_file must either both be set or both be empty. Setting
+// only one is ambiguous (ERROR) rather than silently falling back to
+// certificate auto-generation, which could hide a typo'd path.
+func validateTLSConfigs(cfg *Config) []error {
+	var errs []error
+	check := func(field string, tlsCfg *TLSConfig) {
+		if tlsCfg == nil {
+			return
+		}
+		if (tlsCfg.CertFile == "") != (tlsCfg.KeyFile == "") {
+			errs = append(errs, fmt.Errorf(
+				"%s: cert_file and key_file must both be set or both be empty (got cert_file=%q, key_file=%q)",
+				field, tlsCfg.CertFile, tlsCfg.KeyFile,
+			))
+		}
+	}
+	check("mockly.api.tls", cfg.Mockly.API.TLS)
+	if cfg.Protocols.HTTP != nil {
+		check("protocols.http.tls", cfg.Protocols.HTTP.TLS)
+	}
+	if cfg.Protocols.WebSocket != nil {
+		check("protocols.websocket.tls", cfg.Protocols.WebSocket.TLS)
+	}
+	if cfg.Protocols.GraphQL != nil {
+		check("protocols.graphql.tls", cfg.Protocols.GraphQL.TLS)
+	}
+	if cfg.Protocols.TCP != nil {
+		check("protocols.tcp.tls", cfg.Protocols.TCP.TLS)
+	}
 	return errs
 }
 

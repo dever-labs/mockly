@@ -132,10 +132,56 @@ type ProtocolsConfig struct {
 
 // TLSConfig enables TLS on a server. Set enabled: true and provide paths to
 // a PEM-encoded certificate and private key file.
+//
+// CertFile/KeyFile are optional: if both are omitted, or both are set but
+// point to files that don't exist yet, a self-signed certificate is
+// generated automatically (see Generate). When CertFile/KeyFile are set and
+// the generated cert/key are written there so subsequent runs reuse the
+// same certificate instead of regenerating a new one on every start.
 type TLSConfig struct {
 	Enabled  bool   `yaml:"enabled" json:"enabled"`
-	CertFile string `yaml:"cert_file" json:"cert_file"`
-	KeyFile  string `yaml:"key_file" json:"key_file"`
+	CertFile string `yaml:"cert_file,omitempty" json:"cert_file,omitempty"`
+	KeyFile  string `yaml:"key_file,omitempty" json:"key_file,omitempty"`
+
+	// Generate configures the self-signed certificate that's generated
+	// automatically when CertFile/KeyFile are omitted or missing. All
+	// fields are optional and fall back to sensible defaults.
+	Generate *TLSGenerate `yaml:"generate,omitempty" json:"generate,omitempty"`
+}
+
+// TLSGenerate configures an automatically generated self-signed
+// certificate. It covers the certificate content that's meaningful for
+// mocking: the subject identity (CommonName, Organization), the
+// hostnames/IPs it's valid for (DNSNames, IPAddresses, carried as Subject
+// Alternative Names since modern TLS clients require SANs rather than just
+// CommonName), how long it's valid (ValidFor), and URIs/ClientAuth for
+// scenarios that exercise authorization via the certificate itself (e.g.
+// SPIFFE-style URI SANs, or mutual-TLS client authentication).
+type TLSGenerate struct {
+	// CommonName sets the certificate subject's CN. Defaults to
+	// "localhost" when empty.
+	CommonName string `yaml:"common_name,omitempty" json:"common_name,omitempty"`
+	// Organization sets the certificate subject's O. Left unset by
+	// default.
+	Organization string `yaml:"organization,omitempty" json:"organization,omitempty"`
+	// DNSNames are the DNS Subject Alternative Names. Defaults to
+	// ["localhost"] when empty.
+	DNSNames []string `yaml:"dns_names,omitempty" json:"dns_names,omitempty"`
+	// IPAddresses are the IP Subject Alternative Names. Defaults to
+	// ["127.0.0.1", "::1"] when empty.
+	IPAddresses []string `yaml:"ip_addresses,omitempty" json:"ip_addresses,omitempty"`
+	// URIs are URI Subject Alternative Names, useful for identity schemes
+	// that encode identity as a URI (e.g. SPIFFE IDs) when testing
+	// certificate-based authorization.
+	URIs []string `yaml:"uris,omitempty" json:"uris,omitempty"`
+	// ValidFor is how long the generated certificate remains valid from
+	// generation time. Defaults to 8760h (1 year) when zero.
+	ValidFor Duration `yaml:"valid_for,omitempty" json:"valid_for,omitempty"`
+	// ClientAuth additionally marks the certificate's Extended Key Usage
+	// for client authentication (on top of the default server
+	// authentication usage), for mutual-TLS/authorization test scenarios
+	// where the same cert is presented as a client certificate.
+	ClientAuth bool `yaml:"client_auth,omitempty" json:"client_auth,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

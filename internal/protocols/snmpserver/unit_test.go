@@ -322,3 +322,128 @@ func TestApplyProtocolVersion(t *testing.T) {
 		t.Errorf("empty: expected users to pass through unchanged, got %v", gotUsers)
 	}
 }
+
+func TestAuthDigestLen_AllProtocols(t *testing.T) {
+	cases := []struct {
+		proto gosnmp.SnmpV3AuthProtocol
+		want  int
+	}{
+		{gosnmp.MD5, 12},
+		{gosnmp.SHA, 12},
+		{gosnmp.SHA224, 16},
+		{gosnmp.SHA256, 24},
+		{gosnmp.SHA384, 32},
+		{gosnmp.SHA512, 48},
+	}
+	for _, c := range cases {
+		if got := authDigestLen(c.proto); got != c.want {
+			t.Errorf("authDigestLen(%v) = %d, want %d", c.proto, got, c.want)
+		}
+	}
+}
+
+func TestFindUser_NotFound(t *testing.T) {
+	ag := newAgent("", false, []gosnmp.UsmSecurityParameters{{UserName: "alice"}}, "engineid", func() uint32 { return 0 }, nil)
+	if u := ag.findUser("bob"); u != nil {
+		t.Errorf("findUser for an unconfigured user: want nil, got %+v", u)
+	}
+	if u := ag.findUser("alice"); u == nil {
+		t.Error("findUser for a configured user: want non-nil")
+	}
+}
+
+func TestCheckTimeliness(t *testing.T) {
+	ag := newAgent("", false, nil, "engineid", func() uint32 { return 1000 }, nil)
+	ag.engineBoots = 5
+
+	// Wrong boots (stale from a previous agent incarnation): rejected.
+	if ag.checkTimeliness(&gosnmp.UsmSecurityParameters{UserName: "u", AuthoritativeEngineBoots: 4, AuthoritativeEngineTime: 1000}) {
+		t.Error("mismatched engineBoots: want rejected")
+	}
+
+	// Within window: accepted.
+	if !ag.checkTimeliness(&gosnmp.UsmSecurityParameters{UserName: "u", AuthoritativeEngineBoots: 5, AuthoritativeEngineTime: 950}) {
+		t.Error("within time window: want accepted")
+	}
+
+	// Too far outside the window: rejected.
+	if ag.checkTimeliness(&gosnmp.UsmSecurityParameters{UserName: "u", AuthoritativeEngineBoots: 5, AuthoritativeEngineTime: 1000 - usmTimeWindow - 1}) {
+		t.Error("outside time window: want rejected")
+	}
+
+	// Replay of an older time than one already accepted from this user: rejected.
+	if ag.checkTimeliness(&gosnmp.UsmSecurityParameters{UserName: "u", AuthoritativeEngineBoots: 5, AuthoritativeEngineTime: 900}) {
+		t.Error("replayed older time: want rejected")
+	}
+
+	// A different user isn't affected by the first user's high-water mark.
+	if !ag.checkTimeliness(&gosnmp.UsmSecurityParameters{UserName: "other", AuthoritativeEngineBoots: 5, AuthoritativeEngineTime: 900}) {
+		t.Error("different user, same time: want accepted")
+	}
+}
+
+// TestServeSet_ReadOnlyItem_Rejected is a white-box test for the ReadOnly
+// branch of serveSet: mockly's own config always makes every mock writable
+// (buildOIDs never leaves onSet nil), so this branch — defensively kept for
+// any future read-only pduItem — has no path through the real server config
+// and must be exercised directly.
+func TestServeSet_ReadOnlyItem_Rejected(t *testing.T) {
+	item := &pduItem{oid: "1.3.6.1.4.1.9999.3.0", typ: gosnmp.OctetString, onGet: func() (interface{}, error) { return "ro", nil }}
+	ag := newAgent("public", false, nil, "engineid", func() uint32 { return 0 }, []*pduItem{item})
+
+	req := &gosnmp.SnmpPacket{
+		Version: gosnmp.Version2c, Community: "public", PDUType: gosnmp.SetRequest,
+		Variables: []gosnmp.SnmpPDU{{Name: item.oid, Type: gosnmp.OctetString, Value: "new"}},
+	}
+	resp, err := ag.serve(req)
+	if err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if resp.Error != gosnmp.ReadOnly {
+		t.Errorf("want ReadOnly error, got %v", resp.Error)
+	}
+	if resp.ErrorIndex != 1 {
+		t.Errorf("want ErrorIndex=1, got %d", resp.ErrorIndex)
+	}
+}
+
+// TestServeGetNext_EmptyVariables guards against a panic/index-out-of-range
+// on a (malformed but possible) GetNextRequest carrying no variable-bindings
+// at all.
+func TestServeGetNext_EmptyVariables(t *testing.T) {
+	ag := newAgent("public", false, nil, "engineid", func() uint32 { return 0 }, nil)
+	req := &gosnmp.SnmpPacket{Version: gosnmp.Version2c, Community: "public", PDUType: gosnmp.GetNextRequest}
+	resp, err := ag.serve(req)
+	if err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if len(resp.Variables) != 0 {
+		t.Errorf("want no variables in the response, got %+v", resp.Variables)
+	}
+}
+
+// TestServeGetNext_V1_EndOfMib_NoSuchName verifies that SNMPv1's
+// end-of-MIB signaling (NoSuchName error-status, no v2c/v3 endOfMibView
+// exception value) is correct for serveGetNext specifically, mirroring the
+// integration-level TestSNMPServer_V1_UnknownOID_EchoesOriginalVarbinds but
+// exercising the GetNext path (walking off the end of the table) rather than
+// a Get for a name that was never in it.
+func TestServeGetNext_V1_EndOfMib_NoSuchName(t *testing.T) {
+	item := &pduItem{oid: "1.3.6.1.2.1.1.1.0", typ: gosnmp.OctetString, onGet: func() (interface{}, error) { return "v", nil }}
+	ag := newAgent("public", false, nil, "engineid", func() uint32 { return 0 }, []*pduItem{item})
+
+	req := &gosnmp.SnmpPacket{
+		Version: gosnmp.Version1, Community: "public", PDUType: gosnmp.GetNextRequest,
+		Variables: []gosnmp.SnmpPDU{{Name: item.oid, Type: gosnmp.Null}}, // the only/last OID: next is past the end
+	}
+	resp, err := ag.serve(req)
+	if err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if resp.Error != gosnmp.NoSuchName {
+		t.Errorf("want NoSuchName error-status, got %v", resp.Error)
+	}
+	if len(resp.Variables) != 1 || resp.Variables[0].Name != item.oid {
+		t.Errorf("want original request varbind echoed unchanged, got %+v", resp.Variables)
+	}
+}

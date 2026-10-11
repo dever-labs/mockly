@@ -463,6 +463,61 @@ func TestSNMPServer_SET_UpdatesValue(t *testing.T) {
 	}
 }
 
+// TestSNMPServer_SET_UnknownOID_NoSuchName verifies a SET to an OID not in
+// the mock table returns a packet-level NoSuchName error (1-based
+// ErrorIndex), rather than silently succeeding or crashing.
+func TestSNMPServer_SET_UnknownOID_NoSuchName(t *testing.T) {
+	port := freeUDPPort()
+	mocks := []config.SNMPMock{
+		{ID: "writable", OID: "1.3.6.1.4.1.9999.2.0", Type: "string", Value: "original"},
+	}
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: mocks}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+	stop := startSNMP(t, srv)
+	defer stop()
+
+	g := snmpClient(port)
+	if err := g.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer g.Conn.Close() //nolint:errcheck
+
+	pdus := []gosnmp.SnmpPDU{{Name: "1.3.6.1.4.1.9999.99.0", Type: gosnmp.OctetString, Value: "x"}}
+	resp, err := g.Set(pdus)
+	if err != nil {
+		t.Fatalf("SET: %v", err)
+	}
+	if resp.Error != gosnmp.NoSuchName {
+		t.Errorf("want NoSuchName error-status for an unknown OID, got %v", resp.Error)
+	}
+}
+
+// TestSNMPServer_GETNEXT_RespectsMaxRepetitions is a white-box test: some
+// clients set MaxRepetitions even on a plain GetNextRequest (not just
+// GetBulkRequest), expecting that many successive values back rather than
+// just one.
+func TestSNMPServer_GETNEXT_RespectsMaxRepetitions(t *testing.T) {
+	srv := New(&config.SNMPConfig{Enabled: true, Community: "public", Mocks: defaultMocks()}, state.New(), nil, logger.New(10))
+	users, err := srv.buildUsers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ag := newAgent("public", false, users, "engineid", func() uint32 { return 0 }, srv.buildOIDs(defaultMocks()))
+
+	req := &gosnmp.SnmpPacket{
+		Version: gosnmp.Version2c, Community: "public", PDUType: gosnmp.GetNextRequest,
+		MaxRepetitions: 3,
+		Variables:      []gosnmp.SnmpPDU{{Name: defaultMocks()[0].OID, Type: gosnmp.Null}},
+	}
+	resp, err := ag.serve(req)
+	if err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if len(resp.Variables) != 3 {
+		t.Fatalf("want 3 variables (MaxRepetitions=3), got %d: %+v", len(resp.Variables), resp.Variables)
+	}
+}
+
 func TestSNMPServer_SetMocks_DynamicUpdate(t *testing.T) {
 	port := freeUDPPort()
 	initial := []config.SNMPMock{

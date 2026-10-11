@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package wellknown.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/wrappers.proto";
+
+// WellKnown exercises every google.protobuf well-known type the generator
+// gives special-cased example values to, including the ones (Struct, Value,
+// ListValue, Any) that should each emit a "fill in manually" warning exactly
+// once, even though two distinct fields below reference Struct.
+service WellKnown {
+  rpc Get (google.protobuf.Empty) returns (WellKnownReply);
+}
+
+message WellKnownReply {
+  google.protobuf.Duration ttl = 1;
+  google.protobuf.Empty marker = 2;
+  google.protobuf.StringValue name = 3;
+  google.protobuf.BytesValue blob = 4;
+  google.protobuf.BoolValue flag = 5;
+  google.protobuf.Int32Value count32 = 6;
+  google.protobuf.UInt32Value ucount32 = 7;
+  google.protobuf.Int64Value count64 = 8;
+  google.protobuf.UInt64Value ucount64 = 9;
+  google.protobuf.FloatValue ratio = 10;
+  google.protobuf.DoubleValue precise_ratio = 11;
+  google.protobuf.FieldMask mask = 12;
+  google.protobuf.Struct extra = 13;
+  google.protobuf.Struct more_extra = 14;
+  google.protobuf.Value anything = 15;
+  google.protobuf.ListValue items = 16;
+  google.protobuf.Any payload = 17;
+}

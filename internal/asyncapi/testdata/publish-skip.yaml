@@ -1,0 +1,105 @@
+asyncapi: 3.0.0
+info:
+  title: Publish-Only Operations Across MQTT/AMQP/NATS (3.0)
+  version: 1.0.0
+servers:
+  mqttBroker:
+    host: mqtt.example.com:1883
+    protocol: mqtt
+  amqpBroker:
+    host: amqp.example.com:5672
+    protocol: amqp
+  natsBroker:
+    host: nats.example.com:4222
+    protocol: nats
+channels:
+  deviceLogs:
+    address: devices/{deviceId}/logs
+    servers:
+      - $ref: '#/servers/mqttBroker'
+    messages:
+      log:
+        payload:
+          type: object
+          properties:
+            line:
+              type: string
+              example: boot ok
+  orderEvents:
+    address: orders.events
+    servers:
+      - $ref: '#/servers/amqpBroker'
+    messages:
+      event:
+        payload:
+          type: object
+          properties:
+            kind:
+              type: string
+              example: created
+  orderCommands:
+    address: orders.commands
+    servers:
+      - $ref: '#/servers/amqpBroker'
+    messages:
+      command:
+        payload:
+          type: object
+          properties:
+            action:
+              type: string
+              example: cancel
+  statusUpdates:
+    address: status.updates
+    servers:
+      - $ref: '#/servers/natsBroker'
+    messages:
+      status:
+        payload:
+          type: object
+          properties:
+            state:
+              type: string
+              example: healthy
+  statusQueries:
+    address: status.queries
+    servers:
+      - $ref: '#/servers/natsBroker'
+    messages:
+      query:
+        payload:
+          type: object
+          properties:
+            target:
+              type: string
+              example: db
+operations:
+  # MQTT: a pure "app publishes" operation has no Mockly equivalent (no
+  # scheduled/spontaneous publish mechanism) and must be skipped with a
+  # warning, not silently dropped or mis-rendered as a listener mock.
+  sendDeviceLog:
+    action: send
+    channel:
+      $ref: '#/channels/deviceLogs'
+
+  # AMQP: one receive (becomes a mock) and one send (skipped with warning),
+  # on the same server/protocol, to prove both branches are reachable
+  # independently.
+  receiveOrderEvent:
+    action: receive
+    channel:
+      $ref: '#/channels/orderEvents'
+  sendOrderCommand:
+    action: send
+    channel:
+      $ref: '#/channels/orderCommands'
+
+  # NATS: same shape as AMQP above.
+  receiveStatusUpdate:
+    action: receive
+    channel:
+      $ref: '#/channels/statusUpdates'
+  sendStatusQuery:
+    action: send
+    channel:
+      $ref: '#/channels/statusQueries'

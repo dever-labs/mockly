@@ -116,6 +116,93 @@ func TestGenerate_RejectsExternalImports(t *testing.T) {
 	}
 }
 
+// TestGenerate_WellKnownTypes exercises every google.protobuf well-known
+// type the generator special-cases (previously 0% unit-covered beyond the
+// single Timestamp field in greeter.proto): the JSON-mapping placeholders
+// for Duration/Empty/wrapper types/FieldMask, and the "approximated, fill
+// in manually" warnings for Struct/Value/ListValue/Any. It also confirms
+// appendWarningOnce actually dedupes: the message below has two separate
+// google.protobuf.Struct fields, so the Struct warning must appear exactly
+// once, not twice.
+func TestGenerate_WellKnownTypes(t *testing.T) {
+	res, err := protoidl.Generate("testdata/wellknown.proto")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if len(res.Mocks) != 1 {
+		t.Fatalf("Mocks = %d, want 1", len(res.Mocks))
+	}
+	resp := res.Mocks[0].Response
+
+	checks := map[string]any{
+		"ttl":           "0s",
+		"marker":        map[string]any{},
+		"name":          "string",
+		"flag":          true,
+		"count32":       0,
+		"ucount32":      0,
+		"count64":       "0",
+		"ucount64":      "0",
+		"ratio":         0.0,
+		"precise_ratio": 0.0,
+		"mask":          "",
+		"extra":         map[string]any{},
+		"more_extra":    map[string]any{},
+		"anything":      nil,
+		"items":         []any{},
+		"payload":       map[string]any{},
+	}
+	for field, want := range checks {
+		got, ok := resp[field]
+		if field == "anything" {
+			// google.protobuf.Value maps to JSON null; distinguish "present
+			// and nil" from "absent" explicitly.
+			if _, present := resp[field]; !present {
+				t.Errorf("response[%q] missing", field)
+			}
+			continue
+		}
+		if !ok {
+			t.Errorf("response[%q] missing", field)
+			continue
+		}
+		switch want := want.(type) {
+		case map[string]any:
+			gm, ok := got.(map[string]any)
+			if !ok || len(gm) != len(want) {
+				t.Errorf("response[%q] = %#v, want an empty object", field, got)
+			}
+		case []any:
+			ga, ok := got.([]any)
+			if !ok || len(ga) != len(want) {
+				t.Errorf("response[%q] = %#v, want an empty array", field, got)
+			}
+		default:
+			if got != want {
+				t.Errorf("response[%q] = %#v, want %#v", field, got, want)
+			}
+		}
+	}
+
+	wantWarningSubstrings := []string{
+		"protobuf.Struct field(s) approximated",
+		"protobuf.Value field(s) approximated",
+		"protobuf.ListValue field(s) approximated",
+		"protobuf.Any field(s) approximated",
+	}
+	for _, sub := range wantWarningSubstrings {
+		count := 0
+		for _, w := range res.Warnings {
+			if strings.Contains(w, sub) {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("warnings containing %q = %d, want exactly 1 (two Struct fields should still dedupe to one warning); warnings = %v", sub, count, res.Warnings)
+		}
+	}
+}
+
 func TestGenerate_Proto2Syntax(t *testing.T) {
 	res, err := protoidl.Generate("testdata/legacy-proto2.proto")
 	if err != nil {

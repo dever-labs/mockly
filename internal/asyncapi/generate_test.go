@@ -120,6 +120,58 @@ func TestGenerate_AmbiguousMultiServerIsSkipped(t *testing.T) {
 	}
 }
 
+// TestGenerate_PublishOnlyOperationsAreSkipped exercises the
+// skipPublishWarning path for MQTT, AMQP and NATS (previously 0%
+// unit-covered — only reactive "receive" operations for these three
+// protocols were ever exercised in existing testdata). A publish-only
+// ("send") operation on any of these protocols has no Mockly equivalent
+// (no scheduled/spontaneous publish mechanism) and must be skipped with an
+// explanatory warning, not silently dropped or incorrectly turned into a
+// listener mock; meanwhile a sibling "receive" operation on the same
+// protocol/server must still produce a real mock.
+func TestGenerate_PublishOnlyOperationsAreSkipped(t *testing.T) {
+	res, err := asyncapi.Generate("testdata/publish-skip.yaml")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	if len(res.MQTT) != 0 {
+		t.Errorf("MQTT mocks = %+v, want none (the only MQTT operation is a publish)", res.MQTT)
+	}
+	if len(res.AMQP) != 1 {
+		t.Fatalf("AMQP mocks = %d, want 1 (receiveOrderEvent only)", len(res.AMQP))
+	}
+	if res.AMQP[0].RoutingKey != "orders.events" {
+		t.Errorf("AMQP mock routing key = %q, want %q", res.AMQP[0].RoutingKey, "orders.events")
+	}
+	if len(res.NATS) != 1 {
+		t.Fatalf("NATS mocks = %d, want 1 (receiveStatusUpdate only)", len(res.NATS))
+	}
+	if res.NATS[0].Subject != "status.updates" {
+		t.Errorf("NATS mock subject = %q, want %q", res.NATS[0].Subject, "status.updates")
+	}
+
+	if len(res.Warnings) != 3 {
+		t.Fatalf("warnings = %v, want exactly 3 (one skip warning per publish-only protocol)", res.Warnings)
+	}
+	wantSubstrings := []struct{ id, protocol string }{
+		{"sendDeviceLog", "mqtt"},
+		{"sendOrderCommand", "amqp"},
+		{"sendStatusQuery", "nats"},
+	}
+	for _, want := range wantSubstrings {
+		found := false
+		for _, w := range res.Warnings {
+			if strings.Contains(w, want.id) && strings.Contains(w, want.protocol) && strings.Contains(w, "no Mockly equivalent") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("warnings = %v, want one flagging %s (%s) as a skipped publish-only operation", res.Warnings, want.id, want.protocol)
+		}
+	}
+}
+
 func TestGenerate_DuplicateWebSocketSendWarnsAndKeepsLastPayload(t *testing.T) {
 	res, err := asyncapi.Generate("testdata/ws-duplicate-send.yaml")
 	if err != nil {

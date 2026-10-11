@@ -219,7 +219,10 @@ func TestWrapValue_IPAddress_Invalid(t *testing.T) {
 
 func TestBuildUsers_Empty(t *testing.T) {
 	srv := newTestSNMPServer(&config.SNMPConfig{})
-	got := srv.buildUsers()
+	got, err := srv.buildUsers()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(got) != 0 {
 		t.Errorf("buildUsers with no users should return empty, got %d", len(got))
 	}
@@ -237,7 +240,10 @@ func TestBuildUsers_WithUser(t *testing.T) {
 			},
 		},
 	})
-	got := srv.buildUsers()
+	got, err := srv.buildUsers()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(got) != 1 {
 		t.Fatalf("want 1 user, got %d", len(got))
 	}
@@ -246,6 +252,34 @@ func TestBuildUsers_WithUser(t *testing.T) {
 	}
 	if got[0].AuthenticationProtocol != gosnmp.SHA {
 		t.Errorf("unexpected auth protocol: %v", got[0].AuthenticationProtocol)
+	}
+}
+
+// TestBuildUsers_AuthNoPriv verifies that omitting a privacy passphrase
+// leaves PrivacyProtocol at NoPriv instead of defaulting to DES — a user
+// with no PrivPassphrase must be usable with AuthNoPriv security.
+func TestBuildUsers_AuthNoPriv(t *testing.T) {
+	srv := newTestSNMPServer(&config.SNMPConfig{
+		V3Users: []config.SNMPUser{
+			{
+				Username:       "admin",
+				AuthProtocol:   "sha",
+				AuthPassphrase: "authpass",
+			},
+		},
+	})
+	got, err := srv.buildUsers()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 user, got %d", len(got))
+	}
+	if got[0].AuthenticationProtocol != gosnmp.SHA {
+		t.Errorf("unexpected auth protocol: %v", got[0].AuthenticationProtocol)
+	}
+	if got[0].PrivacyProtocol > gosnmp.NoPriv {
+		t.Errorf("want no privacy protocol, got %v", got[0].PrivacyProtocol)
 	}
 }
 

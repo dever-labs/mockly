@@ -36,16 +36,7 @@ jobs:
           version: v2.14.0
 
       - name: Run tests
-        # Run all internal packages with the race detector, except snmpserver
-        # which wraps slayercat/GoSNMPServer v0.5.2 — that library has an
-        # unfixed data race in Shutdown()/NextSnmp() that is not in our code.
-        # Coverage from both runs is merged into one profile for the
-        # threshold check and artifact upload below.
-        run: |
-          go test $(go list ./internal/... | grep -v snmpserver) -race -coverprofile=coverage-main.txt -covermode=atomic
-          go test ./internal/protocols/snmpserver/... -coverprofile=coverage-snmp.txt -covermode=atomic
-          echo "mode: atomic" > coverage.txt
-          grep -h -v '^mode:' coverage-main.txt coverage-snmp.txt >> coverage.txt
+        run: go test ./internal/... -race -coverprofile=coverage.txt -covermode=atomic
 
       - name: Check coverage threshold
         run: ./scripts/check-coverage.sh coverage.txt

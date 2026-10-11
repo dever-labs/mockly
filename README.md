@@ -1179,7 +1179,7 @@ Captured messages are visible at `GET /api/nats/messages`; mocks can be managed 
 
 ### SNMP
 
-Full SNMP agent (powered by GoSNMPServer) that responds to GET, GETNEXT, GETBULK, and SET requests. Supports SNMPv1, v2c, and v3 (USM with MD5/SHA auth and DES/AES privacy). Can also send outbound TRAPs to any target host via the management API.
+Full SNMP agent (built on gosnmp/gosnmp) that responds to GET, GETNEXT, GETBULK, and SET requests. Supports SNMPv1, v2c, and v3 (USM with MD5/SHA auth and DES/AES privacy). Can also send outbound TRAPs to any target host via the management API.
 
 ```yaml
 protocols:

@@ -3,13 +3,12 @@ package snmpserver
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"net"
 	"strings"
 	"sync"
 	"time"
-
-	GoSNMPServer "github.com/slayercat/GoSNMPServer"
 
 	"github.com/gosnmp/gosnmp"
 
@@ -31,8 +30,9 @@ type Server struct {
 	traps  []config.SNMPTrap
 	values sync.Map // OID → current value (for SET support)
 
-	srv     *GoSNMPServer.SNMPServer
-	restart chan struct{} // closed to signal a restart is needed
+	engineID  string    // stable SNMPv3 engine ID for this Server instance
+	startedAt time.Time // used to derive the SNMPv3 engineTime counter
+	restart   chan struct{} // closed to signal a restart is needed
 
 	ready     chan struct{} // closed once the UDP port is bound and accepting packets
 	readyOnce sync.Once
@@ -45,6 +45,8 @@ func New(cfg *config.SNMPConfig, store *state.Store, sc *scenarios.Store, log *l
 		store:     store,
 		scenarios: sc,
 		log:       log,
+		engineID:  newEngineID(),
+		startedAt: time.Now(),
 		restart:   make(chan struct{}),
 		ready:     make(chan struct{}),
 	}
@@ -54,6 +56,17 @@ func New(cfg *config.SNMPConfig, store *state.Store, sc *scenarios.Store, log *l
 		s.values.Store(m.OID, m.Value)
 	}
 	return s
+}
+
+// newEngineID generates a random SNMPv3 AuthoritativeEngineID, stable for
+// the lifetime of a Server instance. RFC 3411 requires 5-32 octets; 12
+// random bytes is a convenient size that comfortably satisfies this without
+// needing to encode any real enterprise/format semantics, which a mock
+// agent has no use for.
+func newEngineID() string {
+	buf := make([]byte, 12)
+	_, _ = rand.Read(buf) // crypto/rand.Read never returns a short read without error
+	return string(buf)
 }
 
 // Ready returns a channel that is closed once the server's UDP port has been
@@ -124,7 +137,8 @@ func (s *Server) SendTrap(id string) error {
 // Start runs the SNMP agent. Blocks until ctx is cancelled.
 func (s *Server) Start(ctx context.Context) error {
 	for {
-		if err := s.buildAndListen(); err != nil {
+		ln, ag, err := s.buildAndListen()
+		if err != nil {
 			return err
 		}
 
@@ -138,7 +152,7 @@ func (s *Server) Start(ctx context.Context) error {
 		restartCh := s.restart
 		s.mu.RUnlock()
 
-		// The UDP port is now bound (buildAndListen calls ListenUDP
+		// The UDP port is now bound (buildAndListen calls listenUDP
 		// synchronously) — signal readiness once, on the first bind.
 		s.readyOnce.Do(func() { close(s.ready) })
 
@@ -149,25 +163,22 @@ func (s *Server) Start(ctx context.Context) error {
 		})
 
 		errCh := make(chan error, 1)
-		s.mu.RLock()
-		current := s.srv
-		s.mu.RUnlock()
-		go func() { errCh <- current.ServeForever() }()
+		go func() { errCh <- s.serveForever(ln, ag) }()
 
 		select {
 		case <-ctx.Done():
-			current.Shutdown()
-			<-errCh // wait for ServeForever to exit before returning
+			ln.Close() //nolint:errcheck
+			<-errCh    // wait for serveForever to exit before returning
 			return nil
 		case <-restartCh:
-			// SetMocks triggered a rebuild. Shut down the running server so
+			// SetMocks triggered a rebuild. Shut down the running listener so
 			// it releases the UDP port before buildAndListen re-binds it.
-			current.Shutdown()
-			<-errCh // wait for ServeForever to exit before re-binding the port
+			ln.Close() //nolint:errcheck
+			<-errCh    // wait for serveForever to exit before re-binding the port
 			continue
 		case err := <-errCh:
-			// If a restart was requested at the same time ServeForever returned,
-			// prefer the restart over treating it as a fatal error.
+			// If a restart was requested at the same time serveForever
+			// returned, prefer the restart over treating it as a fatal error.
 			select {
 			case <-restartCh:
 				continue
@@ -178,14 +189,40 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 }
 
+// serveForever reads and dispatches UDP datagrams against ag until ln is
+// closed (by Start, on shutdown or restart), at which point it returns nil —
+// a closed listener is an expected, non-fatal exit, not an error.
+func (s *Server) serveForever(ln *udpListener, ag *agent) error {
+	buf := make([]byte, 65535)
+	for {
+		n, addr, err := ln.ReadFrom(buf)
+		if err != nil {
+			if isClosedConnError(err) {
+				return nil
+			}
+			return fmt.Errorf("snmp server read: %w", err)
+		}
+		req := append([]byte(nil), buf[:n]...)
+		resp, err := ag.respond(req)
+		if err != nil || resp == nil {
+			continue
+		}
+		_ = ln.WriteTo(resp, addr)
+	}
+}
+
+func isClosedConnError(err error) bool {
+	return strings.Contains(err.Error(), "use of closed network connection")
+}
+
 // applyProtocolVersion applies a config.SNMPConfig.ProtocolVersion pin to the
-// set of USM users and the SnmpV3Only flag passed to GoSNMPServer:
-//   - "v3": SnmpV3Only is set, so v1/v2c (community-based) requests are
-//     rejected by the library outright.
+// set of USM users and the snmpV3Only flag passed to newAgent:
+//   - "v3": snmpV3Only is set, so v1/v2c (community-based) requests are
+//     rejected outright.
 //   - "v1" or "v2c": the USM user list is cleared, so any v3 request fails
-//     USM authentication (the library has no equivalent "v1/v2c only" flag
-//     to reject v3 requests at the version-negotiation step directly).
-//   - empty (default): both users and SnmpV3Only pass through unchanged,
+//     to find a matching user (there is no separate "v1/v2c only" flag to
+//     reject v3 requests at the version-negotiation step directly).
+//   - empty (default): both users and snmpV3Only pass through unchanged,
 //     preserving today's behavior of accepting any dialect.
 func applyProtocolVersion(version string, users []gosnmp.UsmSecurityParameters) ([]gosnmp.UsmSecurityParameters, bool) {
 	switch version {
@@ -198,13 +235,16 @@ func applyProtocolVersion(version string, users []gosnmp.UsmSecurityParameters) 
 	}
 }
 
-func (s *Server) buildAndListen() error {
+func (s *Server) buildAndListen() (*udpListener, *agent, error) {
 	s.mu.RLock()
 	mocks := append([]config.SNMPMock(nil), s.mocks...)
 	s.mu.RUnlock()
 
 	oids := s.buildOIDs(mocks)
-	users := s.buildUsers()
+	users, err := s.buildUsers()
+	if err != nil {
+		return nil, nil, err
+	}
 
 	community := s.cfg.Community
 	if community == "" {
@@ -212,50 +252,35 @@ func (s *Server) buildAndListen() error {
 	}
 
 	// ProtocolVersion enforcement: "v3" rejects v1/v2c requests outright
-	// (via SnmpV3Only); "v1"/"v2c" disables v3/USM authentication entirely
-	// by registering no users, so any v3 request fails to authenticate.
-	// Empty (default) accepts both, unchanged from today's behavior.
+	// (snmpV3Only); "v1"/"v2c" disables v3/USM authentication entirely by
+	// registering no users, so any v3 request fails to authenticate. Empty
+	// (default) accepts both, unchanged from today's behavior.
 	users, snmpV3Only := applyProtocolVersion(s.cfg.ProtocolVersion, users)
 
-	master := GoSNMPServer.MasterAgent{
-		Logger: GoSNMPServer.NewDiscardLogger(),
-		SecurityConfig: GoSNMPServer.SecurityConfig{
-			AuthoritativeEngineBoots: 1,
-			Users:                    users,
-			SnmpV3Only:               snmpV3Only,
-		},
-		SubAgents: []*GoSNMPServer.SubAgent{
-			{
-				CommunityIDs: []string{community},
-				OIDs:         oids,
-			},
-		},
-	}
+	engineTime := func() uint32 { return uint32(time.Since(s.startedAt).Seconds()) } //nolint:gosec // wraps harmlessly after ~136 years
+	ag := newAgent(community, snmpV3Only, users, s.engineID, engineTime, oids)
 
-	srv := GoSNMPServer.NewSNMPServer(master)
 	addr := fmt.Sprintf("0.0.0.0:%d", s.cfg.Port)
-	if err := srv.ListenUDP("udp", addr); err != nil {
-		return fmt.Errorf("snmp server listen %s: %w", addr, err)
+	ln, err := listenUDP(addr)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snmp server listen %s: %w", addr, err)
 	}
-	s.mu.Lock()
-	s.srv = srv
-	s.mu.Unlock()
-	return nil
+	return ln, ag, nil
 }
 
-// buildOIDs converts SNMPMock list into GoSNMPServer PDUValueControlItems.
-func (s *Server) buildOIDs(mocks []config.SNMPMock) []*GoSNMPServer.PDUValueControlItem {
-	items := make([]*GoSNMPServer.PDUValueControlItem, 0, len(mocks))
+// buildOIDs converts an SNMPMock list into pduItems for the agent's OID table.
+func (s *Server) buildOIDs(mocks []config.SNMPMock) []*pduItem {
+	items := make([]*pduItem, 0, len(mocks))
 	for _, m := range mocks {
 		mock := m // capture for closure
 		asn1Type := snmpType(mock.Type)
 		s.values.Store(mock.OID, mock.Value)
 
-		item := &GoSNMPServer.PDUValueControlItem{
-			OID:      mock.OID,
-			Type:     asn1Type,
-			Document: mock.ID,
-			OnGet: func() (interface{}, error) {
+		item := &pduItem{
+			oid:      mock.OID,
+			typ:      asn1Type,
+			document: mock.ID,
+			onGet: func() (interface{}, error) {
 				fault := s.scenarios.EffectiveSNMPFault()
 				if fault != nil && fault.Delay.Duration > 0 {
 					time.Sleep(fault.Delay.Duration)
@@ -282,7 +307,7 @@ func (s *Server) buildOIDs(mocks []config.SNMPMock) []*GoSNMPServer.PDUValueCont
 				})
 				return wrapped, err
 			},
-			OnSet: func(value interface{}) error {
+			onSet: func(value interface{}) error {
 				fault := s.scenarios.EffectiveSNMPFault()
 				if fault != nil && fault.Delay.Duration > 0 {
 					time.Sleep(fault.Delay.Duration)
@@ -309,24 +334,31 @@ func (s *Server) buildOIDs(mocks []config.SNMPMock) []*GoSNMPServer.PDUValueCont
 	return items
 }
 
-// buildUsers converts config V3 users into gosnmp UsmSecurityParameters.
-func (s *Server) buildUsers() []gosnmp.UsmSecurityParameters {
+// buildUsers converts config V3 users into gosnmp UsmSecurityParameters,
+// deriving each user's localized auth/priv keys from its passphrase.
+func (s *Server) buildUsers() ([]gosnmp.UsmSecurityParameters, error) {
 	users := make([]gosnmp.UsmSecurityParameters, 0, len(s.cfg.V3Users))
 	for _, u := range s.cfg.V3Users {
 		usp := gosnmp.UsmSecurityParameters{
-			UserName:                 u.Username,
-			AuthenticationProtocol:   authProtocol(u.AuthProtocol),
-			AuthenticationPassphrase: u.AuthPassphrase,
-			PrivacyProtocol:          privProtocol(u.PrivProtocol),
-			PrivacyPassphrase:        u.PrivPassphrase,
+			UserName: u.Username,
 		}
-		GoSNMPServer.GenKeys(&usp)
+		if u.AuthPassphrase != "" {
+			usp.AuthenticationProtocol = authProtocol(u.AuthProtocol)
+			usp.AuthenticationPassphrase = u.AuthPassphrase
+		}
+		if u.PrivPassphrase != "" {
+			usp.PrivacyProtocol = privProtocol(u.PrivProtocol)
+			usp.PrivacyPassphrase = u.PrivPassphrase
+		}
+		if err := usp.InitSecurityKeys(); err != nil {
+			return nil, fmt.Errorf("snmpv3 user %q: %w", u.Username, err)
+		}
 		// usp is a freshly constructed value that has never been locked, so its
 		// embedded (unexported) sync.Mutex is still at its zero value here —
 		// copying it via append is safe despite the govet copylocks warning.
 		users = append(users, usp) //nolint:govet // see comment above
 	}
-	return users
+	return users, nil
 }
 
 // sendTrap sends a single SNMPTrap to its configured target.
@@ -385,6 +417,26 @@ func (s *Server) sendTrap(trap *config.SNMPTrap) error {
 
 	snmpTrap := gosnmp.SnmpTrap{
 		Variables: pdus,
+	}
+	if version == gosnmp.Version1 {
+		// RFC 1157 §4.1.6 (Trap-PDU): Enterprise and AgentAddress are
+		// mandatory fields for a v1 trap (gosnmp.SendTrap errors out
+		// without them). Fall back to sane defaults so a v1 trap works
+		// out of the box without requiring every field to be configured.
+		enterprise := trap.Enterprise
+		if enterprise == "" {
+			enterprise = trap.OID
+		}
+		agentAddress := trap.AgentAddress
+		if agentAddress == "" {
+			if udpAddr, ok := g.Conn.LocalAddr().(*net.UDPAddr); ok {
+				agentAddress = udpAddr.IP.String()
+			}
+		}
+		snmpTrap.Enterprise = enterprise
+		snmpTrap.AgentAddress = agentAddress
+		snmpTrap.GenericTrap = trap.GenericTrap
+		snmpTrap.SpecificTrap = trap.SpecificTrap
 	}
 
 	_, err = g.SendTrap(snmpTrap)
@@ -445,33 +497,35 @@ func snmpType(t string) gosnmp.Asn1BER {
 }
 
 // wrapValue converts a raw YAML value (string or number) to the typed value
-// expected by GoSNMPServer for the given Asn1BER type.
+// gosnmp expects for the given Asn1BER type. GoSNMPServer's Asn1*Wrap
+// functions this used to call were all identity functions except
+// Asn1IPAddressWrap (net.IP -> its string form), which is replicated below.
 func wrapValue(t gosnmp.Asn1BER, raw interface{}) (interface{}, error) {
 	switch t {
 	case gosnmp.Integer:
-		return GoSNMPServer.Asn1IntegerWrap(toInt(raw)), nil
+		return toInt(raw), nil
 	case gosnmp.Gauge32:
-		return GoSNMPServer.Asn1Gauge32Wrap(toUint(raw)), nil
+		return toUint(raw), nil
 	case gosnmp.Counter32:
-		return GoSNMPServer.Asn1Counter32Wrap(toUint(raw)), nil
+		return toUint(raw), nil
 	case gosnmp.Counter64:
-		return GoSNMPServer.Asn1Counter64Wrap(toUint64(raw)), nil
+		return toUint64(raw), nil
 	case gosnmp.TimeTicks:
-		return GoSNMPServer.Asn1TimeTicksWrap(toUint32(raw)), nil
+		return toUint32(raw), nil
 	case gosnmp.IPAddress:
 		ip := net.ParseIP(fmt.Sprint(raw))
 		if ip == nil {
-			return GoSNMPServer.Asn1IPAddressWrap(net.IPv4(0, 0, 0, 0)), nil
+			return net.IPv4(0, 0, 0, 0).String(), nil
 		}
-		return GoSNMPServer.Asn1IPAddressWrap(ip), nil
+		return ip.String(), nil
 	case gosnmp.ObjectIdentifier:
-		return GoSNMPServer.Asn1ObjectIdentifierWrap(fmt.Sprint(raw)), nil
+		return fmt.Sprint(raw), nil
 	default: // OctetString
 		// gosnmp SET PDUs deliver OctetString values as []byte — convert back to string.
 		if b, ok := raw.([]byte); ok {
-			return GoSNMPServer.Asn1OctetStringWrap(string(b)), nil
+			return string(b), nil
 		}
-		return GoSNMPServer.Asn1OctetStringWrap(fmt.Sprint(raw)), nil
+		return fmt.Sprint(raw), nil
 	}
 }
 

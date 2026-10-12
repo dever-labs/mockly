@@ -257,6 +257,169 @@ func TestSNMPServer_GETBULK(t *testing.T) {
 	}
 }
 
+// TestSNMPServer_GETBULK_NonRepeaterReturnsSuccessor verifies that a
+// GetBulk non-repeater variable is resolved like GetNext (lexicographic
+// successor), per RFC 3416 §4.2.3 — not an exact-match Get.
+func TestSNMPServer_GETBULK_NonRepeaterReturnsSuccessor(t *testing.T) {
+	port := freeUDPPort()
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+	stop := startSNMP(t, srv)
+	defer stop()
+
+	g := snmpClient(port)
+	if err := g.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer g.Conn.Close() //nolint:errcheck
+
+	// Querying an existing OID as a (sole) non-repeater should return the
+	// NEXT OID in the table, not that OID's own value.
+	resp, err := g.GetBulk([]string{"1.3.6.1.2.1.1.1.0"}, 1, 0)
+	if err != nil {
+		t.Fatalf("GETBULK: %v", err)
+	}
+	if len(resp.Variables) != 1 {
+		t.Fatalf("want 1 variable, got %d", len(resp.Variables))
+	}
+	if got := resp.Variables[0].Name; got != ".1.3.6.1.2.1.1.3.0" {
+		t.Errorf("want successor OID .1.3.6.1.2.1.1.3.0, got %s", got)
+	}
+}
+
+// TestSNMPServer_GETBULK_LargeMaxRepetitionsBounded verifies that an
+// attacker-controlled MaxRepetitions can't make the single-threaded agent
+// hang processing one packet.
+func TestSNMPServer_GETBULK_LargeMaxRepetitionsBounded(t *testing.T) {
+	port := freeUDPPort()
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+	stop := startSNMP(t, srv)
+	defer stop()
+
+	g := snmpClient(port)
+	g.Timeout = 5 * time.Second
+	if err := g.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer g.Conn.Close() //nolint:errcheck
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := g.GetBulk([]string{"1.3.6.1.2.1.1.1.0"}, 0, 200_000_000)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("GETBULK: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("GETBULK with a huge MaxRepetitions did not complete in time")
+	}
+}
+
+
+// TestSNMPServer_GETBULK_DuplicateRepeaterOID verifies that two repeater
+// variable-bindings requesting the same OID name each get their own
+// end-of-MIB marker (and value) every round, instead of the dedup map
+// collapsing the second one once the first hits end-of-MIB.
+func TestSNMPServer_GETBULK_DuplicateRepeaterOID(t *testing.T) {
+	port := freeUDPPort()
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+	stop := startSNMP(t, srv)
+	defer stop()
+
+	g := snmpClient(port)
+	if err := g.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer g.Conn.Close() //nolint:errcheck
+
+	// Two repeaters requesting the exact same OID name, with enough
+	// MaxRepetitions to run the table out and hit end-of-MIB on both.
+	resp, err := g.GetBulk([]string{"1.3.6.1.2.1.1.1.0", "1.3.6.1.2.1.1.1.0"}, 0, 20)
+	if err != nil {
+		t.Fatalf("GETBULK: %v", err)
+	}
+	// Every round must contribute exactly 2 variables (one per repeater)
+	// until both hit end-of-MIB, so the total must be even.
+	if len(resp.Variables)%2 != 0 {
+		t.Fatalf("expected an even number of variables (2 per round), got %d: %+v", len(resp.Variables), resp.Variables)
+	}
+}
+
+// TestSNMPServer_GET_NoSuchObject_V2c verifies RFC 3416 §4.2.1 case (2)
+// semantics for v2c/v3: a missing OID leaves the packet's error-status at
+// noError and is instead signalled via a noSuchObject exception value on
+// just that variable binding, so other (found) variables in the same
+// request remain usable by the client.
+func TestSNMPServer_GET_NoSuchObject_V2c(t *testing.T) {
+	port := freeUDPPort()
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+	stop := startSNMP(t, srv)
+	defer stop()
+
+	g := snmpClient(port)
+	if err := g.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer g.Conn.Close() //nolint:errcheck
+
+	// A known OID followed by an unknown one.
+	resp, err := g.Get([]string{"1.3.6.1.2.1.1.1.0", "1.3.6.1.2.1.1.99.0"})
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	if resp.Error != gosnmp.NoError {
+		t.Errorf("want error-status=noError, got %v", resp.Error)
+	}
+	if len(resp.Variables) != 2 {
+		t.Fatalf("want 2 variable bindings, got %d", len(resp.Variables))
+	}
+	if resp.Variables[1].Type != gosnmp.NoSuchObject {
+		t.Errorf("want noSuchObject exception value on the missing OID, got %v", resp.Variables[1].Type)
+	}
+}
+
+// TestSNMPServer_V1_UnknownOID_EchoesOriginalVarbinds verifies RFC 1157
+// §4.1.2 v1 error semantics: on any error, the response must echo the
+// original request's variable-bindings unchanged, not substitute a v2c/v3
+// exception value like noSuchInstance.
+func TestSNMPServer_V1_UnknownOID_EchoesOriginalVarbinds(t *testing.T) {
+	port := freeUDPPort()
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: defaultMocks()}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+	stop := startSNMP(t, srv)
+	defer stop()
+
+	g := &gosnmp.GoSNMP{
+		Target: "127.0.0.1", Port: uint16(port), Community: "public",
+		Version: gosnmp.Version1, Timeout: 2 * time.Second, Retries: 1,
+	}
+	if err := g.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer g.Conn.Close() //nolint:errcheck
+
+	const unknown = "1.3.6.1.2.1.1.99.0"
+	resp, err := g.Get([]string{unknown})
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	if resp.Error != gosnmp.NoSuchName {
+		t.Errorf("want error-status NoSuchName, got %v", resp.Error)
+	}
+	if len(resp.Variables) != 1 || resp.Variables[0].Name != "."+unknown {
+		t.Fatalf("want original varbind echoed unchanged, got %+v", resp.Variables)
+	}
+	if resp.Variables[0].Type == gosnmp.NoSuchInstance || resp.Variables[0].Type == gosnmp.EndOfMibView {
+		t.Errorf("v1 response must not use v2c/v3 exception value types, got %v", resp.Variables[0].Type)
+	}
+}
+
 func TestSNMPServer_SET_UpdatesValue(t *testing.T) {
 	port := freeUDPPort()
 	mocks := []config.SNMPMock{
@@ -303,6 +466,62 @@ func TestSNMPServer_SET_UpdatesValue(t *testing.T) {
 	}
 	if got != "updated" {
 		t.Errorf("after SET got %q, want %q", got, "updated")
+	}
+}
+
+// TestSNMPServer_SET_UnknownOID_NotWritable verifies a SET to an OID not in
+// the mock table returns a packet-level NotWritable error (RFC 3416
+// §4.2.5 case (2): no variable with this OID's prefix can be created or
+// modified), rather than silently succeeding or crashing.
+func TestSNMPServer_SET_UnknownOID_NotWritable(t *testing.T) {
+	port := freeUDPPort()
+	mocks := []config.SNMPMock{
+		{ID: "writable", OID: "1.3.6.1.4.1.9999.2.0", Type: "string", Value: "original"},
+	}
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Mocks: mocks}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+	stop := startSNMP(t, srv)
+	defer stop()
+
+	g := snmpClient(port)
+	if err := g.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer g.Conn.Close() //nolint:errcheck
+
+	pdus := []gosnmp.SnmpPDU{{Name: "1.3.6.1.4.1.9999.99.0", Type: gosnmp.OctetString, Value: "x"}}
+	resp, err := g.Set(pdus)
+	if err != nil {
+		t.Fatalf("SET: %v", err)
+	}
+	if resp.Error != gosnmp.NotWritable {
+		t.Errorf("want NotWritable error-status for an unknown OID, got %v", resp.Error)
+	}
+}
+
+// TestSNMPServer_GETNEXT_RespectsMaxRepetitions is a white-box test: some
+// clients set MaxRepetitions even on a plain GetNextRequest (not just
+// GetBulkRequest), expecting that many successive values back rather than
+// just one.
+func TestSNMPServer_GETNEXT_RespectsMaxRepetitions(t *testing.T) {
+	srv := New(&config.SNMPConfig{Enabled: true, Community: "public", Mocks: defaultMocks()}, state.New(), nil, logger.New(10))
+	users, err := srv.buildUsers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ag := newAgent("public", false, users, "engineid", func() uint32 { return 0 }, srv.buildOIDs(defaultMocks()))
+
+	req := &gosnmp.SnmpPacket{
+		Version: gosnmp.Version2c, Community: "public", PDUType: gosnmp.GetNextRequest,
+		MaxRepetitions: 3,
+		Variables:      []gosnmp.SnmpPDU{{Name: defaultMocks()[0].OID, Type: gosnmp.Null}},
+	}
+	resp, err := ag.serve(req)
+	if err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if len(resp.Variables) != 3 {
+		t.Fatalf("want 3 variables (MaxRepetitions=3), got %d: %+v", len(resp.Variables), resp.Variables)
 	}
 }
 
@@ -410,6 +629,59 @@ func TestSNMPServer_GetTraps_Roundtrip(t *testing.T) {
 	}
 	if got[0].ID != "t1" {
 		t.Errorf("trap ID = %q, want t1", got[0].ID)
+	}
+}
+
+// TestSNMPServer_SendTrap_V1_DeliversRealPacket verifies that a Version 1
+// trap actually sends (rather than erroring, since gosnmp.SendTrap requires
+// Enterprise/AgentAddress to be populated for v1 — RFC 1157 §4.1.6) and
+// that mockly supplies sane defaults for both when they aren't explicitly
+// configured.
+func TestSNMPServer_SendTrap_V1_DeliversRealPacket(t *testing.T) {
+	trapPort := freeUDPPort()
+
+	received := make(chan *gosnmp.SnmpPacket, 1)
+	tl := gosnmp.NewTrapListener()
+	defer tl.Close()
+	tl.Params = &gosnmp.GoSNMP{Community: "public-trap", Version: gosnmp.Version1, Logger: gosnmp.NewLogger(logAdapter{})}
+	tl.OnNewTrap = func(packet *gosnmp.SnmpPacket, _ *net.UDPAddr) {
+		received <- packet
+	}
+	go func() { _ = tl.Listen(fmt.Sprintf("127.0.0.1:%d", trapPort)) }()
+	select {
+	case <-tl.Listening():
+	case <-time.After(2 * time.Second):
+		t.Fatal("trap listener never became ready")
+	}
+
+	port := freeUDPPort()
+	traps := []config.SNMPTrap{{
+		ID:        "coldStart",
+		Target:    fmt.Sprintf("127.0.0.1:%d", trapPort),
+		Version:   "1",
+		Community: "public-trap",
+		OID:       "1.3.6.1.6.3.1.1.5.1",
+	}}
+	cfg := &config.SNMPConfig{Enabled: true, Port: port, Community: "public", Traps: traps}
+	srv := New(cfg, state.New(), nil, logger.New(10))
+
+	if err := srv.SendTrap("coldStart"); err != nil {
+		t.Fatalf("SendTrap: %v", err)
+	}
+
+	select {
+	case packet := <-received:
+		if packet.Version != gosnmp.Version1 {
+			t.Errorf("received trap version = %v, want Version1", packet.Version)
+		}
+		if packet.Enterprise == "" {
+			t.Error("want a non-empty Enterprise OID (should default to the trap OID)")
+		}
+		if packet.AgentAddress == "" {
+			t.Error("want a non-empty AgentAddress (should default to the outbound local address)")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting to receive v1 trap")
 	}
 }
 

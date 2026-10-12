@@ -869,6 +869,14 @@ type SNMPTrap struct {
 	Community string            `yaml:"community,omitempty" json:"community,omitempty"`
 	OID       string            `yaml:"oid" json:"oid"`
 	Bindings  []SNMPTrapBinding `yaml:"bindings,omitempty" json:"bindings,omitempty"`
+	// Enterprise and AgentAddress are required by RFC 1157 §4.1.6 for
+	// Version 1 traps only (ignored for v2c/v3). If unset, Enterprise
+	// defaults to OID and AgentAddress defaults to the agent's outbound
+	// local address for the trap connection.
+	Enterprise   string `yaml:"enterprise,omitempty" json:"enterprise,omitempty"`
+	AgentAddress string `yaml:"agent_address,omitempty" json:"agent_address,omitempty"`
+	GenericTrap  int    `yaml:"generic_trap,omitempty" json:"generic_trap,omitempty"`
+	SpecificTrap int    `yaml:"specific_trap,omitempty" json:"specific_trap,omitempty"`
 }
 
 // SNMPTrapBinding is a variable binding attached to an outbound TRAP.

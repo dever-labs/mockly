@@ -453,6 +453,15 @@ type HTTPResponse struct {
 // events written over time instead of one static body.
 type HTTPStream struct {
 	Events []HTTPStreamEvent `yaml:"events" json:"events"`
+
+	// KeepOpen, when true, leaves the response open after Events is
+	// exhausted instead of ending it, so the stream management API
+	// (POST /api/streams/push, POST /api/streams/close) can deliver
+	// further ad-hoc events or explicitly close the connection. The
+	// response only ends when the client disconnects or the API closes
+	// it. Defaults to false: the response ends normally once Events has
+	// been fully written, preserving prior behavior.
+	KeepOpen bool `yaml:"keep_open,omitempty" json:"keep_open,omitempty"`
 }
 
 // HTTPStreamEvent is a single flushed chunk of a streamed response.
@@ -582,6 +591,18 @@ type GRPCMock struct {
 	//     once Stream is exhausted, any further client messages are drained
 	//     silently until it half-closes.
 	Stream []GRPCStreamMessage `yaml:"stream,omitempty" json:"stream,omitempty"`
+
+	// KeepOpen, when true, leaves a streaming RPC (server- or
+	// bidirectional-streaming, i.e. len(Stream) > 0) open after Stream is
+	// exhausted instead of returning, so the stream management API
+	// (POST /api/streams/push, POST /api/streams/close) can deliver
+	// further ad-hoc messages or explicitly end the call (optionally as an
+	// error). The RPC only ends when the client disconnects, half-closes
+	// (server-streaming) and all configured/pushed messages have been
+	// sent, or the API explicitly closes it. Defaults to false: the RPC
+	// returns normally once Stream has been fully sent, preserving prior
+	// behavior. Ignored when Stream is empty.
+	KeepOpen bool `yaml:"keep_open,omitempty" json:"keep_open,omitempty"`
 }
 
 // GRPCStreamMessage is a single message sent as part of a streaming
@@ -620,6 +641,30 @@ type GraphQLMock struct {
 	Errors        []GraphQLError         `yaml:"errors,omitempty" json:"errors,omitempty"`
 	Delay         Duration               `yaml:"delay,omitempty" json:"delay,omitempty"`
 	State         *StateCondition        `yaml:"state,omitempty" json:"state,omitempty"`
+
+	// Stream, when set, turns this mock into a live subscription instead of
+	// a single query/mutation response (typically paired with
+	// operation_type: subscription): a client that connects over
+	// graphql-transport-ws and subscribes to this operation gets each
+	// listed event pushed in order as a "next" message, then a "complete"
+	// message. Requesting a Stream mock over plain HTTP (no WebSocket
+	// upgrade) returns an error directing the client to the WebSocket
+	// transport instead, since there's no way to push multiple messages
+	// over a single HTTP response.
+	Stream []GraphQLStreamEvent `yaml:"stream,omitempty" json:"stream,omitempty"`
+}
+
+// GraphQLStreamEvent is a single message pushed to a GraphQL subscription
+// (see GraphQLMock.Stream) as a graphql-transport-ws "next" message.
+type GraphQLStreamEvent struct {
+	// Data is the full GraphQL execution result for this event (e.g.
+	// `{"data":{"field":...}}`), rendered as a Go template (same {{ }}
+	// syntax as Response) before being sent as the "next" message's
+	// payload verbatim, so it must render to valid JSON.
+	Data string `yaml:"data" json:"data"`
+
+	// Delay is slept before sending this event.
+	Delay Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
 }
 
 type GraphQLError struct {

@@ -21,6 +21,7 @@ import (
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/streamregistry"
 	"github.com/dever-labs/mockly/internal/tlsutil"
 	"github.com/dever-labs/mockly/internal/webhook"
 )
@@ -32,6 +33,7 @@ type Server struct {
 	scenarios *scenarios.Store
 	log       *logger.Logger
 	webhooks  *webhook.Sender
+	streams   *streamregistry.Registry
 
 	mu         sync.RWMutex
 	mocks      []config.HTTPMock
@@ -51,6 +53,7 @@ func New(cfg *config.HTTPConfig, store *state.Store, sc *scenarios.Store, log *l
 		scenarios:  sc,
 		log:        log,
 		webhooks:   wh,
+		streams:    streamregistry.New(),
 		mocks:      append([]config.HTTPMock(nil), cfg.Mocks...),
 		callCounts: make(map[string]int64),
 	}
@@ -523,7 +526,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(status)
 
 	if stream != nil && len(stream.Events) > 0 {
-		s.writeStream(w, respHdrs, stream, reqCtx)
+		s.writeStream(w, r, respHdrs, stream, reqCtx, matchedID)
 	} else {
 		_, _ = fmt.Fprint(w, respBody)
 	}
@@ -828,18 +831,25 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 // rendered Data, then a blank line); otherwise the rendered Data is written
 // and flushed as-is (plain chunked/flushed streaming, no SSE framing).
 //
+// If stream.KeepOpen is false (the default), the response ends normally
+// once Events is exhausted — this matches a regular HTTP response's
+// expected semantics and preserves prior behavior.
+//
+// If stream.KeepOpen is true, the response is NOT closed once Events is
+// exhausted — the connection stays open and registered with the stream
+// registry, so the management API's stream-push endpoint can deliver
+// further ad-hoc events (or close the connection, optionally as an error)
+// on top of what was configured. It only ends when the client disconnects
+// (r.Context() is done) or the API explicitly closes it.
+//
 // If the ResponseWriter doesn't support http.Flusher (shouldn't happen with
 // the standard net/http server used here), events are still written, just
 // without incremental flushing.
-func (s *Server) writeStream(w http.ResponseWriter, headers map[string]string, stream *config.HTTPStream, reqCtx engine.RequestContext) {
+func (s *Server) writeStream(w http.ResponseWriter, r *http.Request, headers map[string]string, stream *config.HTTPStream, reqCtx engine.RequestContext, matchedID string) {
 	fl, _ := w.(http.Flusher)
 	isSSE := strings.Contains(strings.ToLower(headers["Content-Type"]), "text/event-stream")
 
-	for _, ev := range stream.Events {
-		if ev.Delay.Duration > 0 {
-			time.Sleep(ev.Delay.Duration)
-		}
-		data := engine.Render(ev.Data, reqCtx)
+	write := func(ev config.HTTPStreamEvent, data string) {
 		if isSSE {
 			if ev.Event != "" {
 				_, _ = fmt.Fprintf(w, "event: %s\n", ev.Event)
@@ -858,5 +868,100 @@ func (s *Server) writeStream(w http.ResponseWriter, headers map[string]string, s
 			fl.Flush()
 		}
 	}
+
+	if !stream.KeepOpen {
+		// Default behavior: write the configured events in order and end
+		// the response once they're exhausted.
+		for _, ev := range stream.Events {
+			if ev.Delay.Duration > 0 {
+				time.Sleep(ev.Delay.Duration)
+			}
+			write(ev, engine.Render(ev.Data, reqCtx))
+		}
+		return
+	}
+
+	pushCh := make(chan string, 16)
+	closeCh := make(chan string, 1)
+	connID := fmt.Sprintf("http-%p", r)
+	unregister := s.streams.Register(&streamregistry.Connection{
+		Info: streamregistry.Info{ID: connID, Protocol: "http", MockID: matchedID, StartedAt: time.Now()},
+		Push: func(data string) error {
+			select {
+			case pushCh <- data:
+				return nil
+			default:
+				return fmt.Errorf("push buffer full for stream connection %q", connID)
+			}
+		},
+		Close: func(errMsg string) {
+			select {
+			case closeCh <- errMsg:
+			default:
+			}
+		},
+	})
+	defer unregister()
+
+	idx := 0
+	for {
+		var timerC <-chan time.Time
+		var timer *time.Timer
+		if idx < len(stream.Events) {
+			timer = time.NewTimer(stream.Events[idx].Delay.Duration)
+			timerC = timer.C
+		}
+
+		select {
+		case <-r.Context().Done():
+			if timer != nil {
+				timer.Stop()
+			}
+			return
+		case errMsg := <-closeCh:
+			if timer != nil {
+				timer.Stop()
+			}
+			if errMsg != "" {
+				write(config.HTTPStreamEvent{Event: "error"}, errMsg)
+			}
+			return
+		case data := <-pushCh:
+			if timer != nil {
+				timer.Stop()
+			}
+			write(config.HTTPStreamEvent{}, data)
+		case <-timerC:
+			ev := stream.Events[idx]
+			idx++
+			write(ev, engine.Render(ev.Data, reqCtx))
+		}
+	}
 }
 
+
+// ListStreams returns info about every currently active (open, KeepOpen)
+// HTTP streaming connection.
+func (s *Server) ListStreams() []streamregistry.Info {
+	return s.streams.List()
+}
+
+// PushStream delivers data as an ad-hoc chunk to either one specific
+// streaming connection (connID) or every currently open connection serving
+// mockID, in addition to whatever that connection's configured stream
+// events already send. data is written verbatim (SSE-framed if the
+// response's Content-Type is text/event-stream, raw otherwise) — it is not
+// templated, and may be any text, not just JSON. Only connections opened
+// with stream.keep_open: true can be targeted; others end on their own
+// once their configured events are sent.
+func (s *Server) PushStream(connID, mockID, data string) (int, error) {
+	return s.streams.Push(connID, mockID, data)
+}
+
+// CloseStream ends either one specific streaming connection (connID) or
+// every currently open connection serving mockID. If errMsg is non-empty,
+// one final SSE "error" event carrying errMsg is written before the
+// response ends.
+func (s *Server) CloseStream(connID, mockID, errMsg string) (int, error) {
+	return s.streams.CloseConn(connID, mockID, errMsg)
+}

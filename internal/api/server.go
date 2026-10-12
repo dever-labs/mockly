@@ -25,6 +25,7 @@ import (
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/streamregistry"
 	"github.com/dever-labs/mockly/internal/tlsutil"
 	"github.com/dever-labs/mockly/internal/webhook"
 )
@@ -35,6 +36,18 @@ type ProtocolServer interface {
 	StatusInfo() map[string]interface{}
 }
 
+// StreamProtocol is implemented by each protocol server that supports
+// long-lived (stream.keep_open: true / keep_open: true) streaming
+// connections, letting the stream management API (GET /api/streams,
+// POST /api/streams/push, POST /api/streams/close) list, push ad-hoc data
+// into, and close them, in addition to whatever those connections'
+// configured mock events already send.
+type StreamProtocol interface {
+	ListStreams() []streamregistry.Info
+	PushStream(connID, mockID, data string) (int, error)
+	CloseStream(connID, mockID, errMsg string) (int, error)
+}
+
 // HTTPProtocol is the subset of httpserver.Server used by the API.
 type HTTPProtocol interface {
 	ProtocolServer
@@ -42,6 +55,7 @@ type HTTPProtocol interface {
 	SetMocks([]config.HTTPMock)
 	CallCount(mockID string) int64
 	ResetCallCounts()
+	StreamProtocol
 }
 
 // WSProtocol is the subset of wsserver.Server used by the API.
@@ -56,6 +70,7 @@ type GRPCProtocol interface {
 	ProtocolServer
 	GetMocks() []config.GRPCMock
 	SetMocks([]config.GRPCMock)
+	StreamProtocol
 }
 
 // GraphQLProtocol is the subset of graphqlserver.Server used by the API.
@@ -63,6 +78,7 @@ type GraphQLProtocol interface {
 	ProtocolServer
 	GetMocks() []config.GraphQLMock
 	SetMocks([]config.GraphQLMock)
+	StreamProtocol
 }
 
 // TCPProtocol is the subset of tcpserver.Server used by the API.
@@ -356,6 +372,15 @@ func (s *Server) buildRouter() http.Handler {
 		r.Get("/api/snmp/traps", s.listSNMPTraps)
 		r.Post("/api/snmp/traps", s.addSNMPTrap)
 		r.Post("/api/snmp/traps/{id}/send", s.sendSNMPTrap)
+
+		// Cross-protocol streaming connection management (HTTP SSE/chunked
+		// with stream.keep_open: true, gRPC streaming with keep_open: true,
+		// and GraphQL subscriptions — all of which stay open indefinitely
+		// once their configured events run out, accepting further ad-hoc
+		// data or an explicit close via this API).
+		r.Get("/api/streams", s.listStreams)
+		r.Post("/api/streams/push", s.pushStream)
+		r.Post("/api/streams/close", s.closeStream)
 
 		r.Get("/api/mocks/dns", s.listDNSMocks)
 		r.Post("/api/mocks/dns", s.addDNSMock)
@@ -1657,6 +1682,101 @@ func (s *Server) sendSNMPTrap(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"sent": id})
 }
+
+// streamProtocols returns the registered StreamProtocol for name
+// ("http"/"grpc"/"graphql"), or nil (with ok=false) if name is unknown or
+// that protocol isn't enabled/registered.
+func (s *Server) streamProtocolByName(name string) (StreamProtocol, bool) {
+	switch name {
+	case "http":
+		if s.http == nil {
+			return nil, false
+		}
+		return s.http, true
+	case "grpc":
+		if s.grpc == nil {
+			return nil, false
+		}
+		return s.grpc, true
+	case "graphql":
+		if s.graphql == nil {
+			return nil, false
+		}
+		return s.graphql, true
+	default:
+		return nil, false
+	}
+}
+
+// listStreams returns every currently open streaming connection (HTTP
+// stream.keep_open, gRPC keep_open, GraphQL subscription) across all
+// enabled protocols.
+func (s *Server) listStreams(w http.ResponseWriter, _ *http.Request) {
+	out := []streamregistry.Info{}
+	for _, name := range []string{"http", "grpc", "graphql"} {
+		if p, ok := s.streamProtocolByName(name); ok {
+			out = append(out, p.ListStreams()...)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// streamTargetRequest is the shared shape of POST /api/streams/push and
+// POST /api/streams/close request bodies.
+type streamTargetRequest struct {
+	Protocol string `json:"protocol"` // "http", "grpc", or "graphql"
+	ConnID   string `json:"conn_id"`  // targets one specific connection
+	MockID   string `json:"mock_id"`  // targets every open connection for this mock
+	Data     string `json:"data"`     // push only: the ad-hoc payload to deliver
+	Error    string `json:"error"`    // close only: non-empty ends the connection as an error
+}
+
+func (s *Server) pushStream(w http.ResponseWriter, r *http.Request) {
+	var body streamTargetRequest
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.ConnID == "" && body.MockID == "" {
+		writeError(w, http.StatusBadRequest, "conn_id or mock_id is required")
+		return
+	}
+	p, ok := s.streamProtocolByName(body.Protocol)
+	if !ok {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown or unavailable protocol %q (want http, grpc, or graphql)", body.Protocol))
+		return
+	}
+	n, err := p.PushStream(body.ConnID, body.MockID, body.Data)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"reached": n})
+}
+
+func (s *Server) closeStream(w http.ResponseWriter, r *http.Request) {
+	var body streamTargetRequest
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.ConnID == "" && body.MockID == "" {
+		writeError(w, http.StatusBadRequest, "conn_id or mock_id is required")
+		return
+	}
+	p, ok := s.streamProtocolByName(body.Protocol)
+	if !ok {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown or unavailable protocol %q (want http, grpc, or graphql)", body.Protocol))
+		return
+	}
+	n, err := p.CloseStream(body.ConnID, body.MockID, body.Error)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"reached": n})
+}
+
 
 func (s *Server) getState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.store.All())

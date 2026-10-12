@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dever-labs/mockly/internal/config"
@@ -207,5 +208,36 @@ func TestHandleGraphQL_FaultCustomStatus(t *testing.T) {
 	rr := doRequest(t, srv, map[string]interface{}{"query": "query GetUser { user { id } }", "operationName": "GetUser"})
 	if rr.Code != http.StatusTooManyRequests {
 		t.Errorf("want 429 from fault, got %d", rr.Code)
+	}
+}
+
+func TestHandleGraphQL_SubscriptionMockOverHTTP_ReturnsError(t *testing.T) {
+	mocks := []config.GraphQLMock{{
+		ID:            "order-updates-sub",
+		OperationType: "subscription",
+		OperationName: "onOrderUpdate",
+		Stream: []config.GraphQLStreamEvent{
+			{Data: `{"data":{"onOrderUpdate":{"status":"pending"}}}`},
+		},
+	}}
+	srv := newTestServer(mocks)
+
+	rr := doRequest(t, srv, map[string]interface{}{
+		"query":         "subscription onOrderUpdate { onOrderUpdate { status } }",
+		"operationName": "onOrderUpdate",
+	})
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("want 200, got %d", rr.Code)
+	}
+	var resp map[string]interface{}
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp["errors"] == nil {
+		t.Fatal("expected an errors field directing the client to the WebSocket transport")
+	}
+	errs := resp["errors"].([]interface{})
+	msg := errs[0].(map[string]interface{})["message"].(string)
+	if !strings.Contains(msg, "WebSocket") {
+		t.Errorf("message = %q, want it to mention WebSocket", msg)
 	}
 }

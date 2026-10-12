@@ -1,6 +1,7 @@
 package httpserver_test
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -19,12 +20,22 @@ import (
 	"github.com/dever-labs/mockly/internal/protocols/httpserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/streamregistry"
 	"github.com/dever-labs/mockly/internal/testutil"
 )
 
 // startTestServer starts an HTTP mock server on a free port and returns its base URL.
 // The server is stopped automatically when the test ends.
 func startTestServer(t *testing.T, mocks []config.HTTPMock, sc *scenarios.Store) string {
+	t.Helper()
+	base, _ := startTestServerWithHandle(t, mocks, sc)
+	return base
+}
+
+// startTestServerWithHandle is like startTestServer but also returns the
+// *httpserver.Server itself, for tests that need to call its stream
+// management methods (ListStreams/PushStream/CloseStream).
+func startTestServerWithHandle(t *testing.T, mocks []config.HTTPMock, sc *scenarios.Store) (string, *httpserver.Server) {
 	t.Helper()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -52,7 +63,7 @@ func startTestServer(t *testing.T, mocks []config.HTTPMock, sc *scenarios.Store)
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
 	waitForHTTP(t, base, 2*time.Second)
-	return base
+	return base, srv
 }
 
 func TestHTTPServer_BasicGET(t *testing.T) {
@@ -988,6 +999,157 @@ func TestHTTPServer_Stream_DefaultsContentTypeWhenUnset(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) != "raw-chunk" {
 		t.Errorf("want raw-chunk, got %q", body)
+	}
+}
+
+func TestHTTPServer_Stream_KeepOpen_ListAndPush(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "keep-open-sse",
+		Request: config.HTTPRequest{Method: "GET", Path: "/keep-open"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "text/event-stream"},
+			Stream: &config.HTTPStream{
+				KeepOpen: true,
+				Events:   []config.HTTPStreamEvent{{Data: `{"n":1}`}},
+			},
+		},
+	}}
+	base, srv := startTestServerWithHandle(t, mocks, nil)
+
+	resp, err := http.Get(base + "/keep-open")
+	if err != nil {
+		t.Fatalf("GET /keep-open: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	r := bufio.NewReader(resp.Body)
+
+	readEvent := func() string {
+		t.Helper()
+		var lines []string
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				t.Fatalf("reading SSE line: %v", err)
+			}
+			if line == "\n" {
+				return strings.Join(lines, "\n")
+			}
+			lines = append(lines, strings.TrimRight(line, "\n"))
+		}
+	}
+
+	if got := readEvent(); got != `data: {"n":1}` {
+		t.Fatalf("want configured event, got %q", got)
+	}
+
+	var info []streamregistry.Info
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		info = srv.ListStreams()
+		if len(info) == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(info) != 1 {
+		t.Fatalf("want 1 active stream after configured events are exhausted, got %d", len(info))
+	}
+	if info[0].Protocol != "http" || info[0].MockID != "keep-open-sse" {
+		t.Errorf("want protocol=http mockID=keep-open-sse, got %+v", info[0])
+	}
+
+	n, err := srv.PushStream("", "keep-open-sse", `{"n":2}`)
+	if err != nil || n != 1 {
+		t.Fatalf("PushStream: n=%d err=%v", n, err)
+	}
+	if got := readEvent(); got != `data: {"n":2}` {
+		t.Fatalf("want pushed event, got %q", got)
+	}
+
+	n, err = srv.CloseStream("", "keep-open-sse", "")
+	if err != nil || n != 1 {
+		t.Fatalf("CloseStream: n=%d err=%v", n, err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading remaining body after close: %v", err)
+	}
+	if len(body) != 0 {
+		t.Errorf("want no further data after a clean close, got %q", body)
+	}
+}
+
+func TestHTTPServer_Stream_KeepOpen_CloseWithError(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "keep-open-err",
+		Request: config.HTTPRequest{Method: "GET", Path: "/keep-open-err"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "text/event-stream"},
+			Stream: &config.HTTPStream{
+				KeepOpen: true,
+				Events:   []config.HTTPStreamEvent{{Data: "hello"}},
+			},
+		},
+	}}
+	base, srv := startTestServerWithHandle(t, mocks, nil)
+
+	resp, err := http.Get(base + "/keep-open-err")
+	if err != nil {
+		t.Fatalf("GET /keep-open-err: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(srv.ListStreams()) == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if _, err := srv.CloseStream("", "keep-open-err", "boom"); err != nil {
+		t.Fatalf("CloseStream: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading body: %v", err)
+	}
+	if !strings.Contains(string(body), "hello") || !strings.Contains(string(body), "event: error") ||
+		!strings.Contains(string(body), "data: boom") {
+		t.Errorf("want configured event plus an SSE error event with boom, got %q", body)
+	}
+}
+
+func TestHTTPServer_Stream_DefaultKeepOpenFalseEndsResponse(t *testing.T) {
+	mocks := []config.HTTPMock{{
+		ID:      "no-keep-open",
+		Request: config.HTTPRequest{Method: "GET", Path: "/no-keep-open"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "text/event-stream"},
+			Stream: &config.HTTPStream{
+				Events: []config.HTTPStreamEvent{{Data: "only-event"}},
+			},
+		},
+	}}
+	base, srv := startTestServerWithHandle(t, mocks, nil)
+
+	resp, err := http.Get(base + "/no-keep-open")
+	if err != nil {
+		t.Fatalf("GET /no-keep-open: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading body: %v", err)
+	}
+	if !strings.Contains(string(body), "only-event") {
+		t.Errorf("want configured event, got %q", body)
+	}
+	if got := srv.ListStreams(); len(got) != 0 {
+		t.Errorf("want no registered streams for a non-keep_open stream, got %d", len(got))
 	}
 }
 

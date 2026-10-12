@@ -21,6 +21,7 @@ import (
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/streamregistry"
 	"github.com/dever-labs/mockly/internal/tlsutil"
 )
 
@@ -30,6 +31,7 @@ type Server struct {
 	store     *state.Store
 	scenarios *scenarios.Store
 	log       *logger.Logger
+	streams   *streamregistry.Registry
 
 	mu     sync.RWMutex
 	mocks  []config.GraphQLMock
@@ -43,6 +45,7 @@ func New(cfg *config.GraphQLConfig, store *state.Store, sc *scenarios.Store, log
 		store:     store,
 		scenarios: sc,
 		log:       log,
+		streams:   streamregistry.New(),
 		mocks:     append([]config.GraphQLMock(nil), cfg.Mocks...),
 	}
 }
@@ -310,7 +313,20 @@ func (s *Server) handleSubscriptionConn(w http.ResponseWriter, r *http.Request) 
 			activeMu.Lock()
 			active[id] = cancel
 			activeMu.Unlock()
-			go s.runSubscription(subCtx, conn, &writeMu, id, payload, r)
+			go func() {
+				defer func() {
+					// Always release the context (required even on a
+					// normal, non-cancelled finish) and drop the map entry
+					// once this subscription is done, whether it finished
+					// naturally (stream exhausted, no match, fault) or was
+					// cancelled by a client "complete"/connection close.
+					activeMu.Lock()
+					delete(active, id)
+					activeMu.Unlock()
+					cancel()
+				}()
+				s.runSubscription(subCtx, conn, &writeMu, id, payload, r)
+			}()
 		case "complete":
 			activeMu.Lock()
 			if cancel, ok := active[msg.ID]; ok {
@@ -337,12 +353,17 @@ func wsErrorPayload(message string) json.RawMessage {
 	return b
 }
 
-// runSubscription drives a single "subscribe" request to completion: it
-// matches req against the configured mocks same as a query/mutation would,
-// then pushes each of the matched mock's Stream events in order as "next"
-// messages (respecting each event's Delay, and stopping immediately if ctx
-// is cancelled by a client "complete" or the connection closing), finishing
-// with a "complete" message.
+// runSubscription drives a single "subscribe" request: it matches req
+// against the configured mocks same as a query/mutation would, then pushes
+// each of the matched mock's Stream events in order as "next" messages
+// (respecting each event's Delay). Once the configured list is exhausted,
+// the subscription is NOT completed automatically — it stays open,
+// registered with the stream registry, waiting for either an externally
+// pushed event (via the management API's stream-push endpoint), an
+// explicit close (via the same API), the client sending "complete", or the
+// connection closing. This mirrors how a real subscription behaves: it
+// keeps delivering events for as long as the thing it's subscribed to is
+// still producing them, not just for a fixed configured count.
 func (s *Server) runSubscription(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, id string, req graphqlRequest, httpReq *http.Request) {
 	start := time.Now()
 	opType := extractOperationType(req.Query)
@@ -375,40 +396,95 @@ func (s *Server) runSubscription(ctx context.Context, conn *websocket.Conn, writ
 
 	reqCtx := engine.RequestContext{Path: httpReq.URL.Path, Body: req.Query}
 
-	for _, ev := range mock.Stream {
-		if ev.Delay.Duration > 0 {
+	connID := fmt.Sprintf("graphql-%p-%s", conn, id)
+	pushCh := make(chan string, 16)
+	closeCh := make(chan string, 1)
+	unregister := s.streams.Register(&streamregistry.Connection{
+		Info: streamregistry.Info{ID: connID, Protocol: "graphql", MockID: mock.ID, StartedAt: start},
+		Push: func(data string) error {
 			select {
-			case <-time.After(ev.Delay.Duration):
-			case <-ctx.Done():
-				return
+			case pushCh <- data:
+				return nil
+			default:
+				return fmt.Errorf("push buffer full for subscription %q", connID)
 			}
-		}
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
+		},
+		Close: func(errMsg string) {
+			select {
+			case closeCh <- errMsg:
+			default:
+			}
+		},
+	})
+	defer unregister()
 
-		data := engine.Render(ev.Data, reqCtx)
+	sendEvent := func(data string) (ok bool) {
 		if !json.Valid([]byte(data)) {
 			writeWSMessage(conn, writeMu, graphqlWSMessage{
 				ID: id, Type: "error",
-				Payload: wsErrorPayload(fmt.Sprintf("configured stream event data is not valid JSON after templating: %q", data)),
+				Payload: wsErrorPayload(fmt.Sprintf("stream event data is not valid JSON: %q", data)),
 			})
-			return
+			return false
 		}
 		writeWSMessage(conn, writeMu, graphqlWSMessage{ID: id, Type: "next", Payload: json.RawMessage(data)})
+		return true
 	}
 
-	writeWSMessage(conn, writeMu, graphqlWSMessage{ID: id, Type: "complete"})
+	idx := 0
+	for {
+		var timerC <-chan time.Time
+		var timer *time.Timer
+		if idx < len(mock.Stream) {
+			timer = time.NewTimer(mock.Stream[idx].Delay.Duration)
+			timerC = timer.C
+		}
 
+		select {
+		case <-ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
+			return
+		case errMsg := <-closeCh:
+			if timer != nil {
+				timer.Stop()
+			}
+			if errMsg != "" {
+				writeWSMessage(conn, writeMu, graphqlWSMessage{ID: id, Type: "error", Payload: wsErrorPayload(errMsg)})
+			} else {
+				writeWSMessage(conn, writeMu, graphqlWSMessage{ID: id, Type: "complete"})
+			}
+			s.logSubscription(opType, req.OperationName, mock.ID, start)
+			return
+		case data := <-pushCh:
+			if timer != nil {
+				timer.Stop()
+			}
+			if !sendEvent(data) {
+				s.logSubscription(opType, req.OperationName, mock.ID, start)
+				return
+			}
+			// An externally pushed event doesn't consume the configured
+			// schedule; keep waiting for idx's own timer next iteration.
+		case <-timerC:
+			ev := mock.Stream[idx]
+			idx++
+			if !sendEvent(engine.Render(ev.Data, reqCtx)) {
+				s.logSubscription(opType, req.OperationName, mock.ID, start)
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) logSubscription(opType, opName, mockID string, start time.Time) {
 	s.log.Log(logger.Entry{
 		Protocol:  "graphql",
 		Method:    opType,
-		Path:      req.OperationName,
+		Path:      opName,
 		Status:    http.StatusOK,
 		Duration:  time.Since(start).Milliseconds(),
-		MatchedID: mock.ID,
+		MatchedID: mockID,
 	})
 }
 
@@ -455,6 +531,31 @@ func extractOperationType(query string) string {
 		return "subscription"
 	}
 	return "query"
+}
+
+// ListStreams returns info about every currently active subscription.
+func (s *Server) ListStreams() []streamregistry.Info {
+	return s.streams.List()
+}
+
+// PushStream sends data as an ad-hoc "next" message to either one specific
+// subscription (connID) or every currently active subscription serving
+// mockID, in addition to whatever that subscription's configured stream
+// list already sends. data must be valid JSON (the GraphQL execution
+// result, e.g. `{"data":{...}}`); it is sent verbatim, not templated.
+func (s *Server) PushStream(connID, mockID, data string) (int, error) {
+	if !json.Valid([]byte(data)) {
+		return 0, fmt.Errorf("data is not valid JSON: %q", data)
+	}
+	return s.streams.Push(connID, mockID, data)
+}
+
+// CloseStream ends either one specific subscription (connID) or every
+// currently active subscription serving mockID. If errMsg is non-empty the
+// subscription ends with a graphql-transport-ws "error" message instead of
+// "complete".
+func (s *Server) CloseStream(connID, mockID, errMsg string) (int, error) {
+	return s.streams.CloseConn(connID, mockID, errMsg)
 }
 
 // StatusInfo returns JSON-serialisable server info.

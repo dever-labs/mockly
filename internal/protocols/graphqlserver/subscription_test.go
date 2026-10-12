@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"runtime"
 	"testing"
 	"time"
 
@@ -129,7 +130,7 @@ func TestSubscription_NextMessagesThenComplete(t *testing.T) {
 			{Data: `{"data":{"onOrderUpdate":{"status":"shipped"}}}`},
 		},
 	}}
-	_, conn := startSubTestServer(t, mocks)
+	srv, conn := startSubTestServer(t, mocks)
 
 	writeTestWSMessage(t, conn, graphqlWSMessage{Type: "connection_init"})
 	if msg := readWSMessage(t, conn); msg.Type != "connection_ack" {
@@ -164,6 +165,17 @@ func TestSubscription_NextMessagesThenComplete(t *testing.T) {
 		t.Errorf("status2 = %v, want shipped", status2)
 	}
 
+	// The configured stream is now exhausted, but the subscription stays
+	// open (see runSubscription) rather than auto-completing. Per the
+	// graphql-transport-ws protocol, a client-sent "complete" just
+	// unsubscribes silently (no reply) — that's covered separately by
+	// TestSubscription_CompleteCancelsRemainingEvents. Ending it via the
+	// management API's stream-close path, however, does notify the
+	// client with a "complete" message, since the client didn't ask for
+	// it.
+	if n, err := srv.CloseStream("", "order-updates-sub", ""); err != nil || n != 1 {
+		t.Fatalf("CloseStream() = (%d, %v), want (1, nil)", n, err)
+	}
 	msg3 := readWSMessage(t, conn)
 	if msg3.ID != "1" || msg3.Type != "complete" {
 		t.Fatalf("message 3 = %+v, want complete/id=1", msg3)
@@ -304,7 +316,7 @@ func TestSubscription_MultiplexedByID(t *testing.T) {
 	writeTestWSMessage(t, conn, graphqlWSMessage{ID: "b", Type: "subscribe", Payload: payloadB})
 
 	seen := map[string]bool{}
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 2; i++ {
 		msg := readWSMessage(t, conn)
 		if msg.Type == "next" {
 			seen[msg.ID] = true
@@ -312,5 +324,158 @@ func TestSubscription_MultiplexedByID(t *testing.T) {
 	}
 	if !seen["a"] || !seen["b"] {
 		t.Errorf("seen = %v, want both subscription ids to have produced a next message", seen)
+	}
+}
+
+// TestSubscription_NaturalCompletionReleasesContext guards against the
+// active-subscription map (and its context.CancelFuncs) only ever being
+// cleaned up on an explicit client "complete" or connection close.
+// context.WithCancel's CancelFunc must always be called or it leaks: it
+// stays registered with the parent context's internal child list until
+// cancelled. Running many subscriptions that each finish naturally (no
+// client "complete") must not leave the goroutine/context count growing
+// unbounded.
+func TestSubscription_NaturalCompletionReleasesContext(t *testing.T) {
+	const rounds = 50
+	var mocks []config.GraphQLMock
+	for i := 0; i < rounds; i++ {
+		opName := "Sub" + itoa(i)
+		mocks = append(mocks, config.GraphQLMock{
+			ID:            "sub-" + itoa(i),
+			OperationName: opName,
+			Stream:        []config.GraphQLStreamEvent{{Data: `{"data":{"n":1}}`}},
+		})
+	}
+	srv, conn := startSubTestServer(t, mocks)
+
+	before := runtime.NumGoroutine()
+	for i := 0; i < rounds; i++ {
+		opName := "Sub" + itoa(i)
+		mockID := "sub-" + itoa(i)
+		payload, _ := json.Marshal(map[string]interface{}{"query": "subscription " + opName + " { n }", "operationName": opName})
+		writeTestWSMessage(t, conn, graphqlWSMessage{ID: itoa(i), Type: "subscribe", Payload: payload})
+		if next := readWSMessage(t, conn); next.Type != "next" {
+			t.Fatalf("round %d: type = %q, want next", i, next.Type)
+		}
+		// Subscriptions stay open after their configured stream is
+		// exhausted (see runSubscription); end this one via the same
+		// CloseStream path the management API uses, same as a client
+		// "complete" would, scoped to this round's own mock id so it
+		// can't race with the previous round's not-yet-unregistered
+		// connection.
+		if n, err := srv.CloseStream("", mockID, ""); err != nil || n != 1 {
+			t.Fatalf("round %d: CloseStream() = (%d, %v), want (1, nil)", i, n, err)
+		}
+		if done := readWSMessage(t, conn); done.Type != "complete" {
+			t.Fatalf("round %d: type = %q, want complete", i, done.Type)
+		}
+	}
+
+	// Give the per-subscription cleanup goroutines a moment to run after
+	// their final message is sent (the "complete" write happens just
+	// before the goroutine returns and its deferred cleanup runs).
+	var after int
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		after = runtime.NumGoroutine()
+		if after <= before+5 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if after > before+5 {
+		t.Errorf("goroutines before=%d after=%d rounds=%d; expected them to settle back down, suggesting a context/goroutine leak", before, after, rounds)
+	}
+}
+
+func TestSubscription_ListStreamsReportsActiveSubscription(t *testing.T) {
+	mocks := []config.GraphQLMock{
+		{ID: "list-sub", OperationName: "ListSub", Stream: []config.GraphQLStreamEvent{{Data: `{"data":{"n":1}}`}}},
+	}
+	srv, conn := startSubTestServer(t, mocks)
+
+	if got := srv.ListStreams(); len(got) != 0 {
+		t.Fatalf("ListStreams() before subscribe = %+v, want empty", got)
+	}
+
+	payload, _ := json.Marshal(map[string]interface{}{"query": "subscription ListSub { n }", "operationName": "ListSub"})
+	writeTestWSMessage(t, conn, graphqlWSMessage{ID: "1", Type: "subscribe", Payload: payload})
+	if msg := readWSMessage(t, conn); msg.Type != "next" {
+		t.Fatalf("Type = %q, want next", msg.Type)
+	}
+
+	got := srv.ListStreams()
+	if len(got) != 1 {
+		t.Fatalf("ListStreams() = %+v, want one entry", got)
+	}
+	if got[0].Protocol != "graphql" || got[0].MockID != "list-sub" {
+		t.Errorf("entry = %+v, want protocol=graphql mock_id=list-sub", got[0])
+	}
+}
+
+func TestSubscription_PushStreamDeliversAdHocEvent(t *testing.T) {
+	mocks := []config.GraphQLMock{
+		{ID: "push-sub", OperationName: "PushSub", Stream: []config.GraphQLStreamEvent{{Data: `{"data":{"n":1}}`}}},
+	}
+	srv, conn := startSubTestServer(t, mocks)
+
+	payload, _ := json.Marshal(map[string]interface{}{"query": "subscription PushSub { n }", "operationName": "PushSub"})
+	writeTestWSMessage(t, conn, graphqlWSMessage{ID: "1", Type: "subscribe", Payload: payload})
+	if msg := readWSMessage(t, conn); msg.Type != "next" {
+		t.Fatalf("configured event: type = %q, want next", msg.Type)
+	}
+
+	// The configured stream is exhausted, but the subscription stays open;
+	// an ad-hoc push (as the management API would issue) should be
+	// delivered as an extra "next" message, on top of what was configured.
+	if n, err := srv.PushStream("", "push-sub", `{"data":{"n":2}}`); err != nil || n != 1 {
+		t.Fatalf("PushStream() = (%d, %v), want (1, nil)", n, err)
+	}
+	msg := readWSMessage(t, conn)
+	if msg.ID != "1" || msg.Type != "next" {
+		t.Fatalf("message = %+v, want next/id=1", msg)
+	}
+	var body map[string]interface{}
+	_ = json.Unmarshal(msg.Payload, &body)
+	if body["data"].(map[string]interface{})["n"] != float64(2) {
+		t.Errorf("body = %v, want n=2", body)
+	}
+}
+
+func TestSubscription_PushStreamRejectsInvalidJSON(t *testing.T) {
+	mocks := []config.GraphQLMock{
+		{ID: "push-bad", OperationName: "PushBad", Stream: []config.GraphQLStreamEvent{{Data: `{"data":{"n":1}}`}}},
+	}
+	srv, conn := startSubTestServer(t, mocks)
+
+	payload, _ := json.Marshal(map[string]interface{}{"query": "subscription PushBad { n }", "operationName": "PushBad"})
+	writeTestWSMessage(t, conn, graphqlWSMessage{ID: "1", Type: "subscribe", Payload: payload})
+	if msg := readWSMessage(t, conn); msg.Type != "next" {
+		t.Fatalf("configured event: type = %q, want next", msg.Type)
+	}
+
+	if _, err := srv.PushStream("", "push-bad", "not json"); err == nil {
+		t.Error("PushStream() with invalid JSON, want error")
+	}
+}
+
+func TestSubscription_CloseStreamWithErrorSendsErrorMessage(t *testing.T) {
+	mocks := []config.GraphQLMock{
+		{ID: "close-err-sub", OperationName: "CloseErrSub", Stream: []config.GraphQLStreamEvent{{Data: `{"data":{"n":1}}`}}},
+	}
+	srv, conn := startSubTestServer(t, mocks)
+
+	payload, _ := json.Marshal(map[string]interface{}{"query": "subscription CloseErrSub { n }", "operationName": "CloseErrSub"})
+	writeTestWSMessage(t, conn, graphqlWSMessage{ID: "1", Type: "subscribe", Payload: payload})
+	if msg := readWSMessage(t, conn); msg.Type != "next" {
+		t.Fatalf("configured event: type = %q, want next", msg.Type)
+	}
+
+	if n, err := srv.CloseStream("", "close-err-sub", "upstream disconnected"); err != nil || n != 1 {
+		t.Fatalf("CloseStream() = (%d, %v), want (1, nil)", n, err)
+	}
+	msg := readWSMessage(t, conn)
+	if msg.ID != "1" || msg.Type != "error" {
+		t.Fatalf("message = %+v, want error/id=1", msg)
 	}
 }

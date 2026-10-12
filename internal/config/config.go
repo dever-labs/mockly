@@ -453,6 +453,15 @@ type HTTPResponse struct {
 // events written over time instead of one static body.
 type HTTPStream struct {
 	Events []HTTPStreamEvent `yaml:"events" json:"events"`
+
+	// KeepOpen, when true, leaves the response open after Events is
+	// exhausted instead of ending it, so the stream management API
+	// (POST /api/streams/push, POST /api/streams/close) can deliver
+	// further ad-hoc events or explicitly close the connection. The
+	// response only ends when the client disconnects or the API closes
+	// it. Defaults to false: the response ends normally once Events has
+	// been fully written, preserving prior behavior.
+	KeepOpen bool `yaml:"keep_open,omitempty" json:"keep_open,omitempty"`
 }
 
 // HTTPStreamEvent is a single flushed chunk of a streamed response.
@@ -582,6 +591,18 @@ type GRPCMock struct {
 	//     once Stream is exhausted, any further client messages are drained
 	//     silently until it half-closes.
 	Stream []GRPCStreamMessage `yaml:"stream,omitempty" json:"stream,omitempty"`
+
+	// KeepOpen, when true, leaves a streaming RPC (server- or
+	// bidirectional-streaming, i.e. len(Stream) > 0) open after Stream is
+	// exhausted instead of returning, so the stream management API
+	// (POST /api/streams/push, POST /api/streams/close) can deliver
+	// further ad-hoc messages or explicitly end the call (optionally as an
+	// error). The RPC only ends when the client disconnects, half-closes
+	// (server-streaming) and all configured/pushed messages have been
+	// sent, or the API explicitly closes it. Defaults to false: the RPC
+	// returns normally once Stream has been fully sent, preserving prior
+	// behavior. Ignored when Stream is empty.
+	KeepOpen bool `yaml:"keep_open,omitempty" json:"keep_open,omitempty"`
 }
 
 // GRPCStreamMessage is a single message sent as part of a streaming

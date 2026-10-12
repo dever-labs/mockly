@@ -20,7 +20,37 @@ import (
 	"github.com/dever-labs/mockly/internal/protocols/smtpserver"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
+	"github.com/dever-labs/mockly/internal/streamregistry"
 )
+
+// stubStream is a minimal in-memory StreamProtocol implementation shared by
+// stubHTTP/stubGRPC/stubGraphQL, so API-layer tests can exercise
+// GET /api/streams, POST /api/streams/push, and POST /api/streams/close
+// without a real protocol server.
+type stubStream struct {
+	infos  []streamregistry.Info
+	pushes []struct{ connID, mockID, data string }
+	closes []struct{ connID, mockID, errMsg string }
+	err    error
+}
+
+func (s *stubStream) ListStreams() []streamregistry.Info { return s.infos }
+
+func (s *stubStream) PushStream(connID, mockID, data string) (int, error) {
+	if s.err != nil {
+		return 0, s.err
+	}
+	s.pushes = append(s.pushes, struct{ connID, mockID, data string }{connID, mockID, data})
+	return 1, nil
+}
+
+func (s *stubStream) CloseStream(connID, mockID, errMsg string) (int, error) {
+	if s.err != nil {
+		return 0, s.err
+	}
+	s.closes = append(s.closes, struct{ connID, mockID, errMsg string }{connID, mockID, errMsg})
+	return 1, nil
+}
 
 // ---------------------------------------------------------------------------
 // Stub protocol implementations
@@ -29,6 +59,7 @@ import (
 type stubHTTP struct {
 	mocks      []config.HTTPMock
 	callCounts map[string]int64
+	stubStream
 }
 
 func (s *stubHTTP) StatusInfo() map[string]interface{} {
@@ -54,6 +85,7 @@ func (s *stubWS) SetMocks(m []config.WebSocketMock)  { s.mocks = m }
 
 type stubGRPC struct {
 	mocks []config.GRPCMock
+	stubStream
 }
 
 func (s *stubGRPC) StatusInfo() map[string]interface{} {
@@ -64,6 +96,7 @@ func (s *stubGRPC) SetMocks(m []config.GRPCMock) { s.mocks = m }
 
 type stubGraphQL struct {
 	mocks []config.GraphQLMock
+	stubStream
 }
 
 func (s *stubGraphQL) StatusInfo() map[string]interface{} {

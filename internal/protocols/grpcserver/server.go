@@ -355,11 +355,20 @@ func (s *Server) serveBidiStream(stream grpc.ServerStream, mock config.GRPCMock,
 		err  error
 	}
 	recvCh := make(chan recvResult)
+	recvStop := make(chan struct{})
+	defer close(recvStop)
 	go func() {
 		for {
 			var incoming []byte
 			err := stream.RecvMsg(&incoming)
-			recvCh <- recvResult{data: incoming, err: err}
+			select {
+			case recvCh <- recvResult{data: incoming, err: err}:
+			case <-recvStop:
+				// The call has already ended (ctx done / explicit close);
+				// nobody will ever read recvCh again, so give up instead
+				// of blocking forever on this send.
+				return
+			}
 			if err != nil {
 				return
 			}

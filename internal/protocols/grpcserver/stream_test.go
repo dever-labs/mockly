@@ -3,7 +3,9 @@ package grpcserver_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"runtime"
 	"testing"
 	"time"
 
@@ -463,5 +465,75 @@ func TestGRPCServer_Stream_DefaultKeepOpenFalseEndsCall(t *testing.T) {
 	}
 	if got := srv.ListStreams(); len(got) != 0 {
 		t.Errorf("want no registered streams for a non-keep_open stream, got %d", len(got))
+	}
+}
+
+// TestGRPCServer_BidiStream_KeepOpen_CloseWithoutHalfCloseReleasesRecvGoroutine
+// guards against a goroutine leak: closing a KeepOpen bidi call via the
+// admin API while the client is still connected (never called CloseSend,
+// so the background RecvMsg-reading goroutine is still blocked waiting for
+// a message) must not leak that goroutine once the call ends. Uses one
+// server and one client connection across all rounds (only the per-round
+// mock ID/method differs) so t.Cleanup-deferred teardown of per-round
+// servers/connections can't itself account for goroutine growth.
+func TestGRPCServer_BidiStream_KeepOpen_CloseWithoutHalfCloseReleasesRecvGoroutine(t *testing.T) {
+	const rounds = 20
+	mocks := make([]config.GRPCMock, rounds)
+	for i := 0; i < rounds; i++ {
+		mocks[i] = config.GRPCMock{
+			ID:           fmt.Sprintf("keep-open-no-half-close-%d", i),
+			Method:       fmt.Sprintf("KeepOpenNoHalfClose%d", i),
+			ClientStream: true,
+			KeepOpen:     true,
+			Stream: []config.GRPCStreamMessage{
+				{Response: map[string]interface{}{"n": 1}},
+			},
+		}
+	}
+	srv, addr := startGRPCServerRaw(t, mocks)
+	conn := dialTestServer(t, addr)
+
+	before := runtime.NumGoroutine()
+
+	for i := 0; i < rounds; i++ {
+		mockID := fmt.Sprintf("keep-open-no-half-close-%d", i)
+		method := fmt.Sprintf("KeepOpenNoHalfClose%d", i)
+
+		stream, err := conn.NewStream(context.Background(), bidiStreamDesc, "/svc/"+method)
+		if err != nil {
+			t.Fatalf("round %d: NewStream: %v", i, err)
+		}
+		if err := stream.SendMsg([]byte(`{}`)); err != nil {
+			t.Fatalf("round %d: SendMsg: %v", i, err)
+		}
+		_ = recvJSON(t, stream)
+
+		waitForStreamCount(t, srv, 1)
+		// Deliberately do NOT call CloseSend: the client stays connected,
+		// so the recv goroutine remains blocked inside RecvMsg when the
+		// admin API closes the call out from under it.
+		if _, err := srv.CloseStream("", mockID, ""); err != nil {
+			t.Fatalf("round %d: CloseStream: %v", i, err)
+		}
+
+		var trailing []byte
+		if err := stream.RecvMsg(&trailing); err != io.EOF {
+			t.Fatalf("round %d: expected io.EOF after close, got %v", i, err)
+		}
+	}
+
+	// Give any leaked/slow-to-exit goroutines a moment to actually unwind.
+	deadline := time.Now().Add(2 * time.Second)
+	var after int
+	for time.Now().Before(deadline) {
+		runtime.GC()
+		after = runtime.NumGoroutine()
+		if after <= before+5 { // small slack for unrelated background goroutines
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if after > before+5 {
+		t.Errorf("goroutine count grew from %d to %d after %d rounds on the same connection; recv goroutine may be leaking", before, after, rounds)
 	}
 }

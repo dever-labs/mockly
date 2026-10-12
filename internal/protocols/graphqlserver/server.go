@@ -14,8 +14,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/gorilla/websocket"
 
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/scenarios"
 	"github.com/dever-labs/mockly/internal/state"
@@ -96,6 +98,11 @@ type graphqlRequest struct {
 }
 
 func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
+	if websocket.IsWebSocketUpgrade(r) {
+		s.handleSubscriptionConn(w, r)
+		return
+	}
+
 	start := time.Now()
 
 	var req graphqlRequest
@@ -128,6 +135,21 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mock, matched := s.matchMock(opType, req.OperationName)
+
+	if matched && len(mock.Stream) > 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"errors":[{"message":"this operation is a subscription; connect via WebSocket (graphql-transport-ws) on this same path to receive the stream"}]}`)
+		s.log.Log(logger.Entry{
+			Protocol:  "graphql",
+			Method:    opType,
+			Path:      req.OperationName,
+			Status:    http.StatusOK,
+			Duration:  time.Since(start).Milliseconds(),
+			MatchedID: mock.ID,
+		})
+		return
+	}
 
 	if !matched {
 		w.Header().Set("Content-Type", "application/json")
@@ -213,6 +235,178 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		Method:    opType,
 		Path:      req.OperationName,
 		Status:    httpStatus,
+		Duration:  time.Since(start).Milliseconds(),
+		MatchedID: mock.ID,
+	})
+}
+
+// subscriptionProtocols lists the WebSocket subprotocol(s) the GraphQL
+// subscription transport accepts. Mockly implements graphql-transport-ws
+// (https://github.com/enisdenjo/graphql-ws/blob/master/PROTOCOL.md), the
+// modern `graphql-ws` npm package's protocol; the legacy
+// `subscriptions-transport-ws` ("graphql-ws" subprotocol, different message
+// shapes) is not implemented.
+var subscriptionProtocols = []string{"graphql-transport-ws"}
+
+var gqlWSUpgrader = websocket.Upgrader{
+	CheckOrigin:  func(r *http.Request) bool { return true },
+	Subprotocols: subscriptionProtocols,
+}
+
+// graphqlWSMessage is the graphql-transport-ws envelope: every message in
+// both directions has a Type, most carry a client-chosen ID identifying the
+// subscription they belong to (so one connection can multiplex several
+// concurrent subscriptions), and some carry a Payload.
+type graphqlWSMessage struct {
+	ID      string          `json:"id,omitempty"`
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+}
+
+// handleSubscriptionConn upgrades the request to a graphql-transport-ws
+// WebSocket connection and serves GraphQL subscriptions over it:
+// connection_init -> connection_ack once, then any number of
+// subscribe -> next*/complete (or error) exchanges multiplexed by ID on the
+// same connection, each driven by a GraphQLMock.Stream.
+func (s *Server) handleSubscriptionConn(w http.ResponseWriter, r *http.Request) {
+	conn, err := gqlWSUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close() //nolint:errcheck
+
+	var writeMu sync.Mutex
+	var activeMu sync.Mutex
+	active := map[string]context.CancelFunc{}
+	defer func() {
+		activeMu.Lock()
+		for id, cancel := range active {
+			cancel()
+			delete(active, id)
+		}
+		activeMu.Unlock()
+	}()
+
+	for {
+		_, raw, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		var msg graphqlWSMessage
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			continue
+		}
+
+		switch msg.Type {
+		case "connection_init":
+			writeWSMessage(conn, &writeMu, graphqlWSMessage{Type: "connection_ack"})
+		case "ping":
+			writeWSMessage(conn, &writeMu, graphqlWSMessage{Type: "pong"})
+		case "subscribe":
+			var payload graphqlRequest
+			_ = json.Unmarshal(msg.Payload, &payload)
+			id := msg.ID
+			subCtx, cancel := context.WithCancel(r.Context())
+			activeMu.Lock()
+			active[id] = cancel
+			activeMu.Unlock()
+			go s.runSubscription(subCtx, conn, &writeMu, id, payload, r)
+		case "complete":
+			activeMu.Lock()
+			if cancel, ok := active[msg.ID]; ok {
+				cancel()
+				delete(active, msg.ID)
+			}
+			activeMu.Unlock()
+		}
+	}
+}
+
+// writeWSMessage serializes and sends a single graphql-transport-ws
+// message, holding mu for the duration of the write since gorilla/websocket
+// connections aren't safe for concurrent writes and each active
+// subscription writes from its own goroutine.
+func writeWSMessage(conn *websocket.Conn, mu *sync.Mutex, msg graphqlWSMessage) {
+	mu.Lock()
+	defer mu.Unlock()
+	_ = conn.WriteJSON(msg)
+}
+
+func wsErrorPayload(message string) json.RawMessage {
+	b, _ := json.Marshal([]map[string]interface{}{{"message": message}})
+	return b
+}
+
+// runSubscription drives a single "subscribe" request to completion: it
+// matches req against the configured mocks same as a query/mutation would,
+// then pushes each of the matched mock's Stream events in order as "next"
+// messages (respecting each event's Delay, and stopping immediately if ctx
+// is cancelled by a client "complete" or the connection closing), finishing
+// with a "complete" message.
+func (s *Server) runSubscription(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, id string, req graphqlRequest, httpReq *http.Request) {
+	start := time.Now()
+	opType := extractOperationType(req.Query)
+	mock, matched := s.matchMock(opType, req.OperationName)
+
+	if !matched || len(mock.Stream) == 0 {
+		writeWSMessage(conn, writeMu, graphqlWSMessage{
+			ID: id, Type: "error",
+			Payload: wsErrorPayload(fmt.Sprintf("no subscription mock matched for operation %s", req.OperationName)),
+		})
+		return
+	}
+
+	fault := s.scenarios.EffectiveGraphQLFault()
+	if fault != nil && fault.Delay.Duration > 0 {
+		select {
+		case <-time.After(fault.Delay.Duration):
+		case <-ctx.Done():
+			return
+		}
+	}
+	if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
+		msg := fault.Body
+		if msg == "" {
+			msg = "fault injected"
+		}
+		writeWSMessage(conn, writeMu, graphqlWSMessage{ID: id, Type: "error", Payload: wsErrorPayload(msg)})
+		return
+	}
+
+	reqCtx := engine.RequestContext{Path: httpReq.URL.Path, Body: req.Query}
+
+	for _, ev := range mock.Stream {
+		if ev.Delay.Duration > 0 {
+			select {
+			case <-time.After(ev.Delay.Duration):
+			case <-ctx.Done():
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		data := engine.Render(ev.Data, reqCtx)
+		if !json.Valid([]byte(data)) {
+			writeWSMessage(conn, writeMu, graphqlWSMessage{
+				ID: id, Type: "error",
+				Payload: wsErrorPayload(fmt.Sprintf("configured stream event data is not valid JSON after templating: %q", data)),
+			})
+			return
+		}
+		writeWSMessage(conn, writeMu, graphqlWSMessage{ID: id, Type: "next", Payload: json.RawMessage(data)})
+	}
+
+	writeWSMessage(conn, writeMu, graphqlWSMessage{ID: id, Type: "complete"})
+
+	s.log.Log(logger.Entry{
+		Protocol:  "graphql",
+		Method:    opType,
+		Path:      req.OperationName,
+		Status:    http.StatusOK,
 		Duration:  time.Since(start).Milliseconds(),
 		MatchedID: mock.ID,
 	})

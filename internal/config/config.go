@@ -620,6 +620,30 @@ type GraphQLMock struct {
 	Errors        []GraphQLError         `yaml:"errors,omitempty" json:"errors,omitempty"`
 	Delay         Duration               `yaml:"delay,omitempty" json:"delay,omitempty"`
 	State         *StateCondition        `yaml:"state,omitempty" json:"state,omitempty"`
+
+	// Stream, when set, turns this mock into a live subscription instead of
+	// a single query/mutation response (typically paired with
+	// operation_type: subscription): a client that connects over
+	// graphql-transport-ws and subscribes to this operation gets each
+	// listed event pushed in order as a "next" message, then a "complete"
+	// message. Requesting a Stream mock over plain HTTP (no WebSocket
+	// upgrade) returns an error directing the client to the WebSocket
+	// transport instead, since there's no way to push multiple messages
+	// over a single HTTP response.
+	Stream []GraphQLStreamEvent `yaml:"stream,omitempty" json:"stream,omitempty"`
+}
+
+// GraphQLStreamEvent is a single message pushed to a GraphQL subscription
+// (see GraphQLMock.Stream) as a graphql-transport-ws "next" message.
+type GraphQLStreamEvent struct {
+	// Data is the full GraphQL execution result for this event (e.g.
+	// `{"data":{"field":...}}`), rendered as a Go template (same {{ }}
+	// syntax as Response) before being sent as the "next" message's
+	// payload verbatim, so it must render to valid JSON.
+	Data string `yaml:"data" json:"data"`
+
+	// Delay is slept before sending this event.
+	Delay Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
 }
 
 type GraphQLError struct {

@@ -1028,6 +1028,21 @@ protocols:
         errors: []
 ```
 
+**Subscriptions** are served over a `graphql-transport-ws` WebSocket connection on the same path/port (connect with `Sec-WebSocket-Protocol: graphql-transport-ws`, e.g. via the `graphql-ws` npm client or Apollo Client's `GraphQLWsLink`). Give the mock a `stream` list instead of `response`: each entry is pushed as a `next` message in order (respecting its own optional `delay`), then the subscription ends with a `complete` message.
+
+```yaml
+      - id: order-updates-sub
+        operation_type: subscription
+        operation_name: onOrderUpdate
+        stream:
+          - data: '{"data":{"onOrderUpdate":{"status":"pending"}}}'
+            delay: 200ms
+          - data: '{"data":{"onOrderUpdate":{"status":"shipped"}}}'
+            delay: 1s
+```
+
+Each `data` string is rendered as a Go template (same `{{ }}` syntax as `response`/`createPost.id` above) and must render to valid JSON — it's sent verbatim as the GraphQL execution result (`{"data": ...}`), not wrapped again. Requesting a `stream` mock over plain HTTP (no WebSocket upgrade) returns a GraphQL error telling the client to connect over WebSocket instead, since a single HTTP response can't carry multiple pushed messages. The legacy `subscriptions-transport-ws` protocol (`graphql-ws` subprotocol, different message shapes) isn't implemented.
+
 ### TCP
 
 Raw TCP mock server. Matches incoming data as exact string, prefix wildcard, or regex. Supports hex encoding for binary protocols.

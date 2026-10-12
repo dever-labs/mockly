@@ -117,6 +117,8 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 // unknownServiceHandler intercepts all calls and returns a mocked response.
+// It supports unary, server-streaming, client-streaming, and
+// bidirectional-streaming RPCs — see GRPCMock.ClientStream/Stream.
 func (s *Server) unknownServiceHandler(_ interface{}, stream grpc.ServerStream) error {
 	start := time.Now()
 
@@ -129,9 +131,18 @@ func (s *Server) unknownServiceHandler(_ interface{}, stream grpc.ServerStream) 
 	shortMethod := methodShortName(method)
 
 	mock, ok := s.findMock(shortMethod)
+	bidi := ok && mock.ClientStream && len(mock.Stream) > 0
 
-	var incoming []byte
-	_ = stream.RecvMsg(&incoming)
+	if !bidi {
+		// Bidirectional streaming interleaves its own Recv/Send loop below;
+		// every other mode reads its client request(s) up front.
+		if ok && mock.ClientStream {
+			drainClientStream(stream) // client-streaming: read until EOF
+		} else {
+			var incoming []byte
+			_ = stream.RecvMsg(&incoming) // unary/server-streaming: one request
+		}
+	}
 
 	if fault != nil && s.scenarios.RollFault(fault.ErrorRate) {
 		msg := fault.Message
@@ -164,27 +175,101 @@ func (s *Server) unknownServiceHandler(_ interface{}, stream grpc.ServerStream) 
 			time.Sleep(mock.Delay.Duration)
 		}
 
-		if mock.Error != nil {
+		switch {
+		case bidi:
+			return s.serveBidiStream(stream, mock, method, shortMethod, start)
+		case len(mock.Stream) > 0:
+			return s.serveServerStream(stream, mock, method, shortMethod, start)
+		case mock.Error != nil:
 			code := safeGRPCCode(mock.Error.Code)
 			s.logEntry(method, shortMethod, int(code), start, mock.ID)
 			return status.Error(code, mock.Error.Message)
+		default:
+			body, err := json.Marshal(mock.Response)
+			if err != nil {
+				return status.Errorf(codes.Internal, "marshalling mock response: %v", err)
+			}
+			if err := stream.SendMsg(&body); err != nil {
+				return err
+			}
+			s.logEntry(method, shortMethod, int(codes.OK), start, mock.ID)
+			return nil
 		}
-
-		body, err := json.Marshal(mock.Response)
-		if err != nil {
-			return status.Errorf(codes.Internal, "marshalling mock response: %v", err)
-		}
-
-		if err := stream.SendMsg(&body); err != nil {
-			return err
-		}
-
-		s.logEntry(method, shortMethod, int(codes.OK), start, mock.ID)
-		return nil
 	}
 
 	s.logEntry(method, shortMethod, int(codes.Unimplemented), start, "")
 	return status.Errorf(codes.Unimplemented, "method %s not mocked", shortMethod)
+}
+
+// drainClientStream reads messages from a client-streaming (or
+// bidirectional-streaming) call until the client half-closes (io.EOF) or
+// the stream otherwise errors, discarding every message.
+func drainClientStream(stream grpc.ServerStream) {
+	for {
+		var incoming []byte
+		if err := stream.RecvMsg(&incoming); err != nil {
+			return
+		}
+	}
+}
+
+// serveServerStream sends each of mock.Stream's messages in order (after the
+// client's single request has already been read), stopping early if one
+// specifies Error.
+func (s *Server) serveServerStream(stream grpc.ServerStream, mock config.GRPCMock, method, shortMethod string, start time.Time) error {
+	for _, msg := range mock.Stream {
+		if msg.Delay.Duration > 0 {
+			time.Sleep(msg.Delay.Duration)
+		}
+		if msg.Error != nil {
+			code := safeGRPCCode(msg.Error.Code)
+			s.logEntry(method, shortMethod, int(code), start, mock.ID)
+			return status.Error(code, msg.Error.Message)
+		}
+		body, err := json.Marshal(msg.Response)
+		if err != nil {
+			return status.Errorf(codes.Internal, "marshalling mock stream message: %v", err)
+		}
+		if err := stream.SendMsg(&body); err != nil {
+			return err
+		}
+	}
+	s.logEntry(method, shortMethod, int(codes.OK), start, mock.ID)
+	return nil
+}
+
+// serveBidiStream interleaves Recv/Send: each message received from the
+// client is answered with the correspondingly-indexed mock.Stream message.
+// Once mock.Stream is exhausted, further client messages are drained
+// silently until it half-closes (io.EOF) or the stream otherwise errors.
+func (s *Server) serveBidiStream(stream grpc.ServerStream, mock config.GRPCMock, method, shortMethod string, start time.Time) error {
+	for i := 0; ; i++ {
+		var incoming []byte
+		if err := stream.RecvMsg(&incoming); err != nil {
+			break
+		}
+		if i >= len(mock.Stream) {
+			continue
+		}
+		msg := mock.Stream[i]
+		if msg.Delay.Duration > 0 {
+			time.Sleep(msg.Delay.Duration)
+		}
+		if msg.Error != nil {
+			code := safeGRPCCode(msg.Error.Code)
+			s.logEntry(method, shortMethod, int(code), start, mock.ID)
+			return status.Error(code, msg.Error.Message)
+		}
+		body, err := json.Marshal(msg.Response)
+		if err != nil {
+			return status.Errorf(codes.Internal, "marshalling mock stream message: %v", err)
+		}
+		if err := stream.SendMsg(&body); err != nil {
+			return err
+		}
+	}
+	s.logEntry(method, shortMethod, int(codes.OK), start, mock.ID)
+	return nil
 }
 
 func (s *Server) findMock(method string) (config.GRPCMock, bool) {

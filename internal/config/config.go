@@ -563,6 +563,35 @@ type GRPCMock struct {
 	Response map[string]interface{} `yaml:"response" json:"response,omitempty"`
 	Error    *GRPCError             `yaml:"error,omitempty" json:"error,omitempty"`
 	Delay    Duration               `yaml:"delay,omitempty" json:"delay,omitempty"`
+
+	// ClientStream, when true, makes the handler drain every message the
+	// client sends (until it half-closes) before responding, instead of
+	// reading just one — i.e. a client-streaming or bidirectional-streaming
+	// RPC. Combine with Stream for bidirectional streaming; omit Stream for
+	// plain client-streaming (a single Response/Error is sent once the
+	// client is done sending).
+	ClientStream bool `yaml:"client_stream,omitempty" json:"client_stream,omitempty"`
+
+	// Stream, when set, makes the handler send each listed message in
+	// sequence instead of the single static Response/Error above:
+	//   - Server-streaming (ClientStream false): the client's one request is
+	//     read first, then every Stream message is sent in order.
+	//   - Bidirectional-streaming (ClientStream true): each Stream message is
+	//     sent immediately after the correspondingly-indexed message
+	//     received from the client (an interleaved request/reply loop);
+	//     once Stream is exhausted, any further client messages are drained
+	//     silently until it half-closes.
+	Stream []GRPCStreamMessage `yaml:"stream,omitempty" json:"stream,omitempty"`
+}
+
+// GRPCStreamMessage is a single message sent as part of a streaming
+// GRPCMock response (see GRPCMock.Stream).
+type GRPCStreamMessage struct {
+	Response map[string]interface{} `yaml:"response,omitempty" json:"response,omitempty"`
+	// Error, if set, ends the stream immediately with this gRPC status
+	// instead of sending Response, skipping any later messages in Stream.
+	Error *GRPCError `yaml:"error,omitempty" json:"error,omitempty"`
+	Delay Duration   `yaml:"delay,omitempty" json:"delay,omitempty"`
 }
 
 type GRPCError struct {

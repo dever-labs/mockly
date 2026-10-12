@@ -5,11 +5,13 @@ package greeter.v1;
 import "google/protobuf/timestamp.proto";
 import "common/address.proto";
 
-// Greeter exposes a couple of unary RPCs plus one streaming RPC that should
-// be skipped by the generator.
+// Greeter exposes a unary RPC plus one of each streaming RPC cardinality so
+// the generator's handling of each can be exercised.
 service Greeter {
   rpc SayHello (HelloRequest) returns (HelloReply);
   rpc ListHellos (HelloRequest) returns (stream HelloReply);
+  rpc CollectHellos (stream HelloRequest) returns (HelloReply);
+  rpc ChatHellos (stream HelloRequest) returns (stream HelloReply);
 }
 
 message HelloRequest {

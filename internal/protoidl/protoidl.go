@@ -1,5 +1,5 @@
 // Package protoidl parses a local Protobuf (.proto) service definition and
-// derives a ready-to-run Mockly gRPC config from it — one mock per unary RPC
+// derives a ready-to-run Mockly gRPC config from it — one mock per RPC
 // method, with the response body synthesised from the method's output
 // message type.
 //
@@ -16,14 +16,16 @@
 // once a config has been generated; it's used here purely to synthesise
 // plausible example responses.
 //
-// Only unary methods are mocked: Mockly's gRPC server reads at most one
-// request message and writes at most one response message per call, so
-// client-streaming, server-streaming and bidirectional-streaming methods
-// have no usable Mockly equivalent and are skipped with a warning. Likewise,
-// if two services in the same file declare a method with the same name, only
-// the first is kept — Mockly matches gRPC calls by method name alone (not
-// service), so a later duplicate would just shadow the first and never be
-// reachable.
+// Streaming methods are mocked with a single-message GRPCMock.Stream stub
+// (server-streaming and bidirectional-streaming) and/or
+// GRPCMock.ClientStream (client-streaming and bidirectional-streaming) —
+// see GRPCMock's doc comment. These are deliberately minimal starting
+// points (one example message, no delays) meant to be hand-edited into a
+// fuller sequence; a warning is emitted for each so it isn't mistaken for a
+// complete mock. If two services in the same file declare a method with the
+// same name, only the first is kept — Mockly matches gRPC calls by method
+// name alone (not service), so a later duplicate would just shadow the
+// first and never be reachable.
 package protoidl
 
 import (
@@ -80,7 +82,8 @@ func IsProtoIDL(specPath string) (bool, error) {
 }
 
 // Generate parses the .proto file at specPath and derives one GRPCMock per
-// unary RPC method declared by its service(s).
+// RPC method declared by its service(s) (see the package doc comment for how
+// streaming methods are represented).
 func Generate(specPath string) (Result, error) {
 	root := filepath.Dir(specPath)
 	filename := filepath.Base(specPath)
@@ -121,12 +124,6 @@ func Generate(specPath string) (Result, error) {
 			method := methods.Get(j)
 			name := string(method.Name())
 
-			if method.IsStreamingClient() || method.IsStreamingServer() {
-				res.Warnings = append(res.Warnings, fmt.Sprintf(
-					"%s.%s: streaming RPC has no Mockly equivalent (gRPC mocks only support unary request/response), skipped",
-					svc.FullName(), name))
-				continue
-			}
 			if seenMethod[name] {
 				res.Warnings = append(res.Warnings, fmt.Sprintf(
 					"%s.%s: method name %q already used by another service in this spec; Mockly matches gRPC calls by method name only (not service), so this duplicate would never be reached, skipped",
@@ -136,11 +133,35 @@ func Generate(specPath string) (Result, error) {
 			seenMethod[name] = true
 
 			response := buildMessageFieldsExample(method.Output(), 0, &res.Warnings)
-			res.Mocks = append(res.Mocks, config.GRPCMock{
+			mock := config.GRPCMock{
 				ID:       uniqueID(usedIDs, slugify(string(svc.Name())+"-"+name)),
 				Method:   name,
 				Response: response,
-			})
+			}
+
+			streamingClient, streamingServer := method.IsStreamingClient(), method.IsStreamingServer()
+			switch {
+			case streamingClient && streamingServer:
+				mock.ClientStream = true
+				mock.Stream = []config.GRPCStreamMessage{{Response: response}}
+				mock.Response = nil
+				res.Warnings = append(res.Warnings, fmt.Sprintf(
+					"%s.%s: bidirectional-streaming RPC generated as a single-message client_stream+stream stub; edit stream to add more request/reply pairs",
+					svc.FullName(), name))
+			case streamingServer:
+				mock.Stream = []config.GRPCStreamMessage{{Response: response}}
+				mock.Response = nil
+				res.Warnings = append(res.Warnings, fmt.Sprintf(
+					"%s.%s: server-streaming RPC generated as a single-message stream stub; edit stream to add more messages/delays",
+					svc.FullName(), name))
+			case streamingClient:
+				mock.ClientStream = true
+				res.Warnings = append(res.Warnings, fmt.Sprintf(
+					"%s.%s: client-streaming RPC generated as a client_stream stub; it drains all client messages before sending the single example Response",
+					svc.FullName(), name))
+			}
+
+			res.Mocks = append(res.Mocks, mock)
 		}
 	}
 

@@ -954,7 +954,7 @@ protocols:
 
 ### gRPC
 
-Dynamic gRPC mocking — no compiled `.proto` files needed. Uses a raw codec to intercept any service/method call.
+Dynamic gRPC mocking — no compiled `.proto` files needed. Uses a raw codec to intercept any service/method call. Supports unary RPCs as well as server-streaming, client-streaming, and bidirectional-streaming.
 
 ```yaml
 protocols:
@@ -963,12 +963,44 @@ protocols:
     port: 50051
     services:
       - mocks:
+          # Unary
           - id: charge
             method: Charge
             response:
               success: true
               charge_id: ch_123
+
+          # Server-streaming: reads the client's one request, then sends
+          # each `stream` entry in order (each with its own optional delay).
+          - id: list-charges
+            method: ListCharges
+            stream:
+              - response: {charge_id: ch_1}
+              - response: {charge_id: ch_2}
+                delay: 100ms
+
+          # Client-streaming: drains every message the client sends, then
+          # replies once with `response` after the client half-closes.
+          - id: sum-charges
+            method: SumCharges
+            client_stream: true
+            response:
+              total: 42
+
+          # Bidirectional streaming: client_stream + stream together reply
+          # to each client message with the correspondingly-indexed stream
+          # entry; once `stream` is exhausted, further client messages are
+          # drained silently until it half-closes.
+          - id: echo-charges
+            method: EchoCharges
+            client_stream: true
+            stream:
+              - response: {echo: 1}
+              - response: {echo: 2}
 ```
+
+Any `stream` entry may set `error` instead of `response` to end the call
+early with a gRPC status, same shape as the top-level `error` field.
 
 Optionally reference a real `.proto` file (`proto: ./protos/payments.proto`)
 to generate mocks from it instead of hand-writing them — see
@@ -1617,12 +1649,12 @@ Not every AsyncAPI direction has a Mockly equivalent:
 Skipped operations print a warning to stderr but don't fail generation, as
 long as at least one mock could be produced.
 
-**Protobuf** → for every unary RPC method in the spec's service(s), this
-builds a gRPC mock whose response body is synthesised from the method's
-output message type: scalar fields get a type-appropriate placeholder
-(64-bit integer kinds become JSON strings, per the standard proto3 JSON
-mapping), `repeated`/`map` fields get a single representative entry, nested
-messages recurse, and the handful of `google.protobuf.*` well-known types
+**Protobuf** → for every RPC method in the spec's service(s), this builds a
+gRPC mock whose response body is synthesised from the method's output
+message type: scalar fields get a type-appropriate placeholder (64-bit
+integer kinds become JSON strings, per the standard proto3 JSON mapping),
+`repeated`/`map` fields get a single representative entry, nested messages
+recurse, and the handful of `google.protobuf.*` well-known types
 (`Timestamp`, `Duration`, `Empty`, the wrapper types, ...) get their
 JSON-mapped placeholder directly rather than being expanded field-by-field.
 Only one member of each real `oneof` is included (proto3 `optional` fields
@@ -1632,12 +1664,14 @@ use a synthetic oneof under the hood and are unaffected).
 paths, no `../` escaping it) plus the standard `google/protobuf/*.proto`
 well-known types — anything else is a hard error, not a skip, since an
 unresolvable type can't be faithfully represented at all. Streaming methods
-(client-streaming, server-streaming, bidirectional) have no Mockly
-equivalent — Mockly's gRPC mock reads at most one request and writes at
-most one response per call — and are skipped with a warning, as is any RPC
-method whose name collides with one already seen in a different service in
-the same file (Mockly matches gRPC calls by method name alone, not service,
-so a later duplicate would just shadow the first and never be reachable).
+(client-streaming, server-streaming, bidirectional) are generated as
+minimal single-message `stream`/`client_stream` stubs (see
+[gRPC](#grpc)) rather than skipped, with a warning noting it's a starting
+point meant to be hand-edited into a fuller sequence. Any RPC method whose
+name collides with one already seen in a different service in the same
+file is skipped with a warning instead (Mockly matches gRPC calls by method
+name alone, not service, so a later duplicate would just shadow the first
+and never be reachable).
 
 The generated file is a complete, runnable config (management API/UI ports
 included), not a fragment — review it, add scenarios/faults/state as

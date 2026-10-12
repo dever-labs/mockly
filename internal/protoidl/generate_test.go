@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dever-labs/mockly/internal/config"
 	"github.com/dever-labs/mockly/internal/protoidl"
 )
 
@@ -32,22 +33,70 @@ func TestGenerate_Greeter(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 
-	if len(res.Mocks) != 1 {
-		t.Fatalf("Mocks = %d, want 1 (SayHello only; ListHellos streams)", len(res.Mocks))
+	if len(res.Mocks) != 4 {
+		t.Fatalf("Mocks = %d, want 4 (SayHello unary; ListHellos/CollectHellos/ChatHellos streaming)", len(res.Mocks))
 	}
 	mock := res.Mocks[0]
 	if mock.Method != "SayHello" {
 		t.Errorf("Method = %q, want SayHello", mock.Method)
 	}
 
+	findMock := func(method string) *config.GRPCMock {
+		for i := range res.Mocks {
+			if res.Mocks[i].Method == method {
+				return &res.Mocks[i]
+			}
+		}
+		return nil
+	}
+
+	listHellos := findMock("ListHellos")
+	if listHellos == nil {
+		t.Fatalf("mocks = %+v, want a ListHellos mock", res.Mocks)
+	}
+	if len(listHellos.Stream) != 1 {
+		t.Errorf("ListHellos.Stream = %d messages, want 1", len(listHellos.Stream))
+	}
+	if listHellos.ClientStream {
+		t.Errorf("ListHellos.ClientStream = true, want false (server-streaming only)")
+	}
+	if listHellos.Response != nil {
+		t.Errorf("ListHellos.Response = %v, want nil (response lives in Stream)", listHellos.Response)
+	}
+
+	collectHellos := findMock("CollectHellos")
+	if collectHellos == nil {
+		t.Fatalf("mocks = %+v, want a CollectHellos mock", res.Mocks)
+	}
+	if !collectHellos.ClientStream {
+		t.Errorf("CollectHellos.ClientStream = false, want true (client-streaming)")
+	}
+	if len(collectHellos.Stream) != 0 {
+		t.Errorf("CollectHellos.Stream = %d messages, want 0 (reply lives in Response)", len(collectHellos.Stream))
+	}
+	if collectHellos.Response == nil {
+		t.Errorf("CollectHellos.Response = nil, want the example reply")
+	}
+
+	chatHellos := findMock("ChatHellos")
+	if chatHellos == nil {
+		t.Fatalf("mocks = %+v, want a ChatHellos mock", res.Mocks)
+	}
+	if !chatHellos.ClientStream {
+		t.Errorf("ChatHellos.ClientStream = false, want true (bidi-streaming)")
+	}
+	if len(chatHellos.Stream) != 1 {
+		t.Errorf("ChatHellos.Stream = %d messages, want 1", len(chatHellos.Stream))
+	}
+
 	foundStreamingWarning := false
 	for _, w := range res.Warnings {
-		if strings.Contains(w, "ListHellos") && strings.Contains(w, "streaming") {
+		if strings.Contains(w, "ListHellos") && strings.Contains(w, "server-streaming") {
 			foundStreamingWarning = true
 		}
 	}
 	if !foundStreamingWarning {
-		t.Errorf("warnings = %v, want one flagging ListHellos as skipped (streaming)", res.Warnings)
+		t.Errorf("warnings = %v, want one flagging ListHellos as a server-streaming stub", res.Warnings)
 	}
 
 	resp := mock.Response

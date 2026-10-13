@@ -58,4 +58,8 @@ protocols:
 
 Captured messages are visible at `GET /api/nats/messages`; mocks can be managed live at `GET/POST /api/mocks/nats` and `PUT/DELETE /api/mocks/nats/{id}`.
 
----
+## See also
+
+- [Configuration](../getting-started/configuration.md) — matching, templated responses, state conditions, and scenarios shared by every protocol
+- [Fault Injection](../testing/fault-injection.md#fault-fields-per-protocol) — this protocol's fault fields: `delay`, `error_rate`
+- [Management API](../reference/management-api.md#nats-messages) — list/clear captured NATS messages

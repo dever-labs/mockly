@@ -70,3 +70,9 @@ protocols:
 | `objectidentifier` / `oid` | ObjectIdentifier | `"1.3.6.1.2.1.1.2.0"` |
 
 **TRAP sending** — POST to `/api/snmp/traps/{id}/send` to trigger any configured trap. The agent connects to the trap's `target` over UDP and sends the PDU.
+
+## See also
+
+- [Configuration](../getting-started/configuration.md) — matching, templated responses, state conditions, and scenarios shared by every protocol
+- [Fault Injection](../testing/fault-injection.md#fault-fields-per-protocol) — this protocol's fault fields: `message`, `delay`, `error_rate`
+- [Management API](../reference/management-api.md#snmp-mocks-traps) — CRUD for OID mocks and traps, send a trap on demand

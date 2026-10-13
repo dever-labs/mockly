@@ -30,4 +30,8 @@ Topic wildcards: `+` matches a single segment, `#` matches everything below. `{n
           payload: '{"device":"{{.request.params.device_id}}","status":"ok"}'
 ```
 
----
+## See also
+
+- [Configuration](../getting-started/configuration.md) — matching, templated responses, state conditions, and scenarios shared by every protocol
+- [Fault Injection](../testing/fault-injection.md#fault-fields-per-protocol) — this protocol's fault fields: `delay`, `error_rate`
+- [Management API](../reference/management-api.md#mqtt-messages) — list/clear captured MQTT messages

@@ -80,3 +80,9 @@ shape). `error` on close is optional; when non-empty the connection ends
 as an error (an SSE `error` event for HTTP, a `codes.Aborted` status for
 gRPC, a graphql-transport-ws `error` message for GraphQL) instead of
 ending normally.
+
+## See also
+
+- [Configuration](../getting-started/configuration.md) — matching, templated responses, state conditions, and scenarios shared by every protocol
+- [Fault Injection](../testing/fault-injection.md#fault-fields-per-protocol) — this protocol's fault fields: `status`, `body`, `delay`, `error_rate`
+- [Management API](../reference/management-api.md#streaming-connections-http-keep_open-grpc-keep_open-graphql-subscriptions) — manage open streaming/subscription connections (push/close)

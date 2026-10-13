@@ -18,3 +18,9 @@ protocols:
 ```
 
 Captured emails are visible at `GET /api/emails`.
+
+## See also
+
+- [Configuration](../getting-started/configuration.md) — matching, templated responses, state conditions, and scenarios shared by every protocol
+- [Fault Injection](../testing/fault-injection.md#fault-fields-per-protocol) — this protocol's fault fields: `code`, `message`, `delay`, `error_rate`
+- [Management API](../reference/management-api.md#email-inbox-smtp) — list/clear captured emails

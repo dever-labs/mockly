@@ -30,3 +30,9 @@ protocols:
           - match_binary: "3q2+7w==" # base64 for 0xDE 0xAD 0xBE 0xEF
             respond_binary: "yv4="  # base64 for 0xCA 0xFE
 ```
+
+## See also
+
+- [Configuration](../getting-started/configuration.md) — matching, templated responses, state conditions, and scenarios shared by every protocol
+- [Fault Injection](../testing/fault-injection.md#fault-fields-per-protocol) — this protocol's fault fields: `close_code`, `message`, `delay`, `error_rate`
+- [Management API](../reference/management-api.md#http-mocks) — mocks for this protocol follow the same CRUD pattern as HTTP mocks (`/api/mocks/{protocol}`)

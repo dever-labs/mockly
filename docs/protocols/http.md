@@ -464,3 +464,9 @@ request), editing the source file after running `add page` has no effect
 until you re-run the same command. Re-running it (e.g. after editing the
 folder's contents) replaces the previously-added mock(s) instead of
 duplicating them, so refreshing is just re-running the same command.
+
+## See also
+
+- [Configuration](../getting-started/configuration.md) — matching, templated responses, state conditions, and scenarios shared by every protocol
+- [Fault Injection](../testing/fault-injection.md#fault-fields-per-protocol) — this protocol's fault fields: `status`, `body`, `delay`, `delay_range`, `error_rate`, `rate_limit`
+- [Management API](../reference/management-api.md#http-mocks) — CRUD for HTTP mocks

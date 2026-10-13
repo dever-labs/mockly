@@ -50,3 +50,9 @@ protocols:
         response:
           body: '{"status":"logged"}'
 ```
+
+## See also
+
+- [Configuration](../getting-started/configuration.md) — matching, templated responses, state conditions, and scenarios shared by every protocol
+- [Fault Injection](../testing/fault-injection.md#fault-fields-per-protocol) — this protocol's fault fields: `delay`, `error_rate`
+- [Management API](../reference/management-api.md#message-stores-amqp-kafka-stomp) — list/clear captured AMQP messages

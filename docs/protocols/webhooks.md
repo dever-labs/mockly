@@ -44,3 +44,8 @@ curl -X POST http://localhost:9091/api/webhooks/send \
 See the [Nets/Nexi preset](https://github.com/dever-labs/mockly/blob/main/configs/presets/nets.yaml) for a full example
 that templates the callback URL and authorization straight out of the
 request body, matching how real payment gateways accept a `webhooks` array.
+
+## See also
+
+- [Configuration](../getting-started/configuration.md) — matching, templated responses, state conditions, and scenarios shared by every protocol
+- [Management API](../reference/management-api.md#outbound-webhooks) — list/clear attempt history, fire a one-off webhook

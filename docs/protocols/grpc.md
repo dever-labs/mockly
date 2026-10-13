@@ -58,3 +58,9 @@ Optionally reference a real `.proto` file (`proto: ./protos/payments.proto`)
 to generate mocks from it instead of hand-writing them — see
 [Generating mocks from an OpenAPI, AsyncAPI, or Protobuf
 spec](../testing/component-testing.md#generating-mocks-from-an-openapi-asyncapi-or-protobuf-spec).
+
+## See also
+
+- [Configuration](../getting-started/configuration.md) — matching, templated responses, state conditions, and scenarios shared by every protocol
+- [Fault Injection](../testing/fault-injection.md#fault-fields-per-protocol) — this protocol's fault fields: `code`, `message`, `delay`, `error_rate`
+- [Management API](../reference/management-api.md#streaming-connections-http-keep_open-grpc-keep_open-graphql-subscriptions) — manage open streaming connections (push/close)

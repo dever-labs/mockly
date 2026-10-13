@@ -41,7 +41,7 @@ type pduItem struct {
 type agent struct {
 	community   string
 	snmpV3Only  bool
-	users       []gosnmp.UsmSecurityParameters
+	users       []*gosnmp.UsmSecurityParameters
 	engineID    string
 	engineBoots uint32
 	engineTime  func() uint32
@@ -58,7 +58,7 @@ type agent struct {
 
 // newAgent builds an agent, sorting items by OID as GoSNMPServer's
 // SubAgent.SyncConfig used to.
-func newAgent(community string, snmpV3Only bool, users []gosnmp.UsmSecurityParameters, engineID string, engineTime func() uint32, items []*pduItem) *agent {
+func newAgent(community string, snmpV3Only bool, users []*gosnmp.UsmSecurityParameters, engineID string, engineTime func() uint32, items []*pduItem) *agent {
 	sortOIDs(items)
 	return &agent{
 		community:   community,
@@ -187,8 +187,15 @@ func (a *agent) respondV3(req *gosnmp.SnmpPacket, raw []byte, decodeErr error) (
 	// Localize the user's auth/priv keys against our real engine ID. The
 	// copy cached on a.users was localized in buildUsers() against an empty
 	// engine ID (used only to validate the passphrase up front), so it must
-	// be recomputed here before it can verify or sign anything.
-	localUser := *user //nolint:govet // freshly derived value, embedded mutex never locked; see buildUsers
+	// be recomputed here before it can verify or sign anything. Use the
+	// library's own Copy() (rather than a bare struct dereference) since it
+	// clones the exported fields into a fresh value without copying the
+	// embedded, never-locked sync.Mutex that govet rightly flags otherwise.
+	copiedParams := user.Copy()
+	localUser, ok := copiedParams.(*gosnmp.UsmSecurityParameters)
+	if !ok {
+		return nil, fmt.Errorf("unexpected security parameters type %T", copiedParams)
+	}
 	localUser.AuthoritativeEngineID = a.engineID
 	localUser.AuthoritativeEngineBoots = a.engineBoots
 	localUser.AuthoritativeEngineTime = a.engineTime()
@@ -230,7 +237,7 @@ func (a *agent) respondV3(req *gosnmp.SnmpPacket, raw []byte, decodeErr error) (
 			if err := localUser.InitPacket(report); err != nil {
 				return nil, fmt.Errorf("init report packet salt: %w", err)
 			}
-			report.SecurityParameters = &localUser
+			report.SecurityParameters = localUser
 			return report.MarshalMsg()
 		}
 	}
@@ -262,11 +269,11 @@ func (a *agent) respondV3(req *gosnmp.SnmpPacket, raw []byte, decodeErr error) (
 	// Refresh the engine time to "now" for the response signature (it was
 	// captured earlier, before request processing/serving).
 	localUser.AuthoritativeEngineTime = a.engineTime()
-	dummy := &gosnmp.SnmpPacket{MsgFlags: gosnmp.AuthPriv, SecurityParameters: &localUser}
+	dummy := &gosnmp.SnmpPacket{MsgFlags: gosnmp.AuthPriv, SecurityParameters: localUser}
 	if err := localUser.InitPacket(dummy); err != nil {
 		return nil, fmt.Errorf("init packet salt: %w", err)
 	}
-	resp.SecurityParameters = &localUser
+	resp.SecurityParameters = localUser
 	return resp.MarshalMsg()
 }
 
@@ -281,7 +288,7 @@ func (a *agent) blankUSM() *gosnmp.UsmSecurityParameters {
 func (a *agent) findUser(name string) *gosnmp.UsmSecurityParameters {
 	for i := range a.users {
 		if a.users[i].UserName == name {
-			return &a.users[i]
+			return a.users[i]
 		}
 	}
 	return nil

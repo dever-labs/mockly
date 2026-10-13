@@ -70,7 +70,7 @@ func TestHTTPServer_BasicGET(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "get-users",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/api/users"},
-		Response: config.HTTPResponse{Status: 200, Body: `[{"id":1}]`, Headers: map[string]string{"Content-Type": "application/json"}},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`[{"id":1}]`), Headers: map[string]string{"Content-Type": "application/json"}},
 	}}
 	base := startTestServer(t, mocks, nil)
 
@@ -110,7 +110,7 @@ func TestHTTPServer_WildcardPath(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "m",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/api/*"},
-		Response: config.HTTPResponse{Status: 200, Body: "ok"},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral("ok")},
 	}}
 	base := startTestServer(t, mocks, nil)
 
@@ -127,7 +127,7 @@ func TestHTTPServer_MidSegmentWildcardPath(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "regions",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/transactional-email/v1alpha1/regions/*/emails"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"emails":[]}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"emails":[]}`)},
 	}}
 	base := startTestServer(t, mocks, nil)
 
@@ -157,7 +157,7 @@ func TestHTTPServer_NamedWildcard_LogsPathParams(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "regions",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/regions/{region}/emails"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"emails":[]}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"emails":[]}`)},
 	}}
 
 	cfg := &config.HTTPConfig{Enabled: true}
@@ -204,7 +204,7 @@ func TestHTTPServer_POST_WithBody(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "create",
 		Request:  config.HTTPRequest{Method: "POST", Path: "/users"},
-		Response: config.HTTPResponse{Status: 201, Body: `{"id":99}`, Headers: map[string]string{"Content-Type": "application/json"}},
+		Response: config.HTTPResponse{Status: 201, Body: config.NewHTTPBodyLiteral(`{"id":99}`), Headers: map[string]string{"Content-Type": "application/json"}},
 	}}
 	base := startTestServer(t, mocks, nil)
 
@@ -223,7 +223,7 @@ func TestHTTPServer_ScenarioPatch_OverridesStatus(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "token",
 		Request:  config.HTTPRequest{Method: "POST", Path: "/token"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"access_token":"abc"}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"access_token":"abc"}`)},
 	}}
 	sc := scenarios.New([]config.Scenario{{
 		ID: "auth-down",
@@ -339,7 +339,7 @@ func TestHTTPServer_TemplateResponse(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "time",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/time"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"time":"{{now}}"}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"time":"{{now}}"}`)},
 	}}
 	base := startTestServer(t, mocks, nil)
 
@@ -369,7 +369,7 @@ func TestHTTPServer_PathRegex_Field(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "user-by-id",
 		Request:  config.HTTPRequest{Method: "GET", PathRegex: `^/users/\d+$`},
-		Response: config.HTTPResponse{Status: 200, Body: "ok"},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral("ok")},
 	}}
 	base := startTestServer(t, mocks, nil)
 
@@ -398,7 +398,7 @@ func TestHTTPServer_NamedParam_TemplateInBody(t *testing.T) {
 		Request: config.HTTPRequest{Method: "GET", Path: "/users/{id}"},
 		Response: config.HTTPResponse{
 			Status: 200,
-			Body:   `{"user":"{{.request.params.id}}"}`,
+			Body:   config.NewHTTPBodyLiteral(`{"user":"{{.request.params.id}}"}`),
 			Headers: map[string]string{
 				"Content-Type": "application/json",
 			},
@@ -432,7 +432,7 @@ func TestHTTPServer_RequestQuery_TemplateInBody(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "search",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/search"},
-		Response: config.HTTPResponse{Status: 200, Body: `{{.request.query.filter}}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{{.request.query.filter}}`)},
 	}}
 	base := startTestServer(t, mocks, nil)
 
@@ -455,7 +455,7 @@ func TestHTTPServer_RequestHeader_TemplateInBody(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "trace",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/trace"},
-		Response: config.HTTPResponse{Status: 200, Body: `{{index .request.headers "X-Trace"}}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{{index .request.headers "X-Trace"}}`)},
 	}}
 	base := startTestServer(t, mocks, nil)
 
@@ -532,12 +532,12 @@ func TestHTTPServer_QueryParams(t *testing.T) {
 		{
 			ID:       "admin",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/users", Query: map[string]string{"role": "admin"}},
-			Response: config.HTTPResponse{Status: 200, Body: `{"role":"admin"}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"role":"admin"}`)},
 		},
 		{
 			ID:       "fallback",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/users"},
-			Response: config.HTTPResponse{Status: 200, Body: `{"role":"other"}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"role":"other"}`)},
 		},
 	}
 	base := startTestServer(t, mocks, nil)
@@ -643,12 +643,12 @@ func TestHTTPServer_QueryParams_RegexAbsenceAndRepeated(t *testing.T) {
 				Path:   "/orders",
 				Query:  map[string]string{"order_id": `re:^ORD-\d+$`, "debug": "!present"},
 			},
-			Response: config.HTTPResponse{Status: 200, Body: `{"matched":true}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"matched":true}`)},
 		},
 		{
 			ID:       "tagged",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/items", Query: map[string]string{"tag": "b"}},
-			Response: config.HTTPResponse{Status: 200, Body: `{"tagged":true}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"tagged":true}`)},
 		},
 	}
 	base := startTestServer(t, mocks, nil)
@@ -708,12 +708,12 @@ func TestHTTPServer_BodyJSON(t *testing.T) {
 		{
 			ID:       "gbp",
 			Request:  config.HTTPRequest{Method: "POST", Path: "/pay", BodyJSON: map[string]string{"currency": "GBP"}},
-			Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"ok":true}`)},
 		},
 		{
 			ID:       "other",
 			Request:  config.HTTPRequest{Method: "POST", Path: "/pay"},
-			Response: config.HTTPResponse{Status: 422, Body: `{"ok":false}`},
+			Response: config.HTTPResponse{Status: 422, Body: config.NewHTTPBodyLiteral(`{"ok":false}`)},
 		},
 	}
 	base := startTestServer(t, mocks, nil)
@@ -741,11 +741,11 @@ func TestHTTPServer_Sequence_HoldLast(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "flaky",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/data"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"ok":true}`)},
 		Sequence: []config.HTTPResponse{
-			{Status: 503, Body: `{"error":"down"}`},
-			{Status: 503, Body: `{"error":"down"}`},
-			{Status: 200, Body: `{"ok":true}`},
+			{Status: 503, Body: config.NewHTTPBodyLiteral(`{"error":"down"}`)},
+			{Status: 503, Body: config.NewHTTPBodyLiteral(`{"error":"down"}`)},
+			{Status: 200, Body: config.NewHTTPBodyLiteral(`{"ok":true}`)},
 		},
 		SequenceExhausted: "hold_last",
 	}}
@@ -767,8 +767,8 @@ func TestHTTPServer_Sequence_Loop(t *testing.T) {
 		Request:  config.HTTPRequest{Method: "GET", Path: "/cycle"},
 		Response: config.HTTPResponse{Status: 200},
 		Sequence: []config.HTTPResponse{
-			{Status: 200, Body: `"a"`},
-			{Status: 200, Body: `"b"`},
+			{Status: 200, Body: config.NewHTTPBodyLiteral(`"a"`)},
+			{Status: 200, Body: config.NewHTTPBodyLiteral(`"b"`)},
 		},
 		SequenceExhausted: "loop",
 	}}
@@ -785,6 +785,40 @@ func TestHTTPServer_Sequence_Loop(t *testing.T) {
 		if strings.TrimSpace(string(body)) != want {
 			t.Errorf("call %d: want %q, got %q", i+1, want, body)
 		}
+	}
+}
+
+func TestHTTPServer_Sequence_SkipsBinaryLiteralWithContentTypeHeader(t *testing.T) {
+	// Same binary-literal-template-skip guarantee as the base response path
+	// (TestHTTPMatch_Template_SkipsBinaryLiteralWithContentTypeHeader in the
+	// engine package), but exercised through a Sequence entry, which has its
+	// own call to engine.RenderHTTPBody in the HTTP server.
+	raw := "\x89PNG\r\n{{now}}" // valid, executable template syntax that must NOT be rendered
+	mocks := []config.HTTPMock{{
+		ID:      "logo",
+		Request: config.HTTPRequest{Method: "GET", Path: "/logo.png"},
+		Sequence: []config.HTTPResponse{
+			{
+				Status:  200,
+				Headers: map[string]string{"Content-Type": "image/png"},
+				Body:    config.NewHTTPBodyLiteral(raw),
+			},
+		},
+		SequenceExhausted: "hold_last",
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/logo.png")
+	if err != nil {
+		t.Fatalf("GET /logo.png: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
+	_ = resp.Body.Close()
+	if string(body) != raw {
+		t.Fatalf("expected raw binary literal untouched, got %q", body)
 	}
 }
 
@@ -955,7 +989,7 @@ func TestHTTPServer_Stream_IgnoredWhenSequenceConfigured(t *testing.T) {
 			},
 		},
 		Sequence: []config.HTTPResponse{
-			{Status: 200, Body: "static-sequence-body"},
+			{Status: 200, Body: config.NewHTTPBodyLiteral("static-sequence-body")},
 		},
 		SequenceExhausted: "hold_last",
 	}}
@@ -1157,7 +1191,7 @@ func TestHTTPServer_PerMockFault(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "fragile",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/fragile"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"ok":true}`)},
 		Fault:    &config.MockFault{StatusOverride: 503, ErrorRate: 0},
 	}}
 	base := startTestServer(t, mocks, nil)
@@ -1200,7 +1234,7 @@ func TestHTTPServer_QueryParamTemplate_InBody(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "echo-param",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/echo"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"param":"{{.query.foo}}"}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"param":"{{.query.foo}}"}`)},
 	}}
 	base := startTestServer(t, mocks, nil)
 
@@ -1274,7 +1308,7 @@ func TestHTTPServer_OAuthAuthorize_QueryParamMatching(t *testing.T) {
 		{
 			ID:       "oauth-bad-client",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/oauth/authorize"},
-			Response: config.HTTPResponse{Status: 400, Body: `{"error":"unauthorized_client"}`},
+			Response: config.HTTPResponse{Status: 400, Body: config.NewHTTPBodyLiteral(`{"error":"unauthorized_client"}`)},
 		},
 	}
 	base := startTestServer(t, mocks, nil)
@@ -1367,7 +1401,7 @@ func TestHTTPServer_TLS(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "ping",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/ping"},
-		Response: config.HTTPResponse{Status: 200, Body: "pong"},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral("pong")},
 	}}
 	base, client := startTLSTestServer(t, mocks)
 
@@ -1397,7 +1431,7 @@ func TestHTTPServer_SetMocks_ConcurrentAccess(t *testing.T) {
 	base, srv := startTestServerWithServer(t, []config.HTTPMock{{
 		ID:       "m1",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/"},
-		Response: config.HTTPResponse{Status: 200, Body: "ok"},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral("ok")},
 	}}, nil)
 
 	var wg sync.WaitGroup
@@ -1409,7 +1443,7 @@ func TestHTTPServer_SetMocks_ConcurrentAccess(t *testing.T) {
 				srv.SetMocks([]config.HTTPMock{{
 					ID:       "m",
 					Request:  config.HTTPRequest{Method: "GET", Path: "/"},
-					Response: config.HTTPResponse{Status: 200, Body: "updated"},
+					Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral("updated")},
 				}})
 			}
 		}()
@@ -1456,7 +1490,7 @@ func TestHTTPServer_GlobalFault_DelayOnly_NoStatusOverride(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "ok",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"ok":true}`)},
 	}}
 	sc := scenarios.New(nil)
 	base := startTestServer(t, mocks, sc)
@@ -1551,7 +1585,7 @@ func TestHTTPServer_PerMockFault_Headers(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "rate-limited",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/api/resource"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"data":"value"}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"data":"value"}`)},
 		Fault: &config.MockFault{
 			StatusOverride: http.StatusTooManyRequests,
 			Body:           `{"error":"rate limited"}`,
@@ -1617,7 +1651,7 @@ func TestHTTPServer_GlobalFault_Redirect(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "old",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/old"},
-		Response: config.HTTPResponse{Status: 200, Body: "original"},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral("original")},
 	}}
 	sc := scenarios.New(nil)
 	base := startTestServer(t, mocks, sc)
@@ -1716,7 +1750,7 @@ func TestHTTPServer_GlobalFault_Abort(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "ok",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/ok"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"ok":true}`)},
 	}}
 	sc := scenarios.New(nil)
 	base := startTestServer(t, mocks, sc)
@@ -1790,7 +1824,7 @@ func TestHTTPServer_GlobalFault_TruncateBody(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "data",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/data"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"result":"complete-payload-here"}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"result":"complete-payload-here"}`)},
 	}}
 	sc := scenarios.New(nil)
 	base := startTestServer(t, mocks, sc)
@@ -1829,7 +1863,7 @@ func TestHTTPServer_GlobalFault_TruncateBody_WithStatus(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "data",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/data"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"result":"value"}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"result":"value"}`)},
 	}}
 	sc := scenarios.New(nil)
 	base := startTestServer(t, mocks, sc)
@@ -1880,12 +1914,12 @@ func TestHTTPServer_BearerAuth(t *testing.T) {
 				Path:   "/secure",
 				Auth:   &config.HTTPAuth{Type: "bearer", Token: "mysecret"},
 			},
-			Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"ok":true}`)},
 		},
 		{
 			ID:       "unauthenticated",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/secure"},
-			Response: config.HTTPResponse{Status: 401, Body: `{"error":"unauthorized"}`},
+			Response: config.HTTPResponse{Status: 401, Body: config.NewHTTPBodyLiteral(`{"error":"unauthorized"}`)},
 		},
 	}
 	base := startTestServer(t, mocks, nil)
@@ -1935,12 +1969,12 @@ func TestHTTPServer_BasicAuth(t *testing.T) {
 				Path:   "/admin",
 				Auth:   &config.HTTPAuth{Type: "basic", Username: "admin", Password: "s3cret"},
 			},
-			Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"ok":true}`)},
 		},
 		{
 			ID:       "admin-unauth",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/admin"},
-			Response: config.HTTPResponse{Status: 401, Body: `{"error":"unauthorized"}`},
+			Response: config.HTTPResponse{Status: 401, Body: config.NewHTTPBodyLiteral(`{"error":"unauthorized"}`)},
 		},
 	}
 	base := startTestServer(t, mocks, nil)
@@ -1980,12 +2014,12 @@ func TestHTTPServer_APIKey_Header(t *testing.T) {
 				Path:   "/weather",
 				Auth:   &config.HTTPAuth{Type: "api_key", Header: "X-API-Key", Value: "key-abc"},
 			},
-			Response: config.HTTPResponse{Status: 200, Body: `{"temp":22}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"temp":22}`)},
 		},
 		{
 			ID:       "weather-unauth",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/weather"},
-			Response: config.HTTPResponse{Status: 401, Body: `{"error":"unauthorized"}`},
+			Response: config.HTTPResponse{Status: 401, Body: config.NewHTTPBodyLiteral(`{"error":"unauthorized"}`)},
 		},
 	}
 	base := startTestServer(t, mocks, nil)
@@ -2023,7 +2057,7 @@ func TestHTTPServer_NTLMHandshake(t *testing.T) {
 				Path:   "/ntlm",
 				Auth:   &config.HTTPAuth{Type: "ntlm"},
 			},
-			Response: config.HTTPResponse{Status: 200, Body: `{"authenticated":true}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"authenticated":true}`)},
 		},
 	}
 	base := startTestServer(t, mocks, nil)
@@ -2106,7 +2140,7 @@ func TestHTTPServer_NTLMDoesNotHijackBearerRequests(t *testing.T) {
 				Path:   "/api/resource",
 				Auth:   &config.HTTPAuth{Type: "ntlm"},
 			},
-			Response: config.HTTPResponse{Status: 200, Body: `{"auth":"ntlm"}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"auth":"ntlm"}`)},
 		},
 		{
 			ID: "bearer-mock",
@@ -2115,12 +2149,12 @@ func TestHTTPServer_NTLMDoesNotHijackBearerRequests(t *testing.T) {
 				Path:   "/api/resource",
 				Auth:   &config.HTTPAuth{Type: "bearer", Token: "mytoken"},
 			},
-			Response: config.HTTPResponse{Status: 200, Body: `{"auth":"bearer"}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"auth":"bearer"}`)},
 		},
 		{
 			ID:       "unauth-mock",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/api/resource"},
-			Response: config.HTTPResponse{Status: 401, Body: `{"error":"unauthorized"}`},
+			Response: config.HTTPResponse{Status: 401, Body: config.NewHTTPBodyLiteral(`{"error":"unauthorized"}`)},
 		},
 	}
 	base := startTestServer(t, mocks, nil)
@@ -2363,13 +2397,13 @@ func TestHTTPServer_NamedListener_MockOnlyReachableOnItsOwnListener(t *testing.T
 			{
 				ID:       "public",
 				Request:  config.HTTPRequest{Method: "GET", Path: "/public"},
-				Response: config.HTTPResponse{Status: 200, Body: "public"},
+				Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral("public")},
 			},
 			{
 				ID:       "secret",
 				Listener: "secure",
 				Request:  config.HTTPRequest{Method: "GET", Path: "/secret"},
-				Response: config.HTTPResponse{Status: 200, Body: "secret"},
+				Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral("secret")},
 			},
 		},
 	}
@@ -2456,13 +2490,13 @@ func TestHTTPServer_NamedListener_OwnTLS(t *testing.T) {
 			{
 				ID:       "unscoped",
 				Request:  config.HTTPRequest{Method: "GET", Path: "/ping"},
-				Response: config.HTTPResponse{Status: 200, Body: "pong-default"},
+				Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral("pong-default")},
 			},
 			{
 				ID:       "ping",
 				Listener: "secure",
 				Request:  config.HTTPRequest{Method: "GET", Path: "/ping"},
-				Response: config.HTTPResponse{Status: 200, Body: "pong"},
+				Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral("pong")},
 			},
 		},
 	}

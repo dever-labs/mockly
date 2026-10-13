@@ -108,6 +108,9 @@ type Server struct {
 	queueSubs []*nats.Subscription
 
 	tmpStoreDir string
+
+	ready     chan struct{}
+	readyOnce sync.Once
 }
 
 // New creates a Server.
@@ -119,7 +122,19 @@ func New(cfg *config.NATSConfig, store *state.Store, sc *scenarios.Store, log *l
 		log:       log,
 		mocks:     append([]config.NATSMock(nil), cfg.Mocks...),
 		messages:  newMessageStore(1000),
+		ready:     make(chan struct{}),
 	}
+}
+
+// Ready returns a channel that's closed once mock subscriptions are fully
+// registered — note this is *after* the TCP listener starts accepting
+// connections (ns.ReadyForConnections), so an external client connecting
+// in that narrow window can still see "no responders" for a mock subject
+// it hasn't subscribed to yet. Callers that need deterministic mock
+// request/reply behavior (tests included) should wait on this channel
+// rather than just on a successful Connect.
+func (s *Server) Ready() <-chan struct{} {
+	return s.ready
 }
 
 // SetMocks replaces the active set of mocks and re-establishes subscriptions.
@@ -231,6 +246,7 @@ func (s *Server) Start(ctx context.Context) error {
 	if err := s.resubscribe(); err != nil {
 		return fmt.Errorf("subscribing mocks: %w", err)
 	}
+	s.readyOnce.Do(func() { close(s.ready) })
 
 	<-ctx.Done()
 	return nil

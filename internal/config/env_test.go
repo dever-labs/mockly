@@ -101,8 +101,8 @@ protocols:
 	if cfg.Protocols.HTTP.Port != 8080 {
 		t.Fatalf("expected port 8080, got %d", cfg.Protocols.HTTP.Port)
 	}
-	if cfg.Protocols.HTTP.Mocks[0].Response.Body != "080" {
-		t.Fatalf("expected body %q, got %q", "080", cfg.Protocols.HTTP.Mocks[0].Response.Body)
+	if cfg.Protocols.HTTP.Mocks[0].Response.Body.Literal != "080" {
+		t.Fatalf("expected body %q, got %q", "080", cfg.Protocols.HTTP.Mocks[0].Response.Body.Literal)
 	}
 }
 
@@ -127,8 +127,8 @@ protocols:
 	if cfg.Protocols.HTTP.Mocks[0].Request.Path != "/realms/myrealm" {
 		t.Fatalf("expected path /realms/myrealm, got %q", cfg.Protocols.HTTP.Mocks[0].Request.Path)
 	}
-	if cfg.Protocols.HTTP.Mocks[0].Response.Body != "myrealm" {
-		t.Fatalf("expected body %q, got %q", "myrealm", cfg.Protocols.HTTP.Mocks[0].Response.Body)
+	if cfg.Protocols.HTTP.Mocks[0].Response.Body.Literal != "myrealm" {
+		t.Fatalf("expected body %q, got %q", "myrealm", cfg.Protocols.HTTP.Mocks[0].Response.Body.Literal)
 	}
 }
 
@@ -150,8 +150,8 @@ protocols:
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.Protocols.HTTP.Mocks[0].Response.Body != "override-realm" {
-		t.Fatalf("expected the OS env var to win over vars map, got %q", cfg.Protocols.HTTP.Mocks[0].Response.Body)
+	if cfg.Protocols.HTTP.Mocks[0].Response.Body.Literal != "override-realm" {
+		t.Fatalf("expected the OS env var to win over vars map, got %q", cfg.Protocols.HTTP.Mocks[0].Response.Body.Literal)
 	}
 }
 
@@ -174,8 +174,8 @@ protocols:
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.Protocols.HTTP.Mocks[0].Response.Body != "real-app" {
-		t.Fatalf("expected vars entry to win over inline default, got %q", cfg.Protocols.HTTP.Mocks[0].Response.Body)
+	if cfg.Protocols.HTTP.Mocks[0].Response.Body.Literal != "real-app" {
+		t.Fatalf("expected vars entry to win over inline default, got %q", cfg.Protocols.HTTP.Mocks[0].Response.Body.Literal)
 	}
 }
 

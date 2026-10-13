@@ -34,8 +34,8 @@ func TestGenerate_Petstore(t *testing.T) {
 		t.Errorf("listpets status = %d, want 200", list.Response.Status)
 	}
 	var arr []map[string]any
-	if err := json.Unmarshal([]byte(list.Response.Body), &arr); err != nil {
-		t.Fatalf("listpets body not valid JSON array: %v (body=%s)", err, list.Response.Body)
+	if err := json.Unmarshal([]byte(list.Response.Body.Literal), &arr); err != nil {
+		t.Fatalf("listpets body not valid JSON array: %v (body=%s)", err, list.Response.Body.Literal)
 	}
 	if len(arr) != 1 {
 		t.Fatalf("listpets body = %d items, want 1", len(arr))
@@ -63,8 +63,8 @@ func TestGenerate_Petstore(t *testing.T) {
 	if del.Response.Status != 204 {
 		t.Errorf("deletepet status = %d, want 204", del.Response.Status)
 	}
-	if del.Response.Body != "" {
-		t.Errorf("deletepet body = %q, want empty (no content)", del.Response.Body)
+	if del.Response.Body.Literal != "" {
+		t.Errorf("deletepet body = %q, want empty (no content)", del.Response.Body.Literal)
 	}
 }
 

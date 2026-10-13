@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -52,7 +53,12 @@ func postJSON(url string, v interface{}) error {
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("API error %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			return fmt.Errorf("API error %d", resp.StatusCode)
+		}
+		return fmt.Errorf("API error %d: %s", resp.StatusCode, msg)
 	}
 	return nil
 }

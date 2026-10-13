@@ -139,6 +139,13 @@ paths:
       tags: [HTTP Mocks]
       operationId: addHTTPMock
       summary: Create an HTTP mock
+      description: >-
+        body must be a plain string. The {file: ...}/{dir: ...} structured
+        forms (see mockly.yaml's "HTML page mocking" feature) are rejected
+        with 400 on this endpoint — the management API never resolves a
+        caller-supplied filesystem path, by design. Use "mockly add page
+        --file/--dir" instead, which reads the file/folder client-side and
+        submits its content as a literal body.
       requestBody:
         required: true
         content:
@@ -173,6 +180,9 @@ paths:
       tags: [HTTP Mocks]
       operationId: updateHTTPMock
       summary: Replace an HTTP mock
+      description: >-
+        Like POST /api/mocks/http, body must be a plain string — the
+        {file: ...}/{dir: ...} structured forms are rejected with 400.
       parameters:
         - $ref: "#/components/parameters/id"
       requestBody:
@@ -2690,6 +2700,15 @@ components:
           additionalProperties:
             type: string
           description: Match JSON body fields using dot-notation paths
+        body_form:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Match fields in an application/x-www-form-urlencoded body (e.g. a
+            payment page's card-details post-back). Values support exact
+            match, "*" (wildcard), and a "re:" regex prefix. Requires the
+            request's Content-Type to declare form-urlencoded encoding.
 
     HTTPResponse:
       type: object

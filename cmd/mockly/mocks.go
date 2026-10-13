@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -26,10 +29,23 @@ func listCmd() *cobra.Command {
 	}
 }
 
+// addCmd is the parent "mockly add ..." command group: "add http" adds a
+// single ad-hoc HTTP mock, "add page" scaffolds one serving an HTML
+// page (or a whole folder of static assets) without hand-escaping markup
+// into a YAML string (see cmd/mockly/mocks.go's addPageCmd and issue #202).
+func addCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "add",
+		Short: "Add a mock at runtime",
+	}
+	cmd.AddCommand(addHTTPCmd(), addPageCmd())
+	return cmd
+}
+
 func addHTTPCmd() *cobra.Command {
 	var method, path, status, body, delayStr, id string
 	cmd := &cobra.Command{
-		Use:   "add http",
+		Use:   "http",
 		Short: "Add an HTTP mock at runtime",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load(cfgFile)
@@ -50,7 +66,7 @@ func addHTTPCmd() *cobra.Command {
 			mock := config.HTTPMock{
 				ID:       id,
 				Request:  config.HTTPRequest{Method: method, Path: path},
-				Response: config.HTTPResponse{Status: statusCode, Body: body, Delay: delay},
+				Response: config.HTTPResponse{Status: statusCode, Body: config.NewHTTPBodyLiteral(body), Delay: delay},
 			}
 			if err := postJSON(apiAddr+"/api/mocks/http", mock); err != nil {
 				return err
@@ -65,6 +81,92 @@ func addHTTPCmd() *cobra.Command {
 	cmd.Flags().StringVar(&status, "status", "200", "Response status code")
 	cmd.Flags().StringVar(&body, "body", "", "Response body")
 	cmd.Flags().StringVar(&delayStr, "delay", "", "Artificial delay (e.g. 100ms)")
+	return cmd
+}
+
+// addPageCmd scaffolds an HTML-page mock without requiring the page's
+// markup to be hand-escaped into a YAML/JSON string. "--file" serves one
+// page at --path; "--dir" expands a whole folder of static assets
+// (HTML/CSS/JS/images/...) into one mock per file, each at --path joined
+// with the file's own path — see issue #202's "Directory expansion"
+// section for the full path-mapping rules (index.html aliasing, generated
+// mock IDs, etc).
+//
+// Both forms read file content client-side (relative to the CLI's own
+// working directory) and POST it as a literal body, rather than sending a
+// file path reference for the (possibly remote, possibly
+// different-working-directory) API server to resolve: the management API
+// is a network-reachable control plane and should never have to resolve a
+// caller-supplied path against its own filesystem. body.file/body.dir path
+// references remain supported, but only via mockly.yaml (config.Load),
+// which resolves them in-process against the config file's own directory.
+// The one tradeoff: a mock added this way is a point-in-time snapshot, not
+// a live view of the file — re-run the same command to pick up edits (it
+// upserts by ID, so repeated runs replace rather than duplicate).
+func addPageCmd() *cobra.Command {
+	var urlPath, file, dir, id string
+	cmd := &cobra.Command{
+		Use:   "page",
+		Short: "Add an HTML page mock (from a file or a folder of static assets) at runtime",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if (file == "") == (dir == "") {
+				return fmt.Errorf("exactly one of --file or --dir is required")
+			}
+			cfg, _ := config.Load(cfgFile)
+			apiAddr := fmt.Sprintf("http://localhost:%d", cfg.Mockly.API.Port)
+
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("determining working directory: %w", err)
+			}
+
+			if file != "" {
+				filePath := file
+				if !filepath.IsAbs(filePath) {
+					filePath = filepath.Join(cwd, filePath)
+				}
+				data, err := os.ReadFile(filePath) // #nosec G304 -- filePath comes from the CLI operator's own --file flag, resolved against their own cwd
+				if err != nil {
+					return fmt.Errorf("reading %q: %w", file, err)
+				}
+				var headers map[string]string
+				if ct := mime.TypeByExtension(filepath.Ext(filePath)); ct != "" {
+					headers = map[string]string{"Content-Type": ct}
+				}
+				mock := config.HTTPMock{
+					ID:       id,
+					Request:  config.HTTPRequest{Method: "GET", Path: urlPath},
+					Response: config.HTTPResponse{Status: 200, Headers: headers, Body: config.NewHTTPBodyLiteral(string(data))},
+				}
+				if err := postJSON(apiAddr+"/api/mocks/http", mock); err != nil {
+					return err
+				}
+				fmt.Println("Page mock added.")
+				return nil
+			}
+
+			parent := config.HTTPMock{
+				ID:       id,
+				Request:  config.HTTPRequest{Method: "GET", Path: urlPath},
+				Response: config.HTTPResponse{Status: 200, Body: config.HTTPBody{Dir: dir}},
+			}
+			mocks, err := config.ExpandDirToLiteralMocks(parent, cwd)
+			if err != nil {
+				return err
+			}
+			for _, m := range mocks {
+				if err := postJSON(apiAddr+"/api/mocks/http", m); err != nil {
+					return fmt.Errorf("adding mock %q: %w", m.ID, err)
+				}
+			}
+			fmt.Printf("Page mock added: %d mock(s) from %q.\n", len(mocks), dir)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&id, "id", "", "Mock ID / ID prefix (auto-generated if empty)")
+	cmd.Flags().StringVar(&urlPath, "path", "/", "URL path the page is served at")
+	cmd.Flags().StringVar(&file, "file", "", "Single HTML file to serve at --path")
+	cmd.Flags().StringVar(&dir, "dir", "", "Folder of static assets to expand into one mock per file under --path")
 	return cmd
 }
 

@@ -12,6 +12,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -121,6 +122,9 @@ func HTTPMatch(
 		if len(m.Request.BodyJSON) > 0 && !matchBodyJSON(m.Request.BodyJSON, body) {
 			continue
 		}
+		if len(m.Request.BodyForm) > 0 && !matchBodyForm(m.Request.BodyForm, body, headers) {
+			continue
+		}
 		if len(m.Request.BodyMultipart) > 0 && !matchBodyMultipart(m.Request.BodyMultipart, body, headers) {
 			continue
 		}
@@ -143,10 +147,7 @@ func HTTPMatch(
 			PathParams: pathParams,
 		}
 
-		rendered, err := renderTemplate(m.Response.Body, req)
-		if err != nil {
-			rendered = m.Response.Body
-		}
+		rendered, bodyContentType := RenderHTTPBody(m.Response.Body, req, getHeader(m.Response.Headers, "Content-Type"))
 
 		renderedHeaders := make(map[string]string, len(m.Response.Headers))
 		for k, v := range m.Response.Headers {
@@ -155,6 +156,9 @@ func HTTPMatch(
 				rv = v
 			}
 			renderedHeaders[k] = rv
+		}
+		if bodyContentType != "" && !hasHeader(renderedHeaders, "Content-Type") {
+			renderedHeaders["Content-Type"] = bodyContentType
 		}
 
 		status := m.Response.Status
@@ -265,6 +269,12 @@ func HTTPDiagnose(
 
 			if len(m.Request.BodyJSON) > 0 && !matchBodyJSON(m.Request.BodyJSON, body) {
 				reason = "body_json field(s) did not match"
+				break evaluate
+			}
+			depth++
+
+			if len(m.Request.BodyForm) > 0 && !matchBodyForm(m.Request.BodyForm, body, headers) {
+				reason = "body_form field(s) did not match"
 				break evaluate
 			}
 			depth++
@@ -498,6 +508,28 @@ func matchPattern(pattern, text string) bool {
 	return strings.Contains(text, pattern)
 }
 
+// hasHeader reports whether headers already contains a key equal to name,
+// ignoring case (HTTP header names are case-insensitive).
+func hasHeader(headers map[string]string, name string) bool {
+	for k := range headers {
+		if strings.EqualFold(k, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// getHeader looks up a header by name, case-insensitively, returning "" if
+// absent.
+func getHeader(headers map[string]string, name string) string {
+	for k, v := range headers {
+		if strings.EqualFold(k, name) {
+			return v
+		}
+	}
+	return ""
+}
+
 func matchHeaders(want, got map[string]string) bool {
 	for k, v := range want {
 		// HTTP header names are case-insensitive; normalise to canonical form.
@@ -648,6 +680,76 @@ func jsonValueString(v interface{}) string {
 		b, _ := json.Marshal(t)
 		return string(b)
 	}
+}
+
+// formBodyFields parses body as application/x-www-form-urlencoded (per the
+// Content-Type header, ignoring any charset parameter) into a flat
+// map[string]interface{} of first-value-per-key fields, for use as the
+// {{.request.body}} template value when the body isn't JSON. Mirrors how
+// {{.request.query}} already collapses repeated values to their first
+// occurrence. Returns an error if the Content-Type isn't form-urlencoded or
+// the body can't be parsed as such, so callers can fall back appropriately.
+func formBodyFields(body string, headers map[string]string) (map[string]interface{}, error) {
+	contentType := getHeader(headers, "Content-Type")
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(mediaType, "application/x-www-form-urlencoded") {
+		return nil, fmt.Errorf("content-type %q is not form-urlencoded", mediaType)
+	}
+	values, err := url.ParseQuery(body)
+	if err != nil {
+		return nil, err
+	}
+	fields := make(map[string]interface{}, len(values))
+	for k, v := range values {
+		if len(v) > 0 {
+			fields[k] = v[0]
+		}
+	}
+	return fields, nil
+}
+
+// matchBodyForm checks that the named fields in want are present (and,
+// unless "*" or a "re:" regex, equal) in an application/x-www-form-urlencoded
+// request body — the classic encoding of an HTML <form method="post">
+// submission (e.g. a payment page's card-details post-back). The
+// Content-Type header must declare this encoding (ignoring any charset
+// parameter); otherwise arbitrary non-form bodies could spuriously "match"
+// since url.ParseQuery is lenient. If a field is repeated in the body
+// (e.g. multiple same-named checkboxes), a match succeeds if ANY submitted
+// value satisfies the configured value/pattern, mirroring matchQuery.
+func matchBodyForm(want map[string]string, body string, headers map[string]string) bool {
+	if body == "" {
+		return false
+	}
+	contentType := getHeader(headers, "Content-Type")
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil || !strings.EqualFold(mediaType, "application/x-www-form-urlencoded") {
+		return false
+	}
+	values, err := url.ParseQuery(body)
+	if err != nil {
+		return false
+	}
+	for key, expected := range want {
+		actuals, ok := values[key]
+		if !ok || len(actuals) == 0 {
+			return false
+		}
+		matched := false
+		for _, actual := range actuals {
+			if expected == "*" || matchQueryValue(expected, actual) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
 }
 
 // matchBodyMultipart checks that the named fields/metadata in want are
@@ -967,7 +1069,9 @@ type RequestContext struct {
 
 // renderTemplate executes a Go text/template against a context that includes
 // both the legacy top-level keys (query, headers, body) and a nested
-// "request" key with method, path, params, and the body parsed as JSON.
+// "request" key with method, path, params, and the body parsed as JSON (or,
+// for an application/x-www-form-urlencoded body, as form fields — see
+// formBodyFields).
 func renderTemplate(tmpl string, req RequestContext) (string, error) {
 	if !strings.Contains(tmpl, "{{") {
 		return tmpl, nil
@@ -977,11 +1081,17 @@ func renderTemplate(tmpl string, req RequestContext) (string, error) {
 		return "", fmt.Errorf("parsing template: %w", err)
 	}
 
-	// Parse body as JSON for {{.request.body.field}} access.
-	// Falls back to an empty map so templates don't panic on non-JSON bodies.
+	// Parse body as JSON for {{.request.body.field}} access. Falls back to
+	// form fields (e.g. for a payment page's card-details post-back, so a
+	// receipt page can echo back "{{.request.body.card_number}}") and then
+	// to an empty map, so templates don't panic on an unparseable body.
 	var bodyJSON interface{}
 	if err := json.Unmarshal([]byte(req.Body), &bodyJSON); err != nil {
-		bodyJSON = map[string]interface{}{}
+		if form, ferr := formBodyFields(req.Body, req.Headers); ferr == nil {
+			bodyJSON = form
+		} else {
+			bodyJSON = map[string]interface{}{}
+		}
 	}
 
 	ctx := map[string]interface{}{
@@ -1027,4 +1137,41 @@ func Render(tmpl string, req RequestContext) string {
 // rather than attempting it against a broken literal template string.
 func RenderErr(tmpl string, req RequestContext) (string, error) {
 	return renderTemplate(tmpl, req)
+}
+
+// RenderHTTPBody resolves body (a literal string or a body.file reference
+// — see config.HTTPBody) and, unless its content is a binary format (see
+// config.IsBinaryContentType), renders it through the same {{ }} template
+// engine as every other response field. It returns the rendered content
+// and, for a file reference, its inferred Content-Type (empty for a plain
+// literal, since callers already control Content-Type via Headers in that
+// case). If the referenced file can't be read (e.g. deleted after config
+// load), an inline error message takes its place so a misconfigured mock
+// is visibly broken instead of silently serving an empty body.
+//
+// declaredContentType is the mock's own (unrendered) "Content-Type" header
+// value, if any — used only as a fallback binary-format signal, since a
+// body.file/body.dir reference's inferred Content-Type (from Resolve) is
+// unavailable for a Literal body (e.g. one built by "mockly add page",
+// which transfers binary assets like images/fonts as literal content, not
+// a path reference — see config.ExpandDirToLiteralMocks). Without this,
+// a literal binary body would be handed to the template engine, which is
+// usually harmless (renderTemplate only parses/executes content containing
+// a literal "{{" byte sequence, and a parse/execution failure falls back
+// to the original, unrendered bytes) but isn't a guarantee for arbitrary
+// binary data that happens to both contain "{{" and parse as valid
+// (if nonsensical) template syntax.
+func RenderHTTPBody(body config.HTTPBody, req RequestContext, declaredContentType string) (rendered string, contentType string) {
+	content, ct, err := body.Resolve()
+	if err != nil {
+		return fmt.Sprintf("mockly: %s", err), ""
+	}
+	if config.IsBinaryContentType(ct) || config.IsBinaryContentType(declaredContentType) {
+		return content, ct
+	}
+	out, rerr := renderTemplate(content, req)
+	if rerr != nil {
+		return content, ct
+	}
+	return out, ct
 }

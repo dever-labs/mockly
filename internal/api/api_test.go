@@ -336,6 +336,102 @@ func TestAPI_HTTP_CRUD(t *testing.T) {
 	}
 }
 
+// TestAPI_HTTP_AddUpsertsByID verifies that POSTing a mock whose ID already
+// exists replaces it in place instead of appending a duplicate — important
+// for "mockly add page --file/--dir", whose generated mock IDs are
+// deterministic, so re-running the same scaffold command (e.g. after
+// editing the page's content) must be idempotent, not additive.
+func TestAPI_HTTP_AddUpsertsByID(t *testing.T) {
+	base, httpStub, _, _, _ := startAPI(t)
+
+	mock := map[string]interface{}{
+		"id":       "dup-mock",
+		"request":  map[string]interface{}{"method": "GET", "path": "/dup"},
+		"response": map[string]interface{}{"status": 200, "body": "first"},
+	}
+	postBody, _ := json.Marshal(mock)
+	resp, err := http.Post(base+"/api/mocks/http", "application/json", bytes.NewReader(postBody))
+	if err != nil {
+		t.Fatalf("POST #1: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != 201 {
+		t.Fatalf("POST #1: want 201, got %d", resp.StatusCode)
+	}
+
+	mock["response"] = map[string]interface{}{"status": 200, "body": "second"}
+	postBody2, _ := json.Marshal(mock)
+	resp2, err := http.Post(base+"/api/mocks/http", "application/json", bytes.NewReader(postBody2))
+	if err != nil {
+		t.Fatalf("POST #2: %v", err)
+	}
+	_ = resp2.Body.Close()
+	if resp2.StatusCode != 201 {
+		t.Fatalf("POST #2: want 201, got %d", resp2.StatusCode)
+	}
+
+	mocks := httpStub.GetMocks()
+	if len(mocks) != 1 {
+		t.Fatalf("expected 1 mock after re-POSTing same ID, got %d", len(mocks))
+	}
+	if mocks[0].Response.Body.Literal != "second" {
+		t.Errorf("expected upserted mock's body = %q, got %q", "second", mocks[0].Response.Body.Literal)
+	}
+}
+
+// TestAPI_HTTP_AddRejectsBodyDir verifies that POSTing a mock with
+// body.dir set is rejected by the single-mock add endpoint (it has no way
+// to expand a directory into several mocks) and points the caller at the
+// right command instead.
+func TestAPI_HTTP_AddRejectsBodyDir(t *testing.T) {
+	base, _, _, _, _ := startAPI(t)
+
+	mock := map[string]interface{}{
+		"id":       "dir-mock",
+		"request":  map[string]interface{}{"method": "GET", "path": "/site"},
+		"response": map[string]interface{}{"status": 200, "body": map[string]string{"dir": "./site"}},
+	}
+	postBody, _ := json.Marshal(mock)
+	resp, err := http.Post(base+"/api/mocks/http", "application/json", bytes.NewReader(postBody))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != 400 {
+		t.Fatalf("want 400 for body.dir via single-mock endpoint, got %d", resp.StatusCode)
+	}
+}
+
+// TestAPI_HTTP_AddRejectsBodyFile verifies that the single-mock add
+// endpoint rejects a body.file reference outright, rather than resolving
+// it against the server's own filesystem — the management API is a
+// network-reachable control plane and must never resolve a caller-
+// supplied path, even a relative one validated against escapes (CWE-22).
+// Only mockly.yaml (config.Load, in-process, trusted) may reference files
+// by path; "mockly add page --file" instead reads the file client-side
+// and sends its content as a literal body (see cmd/mockly/mocks.go).
+func TestAPI_HTTP_AddRejectsBodyFile(t *testing.T) {
+	base, httpStub, _, _, _ := startAPI(t)
+
+	mock := map[string]interface{}{
+		"id":       "file-mock",
+		"request":  map[string]interface{}{"method": "GET", "path": "/page"},
+		"response": map[string]interface{}{"status": 200, "body": map[string]string{"file": "page.html"}},
+	}
+	postBody, _ := json.Marshal(mock)
+	resp, err := http.Post(base+"/api/mocks/http", "application/json", bytes.NewReader(postBody))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != 400 {
+		t.Fatalf("want 400 for body.file via single-mock endpoint, got %d", resp.StatusCode)
+	}
+	if len(httpStub.GetMocks()) != 0 {
+		t.Errorf("expected no mock to be added, got %d", len(httpStub.GetMocks()))
+	}
+}
+
 func TestAPI_Scenarios_CRUD(t *testing.T) {
 	base, _, _, sc, _ := startAPI(t)
 

@@ -435,8 +435,8 @@ protocols:
 	if len(cfg.Protocols.HTTP.Mocks) != 1 {
 		t.Fatalf("HTTP mocks = %+v, want exactly 1 (same ID overrides, not appended)", cfg.Protocols.HTTP.Mocks)
 	}
-	if cfg.Protocols.HTTP.Mocks[0].Response.Body != "new" {
-		t.Errorf("response.body = %q, want %q (include with matching ID should override)", cfg.Protocols.HTTP.Mocks[0].Response.Body, "new")
+	if cfg.Protocols.HTTP.Mocks[0].Response.Body.Literal != "new" {
+		t.Errorf("response.body = %q, want %q (include with matching ID should override)", cfg.Protocols.HTTP.Mocks[0].Response.Body.Literal, "new")
 	}
 }
 

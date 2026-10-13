@@ -41,8 +41,17 @@ func TestSenderDispatchSuccess(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("webhook was not received in time")
 	}
-	// Allow the goroutine to finish recording after responding.
-	time.Sleep(50 * time.Millisecond)
+	// Wait for the dispatch goroutine to finish recording history, instead
+	// of sleeping for an arbitrary guess (flaky under CPU contention: the
+	// record is only added *after* the HTTP client finishes reading the
+	// response, which can race past a fixed sleep under load).
+	deadline := time.Now().Add(2 * time.Second)
+	for len(s.History().All()) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for webhook dispatch to record history")
+		}
+		time.Sleep(time.Millisecond)
+	}
 
 	if gotMethod != "POST" {
 		t.Errorf("method = %q, want POST", gotMethod)

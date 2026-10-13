@@ -523,6 +523,35 @@ func (s *Server) listHTTPMocks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.http.GetMocks())
 }
 
+// resolveAddedMockBody rejects both a body.dir and a body.file reference
+// on an added/updated mock: this single-mock management endpoint is a
+// network-reachable control plane and should never resolve a caller-
+// supplied file path against the server's own filesystem — that would be
+// a path-traversal (CWE-22) attack surface for any untrusted caller able
+// to reach the API, even with escape validation in place. Path references
+// (body.file/body.dir) remain supported, but only via mockly.yaml
+// (config.Load), which resolves them in-process against the config file's
+// own directory, never over the network.
+//
+// The CLI's "mockly add page --file/--dir" command reads file content
+// client-side and POSTs it as a literal body instead of a path reference
+// (see cmd/mockly/mocks.go's addPageCmd and config.ExpandDirToLiteralMocks),
+// so this restriction doesn't affect it.
+func resolveAddedMockBody(m *config.HTTPMock) error {
+	if m.Response.Body.Dir != "" {
+		return fmt.Errorf(`body.dir isn't supported via this endpoint — use "mockly add page --dir", which expands a folder into one mock per file and adds each individually`)
+	}
+	if m.Response.Body.File != "" {
+		return fmt.Errorf(`body.file isn't supported via this endpoint (it would require resolving a caller-supplied path against the server's filesystem) — use "mockly add page --file", which reads the file client-side and sends its content instead`)
+	}
+	for i, seq := range m.Sequence {
+		if seq.Body.File != "" {
+			return fmt.Errorf(`sequence[%d].body.file isn't supported via this endpoint — provide literal body content instead`, i)
+		}
+	}
+	return nil
+}
+
 func (s *Server) addHTTPMock(w http.ResponseWriter, r *http.Request) {
 	if s.http == nil {
 		writeError(w, http.StatusServiceUnavailable, "http protocol not enabled")
@@ -533,11 +562,32 @@ func (s *Server) addHTTPMock(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := resolveAddedMockBody(&m); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if m.ID == "" {
 		m.ID = fmt.Sprintf("http-%d", time.Now().UnixNano())
 	}
 	mocks := s.http.GetMocks()
-	mocks = append(mocks, m)
+	// Upsert by ID rather than always appending: re-running "mockly add
+	// page --file/--dir" (a natural part of iterating on a page's content
+	// or re-applying the same scaffold after a restart) deterministically
+	// reuses the same generated ID(s), so a second run should replace the
+	// existing mock, not silently duplicate it (which would otherwise leave
+	// two same-ID mocks registered, only one of which is reachable via the
+	// update/delete-by-ID endpoints).
+	replaced := false
+	for i, existing := range mocks {
+		if existing.ID == m.ID {
+			mocks[i] = m
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		mocks = append(mocks, m)
+	}
 	s.http.SetMocks(mocks)
 	writeJSON(w, http.StatusCreated, m)
 }
@@ -550,6 +600,10 @@ func (s *Server) updateHTTPMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var updated config.HTTPMock
 	if err := decodeBody(r, &updated); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := resolveAddedMockBody(&updated); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -616,7 +670,7 @@ func (s *Server) patchHTTPMock(w http.ResponseWriter, r *http.Request) {
 				mocks[i].Response.Status = *patch.Status
 			}
 			if patch.Body != nil {
-				mocks[i].Response.Body = *patch.Body
+				mocks[i].Response.Body = config.NewHTTPBodyLiteral(*patch.Body)
 			}
 			if patch.Headers != nil {
 				if mocks[i].Response.Headers == nil {
@@ -1776,7 +1830,6 @@ func (s *Server) closeStream(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"reached": n})
 }
-
 
 func (s *Server) getState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.store.All())

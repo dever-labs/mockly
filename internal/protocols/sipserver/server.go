@@ -26,10 +26,20 @@ type Server struct {
 	mu    sync.RWMutex
 	mocks []config.SIPMock
 	conn  net.PacketConn
+
+	ready     chan struct{}
+	readyOnce sync.Once
 }
 
 func New(cfg *config.SIPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
-	return &Server{cfg: cfg, store: store, scenarios: sc, log: log, mocks: append([]config.SIPMock(nil), cfg.Mocks...)}
+	return &Server{cfg: cfg, store: store, scenarios: sc, log: log, mocks: append([]config.SIPMock(nil), cfg.Mocks...), ready: make(chan struct{})}
+}
+
+// Ready returns a channel that's closed once the UDP listener is bound and
+// accepting packets. Useful for tests (and any other caller) that need to
+// wait for actual readiness instead of polling/sleeping.
+func (s *Server) Ready() <-chan struct{} {
+	return s.ready
 }
 
 func (s *Server) SetMocks(mocks []config.SIPMock) {
@@ -50,6 +60,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("sip server listen :%d: %w", s.cfg.Port, err)
 	}
 	s.conn = conn
+	s.readyOnce.Do(func() { close(s.ready) })
 	go func() {
 		<-ctx.Done()
 		_ = conn.Close()

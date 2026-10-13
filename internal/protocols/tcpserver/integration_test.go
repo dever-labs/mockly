@@ -200,8 +200,12 @@ func newTLSTCPServer(t *testing.T, mocks []config.TCPMock) (*Server, int) {
 
 func tlsRoundTrip(t *testing.T, port int, msg string) string {
 	t.Helper()
+	// Timeout covers both the TCP connect and the full TLS handshake (see
+	// tls.DialWithDialer); 1s was too tight under heavy CPU contention (e.g.
+	// the full test suite run with -race), causing flaky "context deadline
+	// exceeded" failures unrelated to any actual server bug.
 	conn, err := tls.DialWithDialer(
-		&net.Dialer{Timeout: time.Second},
+		&net.Dialer{Timeout: 5 * time.Second},
 		"tcp",
 		fmt.Sprintf("127.0.0.1:%d", port),
 		&tls.Config{InsecureSkipVerify: true}, //nolint:gosec

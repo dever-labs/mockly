@@ -339,8 +339,16 @@ func TestServeSSE_StreamsEntries(t *testing.T) {
 		l.ServeSSE(rw, req)
 	}()
 
-	// Give the SSE handler time to subscribe, then log an entry.
-	time.Sleep(20 * time.Millisecond)
+	// Wait until the SSE handler has actually subscribed (instead of
+	// sleeping for an arbitrary guess, which flakes under CPU contention),
+	// then log an entry.
+	deadline := time.Now().Add(time.Second)
+	for l.SubscriberCount() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for SSE subscriber to register")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	l.Log(logger.Entry{Path: "/sse-test", MatchedID: "m1"})
 
 	// Read until we see the expected data line.

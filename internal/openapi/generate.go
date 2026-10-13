@@ -142,7 +142,7 @@ func generateMock(method, path string, op *openapi3.Operation) (*config.HTTPMock
 		Response: config.HTTPResponse{
 			Status:  status,
 			Headers: headers,
-			Body:    body,
+			Body:    config.NewHTTPBodyLiteral(body),
 		},
 	}, warning
 }

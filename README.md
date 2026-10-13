@@ -608,6 +608,48 @@ Use dot-notation paths to match fields anywhere in a JSON body:
           body: '{"ok":true}'
 ```
 
+#### Form body field matching
+
+For classic HTML `<form method="post">` submissions (e.g. a hosted
+payment/checkout page posting back card details), `body_form` matches
+fields in an `application/x-www-form-urlencoded` body. Unlike
+`body_json`/`body_multipart`/`body_xml`, values also support the `"re:"`
+regex prefix — useful for matching a card number pattern rather than an
+exact value:
+
+```yaml
+      - id: checkout-declined
+        request:
+          method: POST
+          path: /checkout/{id}
+          body_form:
+            card_number: "re:.*0000$" # any card number ending in 0000
+        response:
+          status: 200
+          body: {file: ./mocks/declined.html}
+
+      - id: checkout-approved
+        request:
+          method: POST
+          path: /checkout/{id}
+        response:
+          status: 200
+          body: '{{.request.body.card_number}}' # last-4 echoed back via templating, no extra config needed
+```
+
+A repeated field name (e.g. multiple same-named checkboxes) matches if
+**any** submitted value satisfies the configured value/pattern, mirroring
+query-param matching. The request Content-Type must declare
+`application/x-www-form-urlencoded` (a charset parameter is fine) for
+`body_form` to apply at all — this avoids spurious matches on non-form
+bodies.
+
+See the [Nets/Nexi preset](configs/presets/nets.yaml) for a complete,
+runnable worked example: a hosted checkout page (`GET /checkout/{id}`)
+with a real HTML form, posted back to `body_form`-matched
+approved/declined responses — no HTML authoring required, just
+`mockly preset use nets`.
+
 #### Multipart and XML body field matching
 
 For `multipart/form-data` requests (e.g. file uploads), `body_multipart`
@@ -796,7 +838,7 @@ curl "http://localhost:8080/orders?order_id=bad-id&debug=true"
 
 Up to 3 of the closest candidates are reported (mocks that passed the
 most checks — method, path, headers, query, body, `body_json`,
-`body_multipart`, `body_xml`, state, auth — before failing), ranked
+`body_form`, `body_multipart`, `body_xml`, state, auth — before failing), ranked
 closest-first. Near-miss info is also
 included in the mock's request log entry whenever diagnostics were
 requested, so it shows up in the management UI's live log stream too.
@@ -893,6 +935,82 @@ Requires an `Authorization: Digest …` header to be present (no nonce validatio
           auth:
             type: digest
 ```
+
+#### HTML page mocking (`body: {file: ...}` / `{dir: ...}`)
+
+A response `body` can be a plain string (as above), or a structured
+reference to a file or a whole folder on disk — handy for serving real
+HTML/CSS/JS/images without hand-escaping markup into a YAML string.
+File content is read fresh on every request (no caching), so editing the
+file on disk takes effect immediately, no restart required. Templates
+(`{{ }}`) still render normally inside a file's content, except for
+binary content-types (images, fonts, pdf, wasm, audio/video), which are
+served as-is.
+
+```yaml
+      - id: checkout-page
+        request:
+          method: GET
+          path: /checkout
+        response:
+          status: 200
+          body:
+            file: ./pages/checkout.html   # resolved relative to this config file's directory
+```
+
+The `Content-Type` header is inferred from the file's extension unless
+you set an explicit `headers: {Content-Type: ...}` (which always wins).
+
+**Serving a whole folder (`dir`)**
+
+`body: {dir: ...}` expands, at config-load time, into one generated mock
+per file found recursively underneath that folder (dotfiles/dot-folders
+are skipped). Each file's path relative to the folder is joined with the
+parent mock's own `request.path` using URL (not OS) path semantics:
+
+```yaml
+      - id: docs-site
+        request:
+          method: GET
+          path: /docs
+        response:
+          status: 200
+          body:
+            dir: ./site/docs
+```
+
+Given `./site/docs/index.html` and `./site/docs/guide/intro.html`, this
+registers `GET /docs/index.html`, `GET /docs/guide/intro.html`, **and**
+(the standard "directory index" convention) `GET /docs` itself — any
+`index.html` found at any depth is additionally registered at its parent
+directory's own path. A `body.dir` mock must have a static, literal
+`request.path` (no `path_regex`, wildcards, `{name}` captures, or `re:`
+prefixes) and can't be combined with `sequence`. Loading fails fast if
+two mocks (hand-written or generated) end up with the same method+path.
+
+**Scaffolding a page without editing YAML (`mockly add page`)**
+
+```bash
+# Serve a single HTML file:
+mockly add page --path /checkout --file ./pages/checkout.html
+
+# Expand a whole folder of static assets into one mock per file:
+mockly add page --path /docs --dir ./site/docs
+```
+
+Both forms resolve paths relative to the CLI's own working directory, then
+read each file's content immediately and send it as a literal response
+body — the management API never resolves a file/folder path supplied by a
+caller, by design (it's a network-reachable control plane, so letting it
+touch the server's filesystem on request would be a path-traversal risk).
+Binary assets (images, fonts, PDFs, …) transfer byte-for-byte intact, not
+just text. This means mocks added via `mockly add page` are **point-in-time
+snapshots**: unlike `body.file`/`body.dir` configured directly in
+`mockly.yaml` (which always re-read the file fresh from disk on every
+request), editing the source file after running `add page` has no effect
+until you re-run the same command. Re-running it (e.g. after editing the
+folder's contents) replaces the previously-added mock(s) instead of
+duplicating them, so refreshing is just re-running the same command.
 
 ### Outbound Webhooks
 
@@ -2152,7 +2270,7 @@ Mockly ships with pre-built YAML configs for common services:
 | `resend` | Email send, retrieve, domains, API keys |
 | `pagerduty` | Incidents, services, users, escalations |
 | `aws-s3` | List buckets/objects, get/put/delete objects |
-| `nets` | Nets/Nexi Easy Checkout payments — create/get/charge/refund/cancel, plus an outbound "payment created" webhook |
+| `nets` | Nets/Nexi Easy Checkout payments — create/get/charge/refund/cancel, an outbound "payment created" webhook, plus a hosted checkout page worked example (`body_form` matching) |
 
 Each preset also includes built-in scenarios for common failure modes (e.g. `keycloak-unauthorized`, `stripe-card-declined`).
 
@@ -2181,6 +2299,7 @@ mockly config      validate [file]
 mockly generate    <spec-file> [-o <file>] [--http-port <n>]
 mockly list
 mockly add http    --method GET --path /foo --status 200 --body '{"ok":true}'
+mockly add page    --path /checkout --file ./page.html | --dir ./site/docs
 mockly delete      <mock-id>
 mockly status
 mockly reset

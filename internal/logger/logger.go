@@ -168,6 +168,16 @@ func (l *Logger) Subscribe(id string) (<-chan Entry, func()) {
 	return ch, cancel
 }
 
+// SubscriberCount reports how many active subscribers (e.g. SSE/log-stream
+// connections) are currently registered. Useful for diagnostics, and for
+// tests that need to wait for a subscription to actually be registered
+// instead of sleeping for an arbitrary guess.
+func (l *Logger) SubscriberCount() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.subscribers)
+}
+
 // ServeSSE handles an HTTP SSE connection, streaming new log entries.
 func (l *Logger) ServeSSE(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)

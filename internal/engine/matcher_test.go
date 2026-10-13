@@ -20,7 +20,7 @@ func TestHTTPMatch_ExactPath(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "m1",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/api/users"},
-		Response: config.HTTPResponse{Status: 200, Body: `[]`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`[]`)},
 	}}
 
 	result, ok := match(mocks, "GET", "/api/users", nil)
@@ -170,7 +170,7 @@ func TestHTTPMatch_StateCondition(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "m-auth",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/me"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"user":"alice"}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"user":"alice"}`)},
 		State:    &config.StateCondition{Key: "authenticated", Value: "true"},
 	}}
 
@@ -194,7 +194,7 @@ func TestHTTPMatch_Template(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "m1",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/time"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"time":"{{now}}"}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"time":"{{now}}"}`)},
 	}}
 	result, ok := match(mocks, "GET", "/time", nil)
 	if !ok {
@@ -205,17 +205,44 @@ func TestHTTPMatch_Template(t *testing.T) {
 	}
 }
 
+func TestHTTPMatch_Template_SkipsBinaryLiteralWithContentTypeHeader(t *testing.T) {
+	// A literal body (e.g. one produced by "mockly add page --file/--dir"
+	// for a binary asset) has no file extension to infer a Content-Type
+	// from, so config.IsBinaryContentType can't short-circuit templating
+	// via HTTPBody.Resolve() alone. RenderHTTPBody must also honor an
+	// explicit binary Content-Type header on the mock itself.
+	raw := "\x89PNG\r\n{{now}}" // {{now}} is valid, executable template syntax, so without the
+	// Content-Type-header fallback this would get silently rendered into a timestamp instead
+	// of being served byte-for-byte as the binary asset it actually is.
+	mocks := []config.HTTPMock{{
+		ID:      "m1",
+		Request: config.HTTPRequest{Method: "GET", Path: "/logo.png"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "image/png"},
+			Body:    config.NewHTTPBodyLiteral(raw),
+		},
+	}}
+	result, ok := match(mocks, "GET", "/logo.png", nil)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if result.Body != raw {
+		t.Fatalf("expected raw binary literal untouched, got %q", result.Body)
+	}
+}
+
 func TestHTTPMatch_QueryParams(t *testing.T) {
 	mocks := []config.HTTPMock{
 		{
 			ID:       "admin",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/users", Query: map[string]string{"role": "admin"}},
-			Response: config.HTTPResponse{Status: 200, Body: `{"role":"admin"}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"role":"admin"}`)},
 		},
 		{
 			ID:       "any",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/users"},
-			Response: config.HTTPResponse{Status: 200, Body: `{"role":"any"}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"role":"any"}`)},
 		},
 	}
 
@@ -277,11 +304,95 @@ func TestHTTPMatch_BodyJSON(t *testing.T) {
 	}
 }
 
+func TestHTTPMatch_BodyForm(t *testing.T) {
+	formHeaders := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
+	mocks := []config.HTTPMock{{
+		ID: "nets-checkout-declined",
+		Request: config.HTTPRequest{
+			Method:   "POST",
+			Path:     "/checkout/123",
+			BodyForm: map[string]string{"card_number": "re:.*0000$"},
+		},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral("declined")},
+	}, {
+		ID:       "nets-checkout-approved",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/checkout/123"},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral("approved")},
+	}}
+
+	// Card number ending in 0000 matches the regex-gated declined mock.
+	res, ok := engine.HTTPMatch(mocks, "POST", "/checkout/123", nil, formHeaders, "card_number=4111000000000000&cvv=123", nil)
+	if !ok || res.MockID != "nets-checkout-declined" {
+		t.Fatalf("expected nets-checkout-declined match, got %q ok=%v", res.MockID, ok)
+	}
+
+	// A different card number falls through to the catch-all approved mock.
+	res2, ok2 := engine.HTTPMatch(mocks, "POST", "/checkout/123", nil, formHeaders, "card_number=4111111111111111&cvv=123", nil)
+	if !ok2 || res2.MockID != "nets-checkout-approved" {
+		t.Fatalf("expected nets-checkout-approved match, got %q ok=%v", res2.MockID, ok2)
+	}
+
+	// Without the form Content-Type header, body_form must not match even
+	// though the raw body is otherwise identical — avoids spurious matches
+	// on non-form bodies that happen to contain "=" and "&".
+	declinedOnly := []config.HTTPMock{mocks[0]}
+	_, ok3 := engine.HTTPMatch(declinedOnly, "POST", "/checkout/123", nil, nil, "card_number=4111000000000000&cvv=123", nil)
+	if ok3 {
+		t.Fatal("expected no body_form match without a form Content-Type header")
+	}
+
+	// Wildcard and exact-match conventions.
+	mocks2 := []config.HTTPMock{{
+		ID:       "any-promo",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/checkout", BodyForm: map[string]string{"promo_code": "*", "terms": "accepted"}},
+		Response: config.HTTPResponse{Status: 200},
+	}}
+	_, ok4 := engine.HTTPMatch(mocks2, "POST", "/checkout", nil, formHeaders, "promo_code=SAVE10&terms=accepted", nil)
+	if !ok4 {
+		t.Fatal("expected wildcard+exact body_form match")
+	}
+	_, ok5 := engine.HTTPMatch(mocks2, "POST", "/checkout", nil, formHeaders, "promo_code=SAVE10&terms=declined", nil)
+	if ok5 {
+		t.Fatal("expected no match when a non-wildcard field value differs")
+	}
+	_, ok6 := engine.HTTPMatch(mocks2, "POST", "/checkout", nil, formHeaders, "terms=accepted", nil)
+	if ok6 {
+		t.Fatal("expected no match when a required field is absent entirely")
+	}
+
+	// Content-Type with a charset parameter (common for real browser-submitted
+	// forms) must still be recognized as form-urlencoded.
+	charsetHeaders := map[string]string{"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"}
+	_, ok7 := engine.HTTPMatch(mocks2, "POST", "/checkout", nil, charsetHeaders, "promo_code=SAVE10&terms=accepted", nil)
+	if !ok7 {
+		t.Fatal("expected body_form match with a charset parameter on Content-Type")
+	}
+}
+
+func TestHTTPMatch_BodyForm_TemplatesIntoResponse(t *testing.T) {
+	// A payment-page receipt echoing back the submitted (masked) card number
+	// — the use case from issue #203 — requires no new templating syntax,
+	// just {{.request.body.FIELD}} against a form-urlencoded body.
+	mocks := []config.HTTPMock{{
+		ID:       "receipt",
+		Request:  config.HTTPRequest{Method: "POST", Path: "/checkout"},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`last4={{.request.body.card_number}}`)},
+	}}
+	headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
+	res, ok := engine.HTTPMatch(mocks, "POST", "/checkout", nil, headers, "card_number=0000", nil)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if res.Body != "last4=0000" {
+		t.Errorf("expected form field templated into body, got %q", res.Body)
+	}
+}
+
 func TestHTTPMatch_QueryParamInBody(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "echo-param",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/echo"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"param":"{{.query.foo}}"}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"param":"{{.query.foo}}"}`)},
 	}}
 	query := map[string][]string{"foo": {"bar"}}
 	result, ok := engine.HTTPMatch(mocks, "GET", "/echo", query, nil, "", nil)
@@ -825,7 +936,7 @@ func TestHTTPMatch_ResponseTemplateWithRequestBody(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "create",
 		Request:  config.HTTPRequest{Method: "POST", Path: "/emails"},
-		Response: config.HTTPResponse{Status: 201, Body: `{"id":"{{.request.body.project_id}}"}`},
+		Response: config.HTTPResponse{Status: 201, Body: config.NewHTTPBodyLiteral(`{"id":"{{.request.body.project_id}}"}`)},
 	}}
 
 	result, ok := engine.HTTPMatch(mocks, "POST", "/emails", nil, nil, `{"project_id":"proj-xyz"}`, nil)
@@ -1157,12 +1268,12 @@ func TestHTTPMatch_AuthFallback(t *testing.T) {
 				Path:   "/api/users",
 				Auth:   &config.HTTPAuth{Type: "bearer", Token: "valid"},
 			},
-			Response: config.HTTPResponse{Status: 200, Body: `{"users":[]}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"users":[]}`)},
 		},
 		{
 			ID:       "unauthenticated",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/api/users"},
-			Response: config.HTTPResponse{Status: 401, Body: `{"error":"unauthorized"}`},
+			Response: config.HTTPResponse{Status: 401, Body: config.NewHTTPBodyLiteral(`{"error":"unauthorized"}`)},
 		},
 	}
 

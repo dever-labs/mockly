@@ -90,6 +90,9 @@ type Server struct {
 	messages  *MessageStore
 	broker    *mqtt.Server
 	mu        sync.RWMutex
+
+	ready     chan struct{}
+	readyOnce sync.Once
 }
 
 // New creates a Server.
@@ -101,7 +104,15 @@ func New(cfg *config.MQTTConfig, store *state.Store, sc *scenarios.Store, log *l
 		log:       log,
 		mocks:     append([]config.MQTTMock(nil), cfg.Mocks...),
 		messages:  newMessageStore(1000),
+		ready:     make(chan struct{}),
 	}
+}
+
+// Ready returns a channel that's closed once the broker is actively serving
+// its listener(s). Useful for tests (and any other caller) that need to
+// wait for actual readiness instead of polling/sleeping.
+func (s *Server) Ready() <-chan struct{} {
+	return s.ready
 }
 
 func (s *Server) SetMocks(mocks []config.MQTTMock) {
@@ -149,6 +160,7 @@ func (s *Server) Start(ctx context.Context) error {
 	if err := broker.Serve(); err != nil {
 		return fmt.Errorf("mqtt serve: %w", err)
 	}
+	s.readyOnce.Do(func() { close(s.ready) })
 
 	// Block until context is cancelled, then cleanly shut down.
 	<-ctx.Done()

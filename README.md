@@ -12,6 +12,7 @@
   <a href="https://github.com/dever-labs/mockly/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/dever-labs/mockly/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/dever-labs/mockly/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/dever-labs/mockly"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+  <a href="https://mockly.dever.dk"><img alt="Docs" src="https://img.shields.io/badge/docs-mockly.dever.dk-863bff"></a>
 </p>
 
 ## Why Mockly?

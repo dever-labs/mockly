@@ -1,0 +1,14 @@
+/* Give rendered Mermaid diagrams (with pan/zoom enabled via
+   javascripts/mermaid-zoom.js) a bounded, scrollable viewport and a
+   draggable cursor so it's obvious they can be panned/zoomed. */
+.mermaid {
+  cursor: grab;
+  max-height: 70vh;
+  overflow: hidden;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.2rem;
+}
+
+.mermaid:active {
+  cursor: grabbing;
+}

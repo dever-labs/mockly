@@ -64,6 +64,13 @@ markdown_extensions:
 plugins:
   - search
 
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/svg-pan-zoom.min.js
+  - javascripts/mermaid-zoom.js
+
 extra:
   social:
     - icon: fontawesome/brands/github

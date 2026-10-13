@@ -399,7 +399,6 @@ type HTTPRequest struct {
 	// resolves to an attribute (e.g. "user.@id" matches <user id="...">).
 	BodyXML map[string]string `yaml:"body_xml,omitempty" json:"body_xml,omitempty"`
 
-
 	// Auth requires the incoming request to carry valid credentials.
 	// When set, the mock is skipped if authentication fails — add a fallback
 	// mock (without auth) to return a 401 for unauthenticated callers.

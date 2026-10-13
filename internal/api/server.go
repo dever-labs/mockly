@@ -531,6 +531,15 @@ func (s *Server) listHTTPMocks(w http.ResponseWriter, r *http.Request) {
 // Sequence entries) to an absolute path relative to the server process's
 // working directory, so relative paths behave predictably regardless of
 // where the API client itself was run from.
+//
+// This calls ExpandHTTPMocks with restrict=false, which still rejects a
+// *relative* path that escapes the server's working directory (closing
+// the path-traversal hole a remote/untrusted API caller could otherwise
+// exploit with e.g. body.file: "../../etc/passwd") while still allowing
+// an explicit absolute path through unchanged — needed because "mockly
+// add page --dir" resolves its generated mocks' file paths to absolute
+// paths client-side before POSTing them here (see expandDirMock), and
+// those are frequently outside the server's own working directory.
 func resolveAddedMockBody(m *config.HTTPMock) error {
 	if m.Response.Body.Dir != "" {
 		return fmt.Errorf(`body.dir isn't supported via this endpoint — use "mockly add page --dir", which expands a folder into one mock per file and adds each individually`)
@@ -1825,7 +1834,6 @@ func (s *Server) closeStream(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"reached": n})
 }
-
 
 func (s *Server) getState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.store.All())

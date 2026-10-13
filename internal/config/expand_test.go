@@ -73,10 +73,40 @@ func TestExpandHTTPMocks_RestrictRejectsEscape(t *testing.T) {
 	if _, err := ExpandHTTPMocks(mocks, dir, true); err == nil {
 		t.Fatal("expected error for path escaping baseDir with restrict=true")
 	}
-	// restrict=false (e.g. CLI/API context) permits the same escape.
+	// A *relative* escape (classic CWE-22 "../" traversal) is rejected
+	// even with restrict=false — this guards the /api/mocks/http endpoint
+	// against path-injection from an untrusted caller, since restrict=false
+	// is also used there (see internal/api/server.go's
+	// resolveAddedMockBody).
+	if _, err := ExpandHTTPMocks(mocks, dir, false); err == nil {
+		t.Fatal("expected error for relative path escaping baseDir even with restrict=false")
+	}
+}
+
+// TestExpandHTTPMocks_UnrestrictedAllowsExplicitAbsolutePath verifies that
+// restrict=false still permits an explicit absolute path reference outside
+// baseDir — unlike a relative "../" escape, this is a deliberate reference
+// by the caller (e.g. the "mockly add page --dir" CLI command, which
+// resolves directory-expansion mocks client-side into absolute paths
+// before POSTing them to the API, specifically so they survive the
+// round-trip to a server with a different working directory).
+func TestExpandHTTPMocks_UnrestrictedAllowsExplicitAbsolutePath(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "sub")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	absFile := filepath.Join(parent, "secret.html")
+	writeFile(t, absFile, "top secret")
+
+	mocks := []HTTPMock{{
+		ID:       "m1",
+		Request:  HTTPRequest{Method: "GET", Path: "/page"},
+		Response: HTTPResponse{Status: 200, Body: HTTPBody{File: absFile}},
+	}}
 	out, err := ExpandHTTPMocks(mocks, dir, false)
 	if err != nil {
-		t.Fatalf("expected no error with restrict=false, got %v", err)
+		t.Fatalf("expected no error for an explicit absolute path with restrict=false, got %v", err)
 	}
 	content, _, err := out[0].Response.Body.Resolve()
 	if err != nil {
@@ -84,6 +114,11 @@ func TestExpandHTTPMocks_RestrictRejectsEscape(t *testing.T) {
 	}
 	if content != "top secret" {
 		t.Fatalf("got %q", content)
+	}
+
+	// The same absolute path is rejected when restrict=true (config.Load).
+	if _, err := ExpandHTTPMocks(mocks, dir, true); err == nil {
+		t.Fatal("expected error for absolute path escaping baseDir with restrict=true")
 	}
 }
 

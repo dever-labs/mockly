@@ -197,21 +197,31 @@ func (b *HTTPBody) setStructured(file, dir string) error {
 // ---------------------------------------------------------------------------
 
 // resolveBodyPath resolves raw (as written in a body.file/body.dir
-// reference) against baseDir, returning an absolute path. When restrict is
-// true, the result is rejected if it would escape baseDir (guards against
-// "../../etc/passwd"-style traversal from a config file; not applied for
-// the "mockly add page" CLI, which resolves against the user's own
-// invocation directory and has no equivalent trust boundary to enforce).
+// reference) against baseDir, returning an absolute path.
+//
+// A *relative* raw reference is always rejected if it would resolve
+// outside baseDir — e.g. "../../etc/passwd" — since that's the classic
+// path-traversal pattern (CWE-22) and is never an intentional choice the
+// way an explicit absolute path is; this applies regardless of restrict.
+//
+// restrict additionally controls whether an *absolute* raw reference is
+// allowed to point outside baseDir: true (config.Load) rejects it too,
+// since a malicious included config file shouldn't be able to point
+// anywhere on disk; false (the "mockly add page" CLI and the
+// corresponding /api/mocks/http endpoint) allows it, since an absolute
+// path is a deliberate, explicit reference by a trusted local
+// operator/caller, not something reached via relative-segment injection.
 func resolveBodyPath(raw, baseDir string, restrict bool) (string, error) {
+	wasAbs := filepath.IsAbs(raw)
 	p := raw
-	if !filepath.IsAbs(p) {
+	if !wasAbs {
 		p = filepath.Join(baseDir, p)
 	}
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return "", fmt.Errorf("resolving path %q: %w", raw, err)
 	}
-	if restrict {
+	if !wasAbs || restrict {
 		baseAbs, err := filepath.Abs(baseDir)
 		if err != nil {
 			return "", fmt.Errorf("resolving base directory %q: %w", baseDir, err)

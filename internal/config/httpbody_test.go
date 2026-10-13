@@ -121,6 +121,69 @@ func TestHTTPBody_JSON_MutuallyExclusive(t *testing.T) {
 	}
 }
 
+func TestHTTPBody_JSON_LiteralBase64MutuallyExclusiveWithFile(t *testing.T) {
+	var b HTTPBody
+	err := json.Unmarshal([]byte(`{"file":"a.html","literal_base64":"aGk="}`), &b)
+	if err == nil {
+		t.Fatal("expected error for literal_base64+file both set")
+	}
+}
+
+// TestHTTPBody_JSON_BinaryLiteralRoundTrips verifies that a Literal body
+// holding arbitrary non-UTF-8 bytes (e.g. the content of an image, font,
+// or PDF read via "mockly add page --file/--dir") survives a JSON
+// marshal/unmarshal round-trip byte-for-byte via the base64 fallback
+// encoding, instead of being silently corrupted by Go's JSON string
+// encoding (which replaces invalid UTF-8 byte sequences with U+FFFD).
+func TestHTTPBody_JSON_BinaryLiteralRoundTrips(t *testing.T) {
+	data := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0xFF, 0xFE, 0x80, 0x81, 0x00, 0x01, 0x02, 0xC3, 0x28}
+	b := NewHTTPBodyLiteral(string(data))
+
+	out, err := json.Marshal(b)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	// The wire form must be the base64 fallback, not a bare JSON string
+	// (which is how we know it would otherwise be corrupted).
+	var wire map[string]string
+	if err := json.Unmarshal(out, &wire); err != nil {
+		t.Fatalf("expected a {\"literal_base64\": ...} object, got %s (%v)", out, err)
+	}
+	if wire["literal_base64"] == "" {
+		t.Fatalf("expected a literal_base64 field, got %s", out)
+	}
+
+	var back HTTPBody
+	if err := json.Unmarshal(out, &back); err != nil {
+		t.Fatalf("round-trip unmarshal: %v", err)
+	}
+	if back.Literal != string(data) {
+		t.Fatalf("binary content corrupted: got %x, want %x", []byte(back.Literal), data)
+	}
+}
+
+// TestHTTPBody_JSON_TextLiteralStaysPlainString verifies that ordinary
+// UTF-8 literal content (the overwhelming common case) is still
+// marshaled as a plain JSON string, not base64 — for backward
+// compatibility and human-readability of API requests/responses.
+func TestHTTPBody_JSON_TextLiteralStaysPlainString(t *testing.T) {
+	b := NewHTTPBodyLiteral("<h1>hello</h1>")
+	out, err := json.Marshal(b)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	// encoding/json HTML-escapes "<"/">"/"&" by default in plain strings;
+	// what matters here is that it's a plain JSON string (not a
+	// {"literal_base64": ...} object).
+	var s string
+	if err := json.Unmarshal(out, &s); err != nil {
+		t.Fatalf("expected a plain JSON string, got %s (%v)", out, err)
+	}
+	if s != "<h1>hello</h1>" {
+		t.Fatalf("got %q, want %q", s, "<h1>hello</h1>")
+	}
+}
+
 func TestHTTPBody_IsEmptyIsZero(t *testing.T) {
 	var b HTTPBody
 	if !b.IsEmpty() || !b.IsZero() {

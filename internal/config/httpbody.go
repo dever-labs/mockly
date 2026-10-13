@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -159,21 +161,44 @@ func (b *HTTPBody) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	var spec struct {
-		File string `json:"file"`
-		Dir  string `json:"dir"`
+		File          string `json:"file"`
+		Dir           string `json:"dir"`
+		LiteralBase64 string `json:"literal_base64"`
 	}
 	if err := json.Unmarshal(data, &spec); err != nil {
-		return fmt.Errorf("body: expected a string or a {\"file\": ...}/{\"dir\": ...} object: %w", err)
+		return fmt.Errorf("body: expected a string or a {\"file\": ...}/{\"dir\": ...}/{\"literal_base64\": ...} object: %w", err)
+	}
+	if spec.LiteralBase64 != "" {
+		if spec.File != "" || spec.Dir != "" {
+			return fmt.Errorf(`body: "literal_base64" cannot be combined with "file"/"dir"`)
+		}
+		decoded, err := base64.StdEncoding.DecodeString(spec.LiteralBase64)
+		if err != nil {
+			return fmt.Errorf("body: invalid literal_base64: %w", err)
+		}
+		b.Literal = string(decoded)
+		b.File, b.Dir = "", ""
+		return nil
 	}
 	return b.setStructured(spec.File, spec.Dir)
 }
 
+// MarshalJSON emits b's literal content as a plain JSON string whenever
+// it's valid UTF-8 (the common case: HTML/CSS/JS/JSON/text), for
+// readability and backward compatibility. Binary content (images, fonts,
+// PDFs, wasm, …) is never valid UTF-8 in general, and Go's JSON string
+// encoding would otherwise silently replace invalid byte sequences with
+// U+FFFD, corrupting it — so it's instead base64-encoded as
+// {"literal_base64": "..."}, preserving the bytes exactly across the
+// management API (e.g. "mockly add page --file/--dir" on a binary asset).
 func (b HTTPBody) MarshalJSON() ([]byte, error) {
 	switch {
 	case b.File != "":
 		return json.Marshal(map[string]string{"file": b.File})
 	case b.Dir != "":
 		return json.Marshal(map[string]string{"dir": b.Dir})
+	case !utf8.ValidString(b.Literal):
+		return json.Marshal(map[string]string{"literal_base64": base64.StdEncoding.EncodeToString([]byte(b.Literal))})
 	default:
 		return json.Marshal(b.Literal)
 	}

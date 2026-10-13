@@ -961,7 +961,8 @@ read each file's content immediately and send it as a literal response
 body — the management API never resolves a file/folder path supplied by a
 caller, by design (it's a network-reachable control plane, so letting it
 touch the server's filesystem on request would be a path-traversal risk).
-This means mocks added via `mockly add page` are **point-in-time
+Binary assets (images, fonts, PDFs, …) transfer byte-for-byte intact, not
+just text. This means mocks added via `mockly add page` are **point-in-time
 snapshots**: unlike `body.file`/`body.dir` configured directly in
 `mockly.yaml` (which always re-read the file fresh from disk on every
 request), editing the source file after running `add page` has no effect

@@ -2700,6 +2700,15 @@ components:
           additionalProperties:
             type: string
           description: Match JSON body fields using dot-notation paths
+        body_form:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Match fields in an application/x-www-form-urlencoded body (e.g. a
+            payment page's card-details post-back). Values support exact
+            match, "*" (wildcard), and a "re:" regex prefix. Requires the
+            request's Content-Type to declare form-urlencoded encoding.
 
     HTTPResponse:
       type: object

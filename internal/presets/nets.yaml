@@ -25,6 +25,9 @@
 #   - Refund (POST /v1/payment/{id}/refunds)
 #   - Cancel (POST /v1/payment/{id}/cancels)
 #   - Failure scenarios: declined card, insufficient funds, gateway 5xx
+#   - Hosted checkout page (GET /checkout/{id} + POST form) — a worked,
+#     no-HTML-authoring-required example of mocking the page a shopper
+#     actually sees, routing approved/declined via the body_form matcher
 #
 # Try the webhook flow with a local receiver, e.g.:
 #   npx local-webhook-receiver  (or any http bin)
@@ -189,7 +192,7 @@ protocols:
                 "paymentId": "018e2b6e-mockpaymentid-0001",
                 "summary": {"reservedAmount": 1000},
                 "orderDetails": {"amount": 1000, "currency": "EUR", "reference": "order-001"},
-                "checkout": {"url": "https://checkout.nets.eu/mock"},
+                "checkout": {"url": "http://localhost:8080/checkout/018e2b6e-mockpaymentid-0001"},
                 "created": "2024-01-01T00:00:00.0000Z"
               }
             }
@@ -225,3 +228,75 @@ protocols:
           path: re:^/v1/payment/[^/]+/cancels$
         response:
           status: 204
+
+      # ── Hosted checkout page (worked example, zero HTML authoring needed) ───
+      # Nets' real "checkout.url" (returned above) opens a hosted page — often
+      # embedded in an iframe on the merchant site — where the shopper enters
+      # card details and submits a form. This mocks that page end-to-end:
+      #   1. GET  /checkout/{paymentId}         → renders an HTML form
+      #   2. POST /checkout/{paymentId}         → body_form matches the
+      #      submitted card_number and routes to an approved/declined page
+      # Try it in a browser at http://localhost:8080/checkout/018e2b6e-mockpaymentid-0001
+      # — submit a card number ending in 0000 to see the declined path.
+      - id: checkout-page
+        request:
+          method: GET
+          path: /checkout/{paymentId}
+        response:
+          status: 200
+          headers:
+            Content-Type: text/html
+          body: |
+            <!DOCTYPE html>
+            <html>
+              <head><title>Nets Checkout (mock)</title></head>
+              <body>
+                <h1>Complete your payment</h1>
+                <p>Payment ID: {{.request.params.paymentId}}</p>
+                <form method="post" action="/checkout/{{.request.params.paymentId}}">
+                  <label>Card number: <input name="card_number" value="4111111111111111"></label><br>
+                  <label>CVV: <input name="cvv" value="123"></label><br>
+                  <button type="submit">Pay</button>
+                </form>
+                <p><small>Tip: submit a card number ending in 0000 to simulate a decline.</small></p>
+              </body>
+            </html>
+
+      # Declined: card number ends in 0000. Listed before the approved
+      # catch-all below, since the first matching mock wins.
+      - id: checkout-post-declined
+        request:
+          method: POST
+          path: /checkout/{paymentId}
+          body_form:
+            card_number: "re:.*0000$"
+        response:
+          status: 200
+          headers:
+            Content-Type: text/html
+          body: |
+            <!DOCTYPE html>
+            <html>
+              <body>
+                <h1>Payment declined</h1>
+                <p>Your card was declined. <a href="/checkout/{{.request.params.paymentId}}">Try again</a></p>
+              </body>
+            </html>
+
+      # Approved: any other card number.
+      - id: checkout-post-approved
+        request:
+          method: POST
+          path: /checkout/{paymentId}
+        response:
+          status: 200
+          headers:
+            Content-Type: text/html
+          body: |
+            <!DOCTYPE html>
+            <html>
+              <body>
+                <h1>Payment approved</h1>
+                <p>Payment {{.request.params.paymentId}} was approved.</p>
+              </body>
+            </html>

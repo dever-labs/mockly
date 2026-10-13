@@ -608,6 +608,48 @@ Use dot-notation paths to match fields anywhere in a JSON body:
           body: '{"ok":true}'
 ```
 
+#### Form body field matching
+
+For classic HTML `<form method="post">` submissions (e.g. a hosted
+payment/checkout page posting back card details), `body_form` matches
+fields in an `application/x-www-form-urlencoded` body. Unlike
+`body_json`/`body_multipart`/`body_xml`, values also support the `"re:"`
+regex prefix — useful for matching a card number pattern rather than an
+exact value:
+
+```yaml
+      - id: checkout-declined
+        request:
+          method: POST
+          path: /checkout/{id}
+          body_form:
+            card_number: "re:.*0000$" # any card number ending in 0000
+        response:
+          status: 200
+          body: {file: ./mocks/declined.html}
+
+      - id: checkout-approved
+        request:
+          method: POST
+          path: /checkout/{id}
+        response:
+          status: 200
+          body: '{{.request.body.card_number}}' # last-4 echoed back via templating, no extra config needed
+```
+
+A repeated field name (e.g. multiple same-named checkboxes) matches if
+**any** submitted value satisfies the configured value/pattern, mirroring
+query-param matching. The request Content-Type must declare
+`application/x-www-form-urlencoded` (a charset parameter is fine) for
+`body_form` to apply at all — this avoids spurious matches on non-form
+bodies.
+
+See the [Nets/Nexi preset](configs/presets/nets.yaml) for a complete,
+runnable worked example: a hosted checkout page (`GET /checkout/{id}`)
+with a real HTML form, posted back to `body_form`-matched
+approved/declined responses — no HTML authoring required, just
+`mockly preset use nets`.
+
 #### Multipart and XML body field matching
 
 For `multipart/form-data` requests (e.g. file uploads), `body_multipart`
@@ -796,7 +838,7 @@ curl "http://localhost:8080/orders?order_id=bad-id&debug=true"
 
 Up to 3 of the closest candidates are reported (mocks that passed the
 most checks — method, path, headers, query, body, `body_json`,
-`body_multipart`, `body_xml`, state, auth — before failing), ranked
+`body_form`, `body_multipart`, `body_xml`, state, auth — before failing), ranked
 closest-first. Near-miss info is also
 included in the mock's request log entry whenever diagnostics were
 requested, so it shows up in the management UI's live log stream too.
@@ -2228,7 +2270,7 @@ Mockly ships with pre-built YAML configs for common services:
 | `resend` | Email send, retrieve, domains, API keys |
 | `pagerduty` | Incidents, services, users, escalations |
 | `aws-s3` | List buckets/objects, get/put/delete objects |
-| `nets` | Nets/Nexi Easy Checkout payments — create/get/charge/refund/cancel, plus an outbound "payment created" webhook |
+| `nets` | Nets/Nexi Easy Checkout payments — create/get/charge/refund/cancel, an outbound "payment created" webhook, plus a hosted checkout page worked example (`body_form` matching) |
 
 Each preset also includes built-in scenarios for common failure modes (e.g. `keycloak-unauthorized`, `stripe-card-declined`).
 

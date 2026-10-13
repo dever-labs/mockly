@@ -374,6 +374,18 @@ type HTTPRequest struct {
 	// Example: {"user.role": "admin"} matches {"user":{"role":"admin"}}.
 	BodyJSON map[string]string `yaml:"body_json,omitempty" json:"body_json,omitempty"`
 
+	// BodyForm matches fields in an application/x-www-form-urlencoded
+	// request body (e.g. a classic HTML <form method="post"> submission,
+	// such as a payment page's card-details post-back). Keys are form
+	// field names. Unlike BodyJSON/BodyMultipart/BodyXML, values support
+	// the "re:" regex prefix (in addition to "*" and exact match) — e.g.
+	// "card_number": "re:.*0000$" — since matching form input against a
+	// pattern (not just an exact value) is the common case for this kind
+	// of mock. If a field is repeated (e.g. multiple checkboxes sharing a
+	// name), a match succeeds if ANY submitted value satisfies the
+	// configured value/pattern.
+	BodyForm map[string]string `yaml:"body_form,omitempty" json:"body_form,omitempty"`
+
 	// BodyMultipart matches fields in a multipart/form-data request body.
 	// Keys are the form field name for text parts (e.g. "name": "Alice"),
 	// or "<field>.filename"/"<field>.content_type" for file parts (e.g.
@@ -386,6 +398,7 @@ type HTTPRequest struct {
 	// text content of <user><role>...</role></user>; a leading "@" segment
 	// resolves to an attribute (e.g. "user.@id" matches <user id="...">).
 	BodyXML map[string]string `yaml:"body_xml,omitempty" json:"body_xml,omitempty"`
+
 
 	// Auth requires the incoming request to carry valid credentials.
 	// When set, the mock is skipped if authentication fails — add a fallback

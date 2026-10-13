@@ -12,6 +12,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -119,6 +120,9 @@ func HTTPMatch(
 			continue
 		}
 		if len(m.Request.BodyJSON) > 0 && !matchBodyJSON(m.Request.BodyJSON, body) {
+			continue
+		}
+		if len(m.Request.BodyForm) > 0 && !matchBodyForm(m.Request.BodyForm, body, headers) {
 			continue
 		}
 		if len(m.Request.BodyMultipart) > 0 && !matchBodyMultipart(m.Request.BodyMultipart, body, headers) {
@@ -265,6 +269,12 @@ func HTTPDiagnose(
 
 			if len(m.Request.BodyJSON) > 0 && !matchBodyJSON(m.Request.BodyJSON, body) {
 				reason = "body_json field(s) did not match"
+				break evaluate
+			}
+			depth++
+
+			if len(m.Request.BodyForm) > 0 && !matchBodyForm(m.Request.BodyForm, body, headers) {
+				reason = "body_form field(s) did not match"
 				break evaluate
 			}
 			depth++
@@ -672,6 +682,76 @@ func jsonValueString(v interface{}) string {
 	}
 }
 
+// formBodyFields parses body as application/x-www-form-urlencoded (per the
+// Content-Type header, ignoring any charset parameter) into a flat
+// map[string]interface{} of first-value-per-key fields, for use as the
+// {{.request.body}} template value when the body isn't JSON. Mirrors how
+// {{.request.query}} already collapses repeated values to their first
+// occurrence. Returns an error if the Content-Type isn't form-urlencoded or
+// the body can't be parsed as such, so callers can fall back appropriately.
+func formBodyFields(body string, headers map[string]string) (map[string]interface{}, error) {
+	contentType := getHeader(headers, "Content-Type")
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(mediaType, "application/x-www-form-urlencoded") {
+		return nil, fmt.Errorf("content-type %q is not form-urlencoded", mediaType)
+	}
+	values, err := url.ParseQuery(body)
+	if err != nil {
+		return nil, err
+	}
+	fields := make(map[string]interface{}, len(values))
+	for k, v := range values {
+		if len(v) > 0 {
+			fields[k] = v[0]
+		}
+	}
+	return fields, nil
+}
+
+// matchBodyForm checks that the named fields in want are present (and,
+// unless "*" or a "re:" regex, equal) in an application/x-www-form-urlencoded
+// request body — the classic encoding of an HTML <form method="post">
+// submission (e.g. a payment page's card-details post-back). The
+// Content-Type header must declare this encoding (ignoring any charset
+// parameter); otherwise arbitrary non-form bodies could spuriously "match"
+// since url.ParseQuery is lenient. If a field is repeated in the body
+// (e.g. multiple same-named checkboxes), a match succeeds if ANY submitted
+// value satisfies the configured value/pattern, mirroring matchQuery.
+func matchBodyForm(want map[string]string, body string, headers map[string]string) bool {
+	if body == "" {
+		return false
+	}
+	contentType := getHeader(headers, "Content-Type")
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil || !strings.EqualFold(mediaType, "application/x-www-form-urlencoded") {
+		return false
+	}
+	values, err := url.ParseQuery(body)
+	if err != nil {
+		return false
+	}
+	for key, expected := range want {
+		actuals, ok := values[key]
+		if !ok || len(actuals) == 0 {
+			return false
+		}
+		matched := false
+		for _, actual := range actuals {
+			if expected == "*" || matchQueryValue(expected, actual) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
+}
+
 // matchBodyMultipart checks that the named fields/metadata in want are
 // present (and, unless "*", equal) in a multipart/form-data request body.
 // Text fields are keyed by their form field name (e.g. "name": "Alice").
@@ -989,7 +1069,9 @@ type RequestContext struct {
 
 // renderTemplate executes a Go text/template against a context that includes
 // both the legacy top-level keys (query, headers, body) and a nested
-// "request" key with method, path, params, and the body parsed as JSON.
+// "request" key with method, path, params, and the body parsed as JSON (or,
+// for an application/x-www-form-urlencoded body, as form fields — see
+// formBodyFields).
 func renderTemplate(tmpl string, req RequestContext) (string, error) {
 	if !strings.Contains(tmpl, "{{") {
 		return tmpl, nil
@@ -999,11 +1081,17 @@ func renderTemplate(tmpl string, req RequestContext) (string, error) {
 		return "", fmt.Errorf("parsing template: %w", err)
 	}
 
-	// Parse body as JSON for {{.request.body.field}} access.
-	// Falls back to an empty map so templates don't panic on non-JSON bodies.
+	// Parse body as JSON for {{.request.body.field}} access. Falls back to
+	// form fields (e.g. for a payment page's card-details post-back, so a
+	// receipt page can echo back "{{.request.body.card_number}}") and then
+	// to an empty map, so templates don't panic on an unparseable body.
 	var bodyJSON interface{}
 	if err := json.Unmarshal([]byte(req.Body), &bodyJSON); err != nil {
-		bodyJSON = map[string]interface{}{}
+		if form, ferr := formBodyFields(req.Body, req.Headers); ferr == nil {
+			bodyJSON = form
+		} else {
+			bodyJSON = map[string]interface{}{}
+		}
 	}
 
 	ctx := map[string]interface{}{

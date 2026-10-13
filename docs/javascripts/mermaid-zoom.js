@@ -33,15 +33,28 @@ function attach(svg, container) {
   }
   svg.dataset.panZoomInit = "true";
   container.dataset.panZoomInit = "true";
-  svg.style.maxWidth = "100%";
-  svg.style.height = "auto";
-  window.svgPanZoom(svg, {
+  // Fill the whole (now explicitly tall, see extra.css) container instead of
+  // "height: auto", which would just shrink the svg back down to the
+  // diagram's natural width-driven aspect ratio. svg-pan-zoom's `fit` then
+  // scales the diagram up to use all of that real estate.
+  svg.style.width = "100%";
+  svg.style.height = "100%";
+  var instance = window.svgPanZoom(svg, {
     zoomEnabled: true,
     controlIconsEnabled: true,
     fit: true,
     center: true,
     minZoom: 0.5,
     maxZoom: 10,
+  });
+  // The svg's layout box isn't always final the instant svg-pan-zoom reads
+  // it (web fonts / shadow DOM style application can still be settling),
+  // which can leave the initial fit/center slightly off. Re-run both once
+  // more a tick later, once layout has definitely stabilized.
+  window.requestAnimationFrame(function () {
+    instance.resize();
+    instance.fit();
+    instance.center();
   });
 }
 

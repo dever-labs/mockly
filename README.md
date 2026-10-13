@@ -1,19 +1,28 @@
-# Mockly
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="Mockly logo" width="88" height="auto">
+</p>
 
-**Cross-platform, multi-protocol mock server** — HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, NATS, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, and SIP in a single binary with a built-in web UI, REST management API, scenario system, and fault injection.
+<h1 align="center">Mockly</h1>
 
-[![CI](https://github.com/dever-labs/mockly/actions/workflows/ci.yml/badge.svg)](https://github.com/dever-labs/mockly/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/dever-labs/mockly)](https://github.com/dever-labs/mockly/releases/latest)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <strong>One binary. Twenty protocols. Every failure mode your real dependencies won't let you test.</strong>
+</p>
 
+<p align="center">
+  <a href="https://github.com/dever-labs/mockly/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/dever-labs/mockly/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/dever-labs/mockly/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/dever-labs/mockly"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+</p>
 
-**📖 [Full documentation](https://mockly.dever.dk)** · browsable in-repo under [`docs/`](docs/)
+<p align="center">
+  <strong>📖 <a href="https://mockly.dever.dk">Full documentation</a></strong> · browsable in-repo under <a href="docs/"><code>docs/</code></a>
+</p>
 
 ---
 
 ## Why Mockly?
 
-Testing against real third-party services (payment gateways, auth providers, message brokers) is slow, flaky, and often impossible to drive into failure scenarios on demand. Mockly runs as a single, dependency-free binary that speaks 20+ protocols natively — not just HTTP — so you can mock the *entire* integration surface of a modern service, not just its REST API.
+Testing against real third-party services — payment gateways, auth providers, message brokers — is slow, flaky, and often impossible to drive into the failure scenarios you actually need to cover. Mockly is a single, dependency-free binary that speaks **HTTP, WebSocket, gRPC, GraphQL, TCP, Redis, SMTP, MQTT, NATS, SNMP, DNS, AMQP, Kafka, LDAP, IMAP, FTP, Memcached, STOMP, CoAP, and SIP** natively, with a built-in web UI, a REST management API, scenarios, and fault injection — so you can mock the *entire* integration surface of a modern service, not just its REST API, and reliably trigger the edge cases real vendors won't.
 
 ## Features
 

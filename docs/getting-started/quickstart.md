@@ -1,0 +1,29 @@
+# Quickstart
+
+## Download
+
+Grab the binary for your platform from the [releases page](https://github.com/dever-labs/mockly/releases), or build from source:
+
+```sh
+git clone https://github.com/dever-labs/mockly
+cd mockly
+make build        # builds UI + Go binary
+```
+
+## Run with a config file
+
+```sh
+mockly start --config mockly.yaml
+```
+
+Open `http://localhost:9091` for the web UI, or call the management API at the same port.
+
+## Run a preset
+
+```sh
+mockly preset use keycloak    # starts Mockly pre-loaded with Keycloak endpoints
+mockly preset list            # list all available presets
+mockly preset show stripe     # print the preset YAML
+```
+
+---

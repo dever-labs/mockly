@@ -1,0 +1,64 @@
+name: Docs
+
+on:
+  push:
+    branches:
+      - main
+      # TODO: remove this branch trigger once the docs site has been
+      # reviewed and this PR is merged — it exists only so an early,
+      # live preview can be deployed and judged before merging.
+      - docs/mkdocs-material-site
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  # ─── Build (runs on every PR as a strict-mode check; no deploy) ────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements-docs.txt
+
+      - run: mkdocs build --strict
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  # ─── Deploy (only on push to main or this preview branch) ──────────────────
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

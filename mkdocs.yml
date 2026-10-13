@@ -1,0 +1,119 @@
+site_name: Mockly
+site_description: >-
+  Cross-platform, multi-protocol mock server — HTTP, WebSocket, gRPC,
+  GraphQL, TCP, Redis, SMTP, MQTT, NATS, SNMP, DNS, AMQP, Kafka, LDAP, IMAP,
+  FTP, Memcached, STOMP, CoAP, and SIP in a single binary.
+site_url: https://mockly.dever.dk/
+repo_url: https://github.com/dever-labs/mockly
+repo_name: dever-labs/mockly
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/dever-labs/mockly
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Overview: getting-started/index.md
+      - Quickstart: getting-started/quickstart.md
+      - Configuration: getting-started/configuration.md
+  - Protocols:
+      - Overview: protocols/index.md
+      - HTTP: protocols/http.md
+      - Outbound Webhooks: protocols/webhooks.md
+      - WebSocket: protocols/websocket.md
+      - gRPC: protocols/grpc.md
+      - GraphQL: protocols/graphql.md
+      - TCP: protocols/tcp.md
+      - Redis: protocols/redis.md
+      - SMTP: protocols/smtp.md
+      - MQTT: protocols/mqtt.md
+      - NATS: protocols/nats.md
+      - SNMP: protocols/snmp.md
+      - DNS: protocols/dns.md
+      - AMQP: protocols/amqp.md
+      - Kafka: protocols/kafka.md
+      - LDAP: protocols/ldap.md
+      - IMAP: protocols/imap.md
+      - FTP: protocols/ftp.md
+      - Memcached: protocols/memcached.md
+      - STOMP: protocols/stomp.md
+      - CoAP: protocols/coap.md
+      - SIP: protocols/sip.md
+  - Testing:
+      - Overview: testing/index.md
+      - Component Testing: testing/component-testing.md
+      - Scenarios: testing/scenarios.md
+      - Fault Injection: testing/fault-injection.md
+      - PATCH Mocks: testing/patch-mocks.md
+  - Presets: presets.md
+  - Reference:
+      - Overview: reference/index.md
+      - CLI: reference/cli.md
+      - Management API: reference/management-api.md
+      - Observability: reference/observability.md
+  - Client Libraries:
+      - Overview: clients/index.md
+      - Go: clients/go.md
+      - Node.js / TypeScript: clients/node.md
+      - Java: clients/java.md
+      - .NET / C#: clients/dotnet.md
+      - Python: clients/python.md
+      - Rust: clients/rust.md
+  - CI Integration: ci-integration.md
+  - Architecture: architecture.md
+  - Development & Contributing: contributing.md

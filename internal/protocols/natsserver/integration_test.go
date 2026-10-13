@@ -29,8 +29,10 @@ func freePort(t *testing.T) int {
 	return port
 }
 
-// startServer boots a natsserver.Server on a free port and waits until it
-// accepts connections, returning its URL and a cleanup-bound context.
+// startServer boots a natsserver.Server on a free port and waits until mock
+// subscriptions are fully registered (via Server.Ready, not merely until the
+// TCP listener accepts connections — the two are not the same moment, see
+// natsserver.Server.Ready's doc comment), returning its URL.
 func startServer(t *testing.T, cfg *config.NATSConfig) string {
 	t.Helper()
 	cfg.Port = freePort(t)
@@ -43,23 +45,14 @@ func startServer(t *testing.T, cfg *config.NATSConfig) string {
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Start(ctx) }()
 
-	url := fmt.Sprintf("nats://127.0.0.1:%d", cfg.Port)
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		nc, err := nats.Connect(url, nats.Timeout(200*time.Millisecond))
-		if err == nil {
-			nc.Close()
-			return url
-		}
-		select {
-		case err := <-errCh:
-			t.Fatalf("server exited early: %v", err)
-		default:
-		}
-		time.Sleep(20 * time.Millisecond)
+	select {
+	case <-srv.Ready():
+	case err := <-errCh:
+		t.Fatalf("server exited early: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("nats server never became ready")
 	}
-	t.Fatalf("nats server on %s never became ready", url)
-	return ""
+	return fmt.Sprintf("nats://127.0.0.1:%d", cfg.Port)
 }
 
 func TestNATS_CorePubSub(t *testing.T) {

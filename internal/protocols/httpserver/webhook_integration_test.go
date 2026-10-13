@@ -58,7 +58,7 @@ func TestHTTPServer_MockFiresWebhookOnMatch(t *testing.T) {
 		Request: config.HTTPRequest{Method: "POST", Path: "/v1/payment"},
 		Response: config.HTTPResponse{
 			Status: 201,
-			Body:   `{"paymentId":"pay_1"}`,
+			Body:   config.NewHTTPBodyLiteral(`{"paymentId":"pay_1"}`),
 		},
 		Webhooks: []config.Webhook{{
 			URL:    callback.URL + "/cb",
@@ -88,8 +88,15 @@ func TestHTTPServer_MockFiresWebhookOnMatch(t *testing.T) {
 		t.Fatal("expected webhook was not received")
 	}
 
-	// Give the sender a moment to record the attempt after responding.
-	time.Sleep(50 * time.Millisecond)
+	// Wait for the sender goroutine to finish recording history, instead of
+	// sleeping for an arbitrary guess (flaky under CPU contention).
+	deadline := time.Now().Add(2 * time.Second)
+	for len(wh.History().All()) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for webhook dispatch to record history")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	records := wh.History().All()
 	if len(records) != 1 {
 		t.Fatalf("history len = %d, want 1", len(records))

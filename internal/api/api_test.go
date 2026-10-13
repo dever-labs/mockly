@@ -8,6 +8,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -333,6 +335,117 @@ func TestAPI_HTTP_CRUD(t *testing.T) {
 	}
 	if len(httpStub.GetMocks()) != 0 {
 		t.Errorf("expected 0 mocks after delete, got %d", len(httpStub.GetMocks()))
+	}
+}
+
+// TestAPI_HTTP_AddUpsertsByID verifies that POSTing a mock whose ID already
+// exists replaces it in place instead of appending a duplicate — important
+// for "mockly add page --file/--dir", whose generated mock IDs are
+// deterministic, so re-running the same scaffold command (e.g. after
+// editing the page's content) must be idempotent, not additive.
+func TestAPI_HTTP_AddUpsertsByID(t *testing.T) {
+	base, httpStub, _, _, _ := startAPI(t)
+
+	mock := map[string]interface{}{
+		"id":       "dup-mock",
+		"request":  map[string]interface{}{"method": "GET", "path": "/dup"},
+		"response": map[string]interface{}{"status": 200, "body": "first"},
+	}
+	postBody, _ := json.Marshal(mock)
+	resp, err := http.Post(base+"/api/mocks/http", "application/json", bytes.NewReader(postBody))
+	if err != nil {
+		t.Fatalf("POST #1: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != 201 {
+		t.Fatalf("POST #1: want 201, got %d", resp.StatusCode)
+	}
+
+	mock["response"] = map[string]interface{}{"status": 200, "body": "second"}
+	postBody2, _ := json.Marshal(mock)
+	resp2, err := http.Post(base+"/api/mocks/http", "application/json", bytes.NewReader(postBody2))
+	if err != nil {
+		t.Fatalf("POST #2: %v", err)
+	}
+	_ = resp2.Body.Close()
+	if resp2.StatusCode != 201 {
+		t.Fatalf("POST #2: want 201, got %d", resp2.StatusCode)
+	}
+
+	mocks := httpStub.GetMocks()
+	if len(mocks) != 1 {
+		t.Fatalf("expected 1 mock after re-POSTing same ID, got %d", len(mocks))
+	}
+	if mocks[0].Response.Body.Literal != "second" {
+		t.Errorf("expected upserted mock's body = %q, got %q", "second", mocks[0].Response.Body.Literal)
+	}
+}
+
+// TestAPI_HTTP_AddRejectsBodyDir verifies that POSTing a mock with
+// body.dir set is rejected by the single-mock add endpoint (it has no way
+// to expand a directory into several mocks) and points the caller at the
+// right command instead.
+func TestAPI_HTTP_AddRejectsBodyDir(t *testing.T) {
+	base, _, _, _, _ := startAPI(t)
+
+	mock := map[string]interface{}{
+		"id":       "dir-mock",
+		"request":  map[string]interface{}{"method": "GET", "path": "/site"},
+		"response": map[string]interface{}{"status": 200, "body": map[string]string{"dir": "./site"}},
+	}
+	postBody, _ := json.Marshal(mock)
+	resp, err := http.Post(base+"/api/mocks/http", "application/json", bytes.NewReader(postBody))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != 400 {
+		t.Fatalf("want 400 for body.dir via single-mock endpoint, got %d", resp.StatusCode)
+	}
+}
+
+// TestAPI_HTTP_AddResolvesBodyFileAgainstCWD verifies that a mock added via
+// the API with body.file resolves relative to the server process's own
+// working directory (not rejected, not left unresolved).
+func TestAPI_HTTP_AddResolvesBodyFileAgainstCWD(t *testing.T) {
+	base, httpStub, _, _, _ := startAPI(t)
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileName := "api_added_page_test.html"
+	fullPath := filepath.Join(cwd, fileName)
+	if err := os.WriteFile(fullPath, []byte("<h1>via API</h1>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(fullPath) })
+
+	mock := map[string]interface{}{
+		"id":       "file-mock",
+		"request":  map[string]interface{}{"method": "GET", "path": "/page"},
+		"response": map[string]interface{}{"status": 200, "body": map[string]string{"file": fileName}},
+	}
+	postBody, _ := json.Marshal(mock)
+	resp, err := http.Post(base+"/api/mocks/http", "application/json", bytes.NewReader(postBody))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != 201 {
+		t.Fatalf("want 201, got %d", resp.StatusCode)
+	}
+
+	mocks := httpStub.GetMocks()
+	if len(mocks) != 1 {
+		t.Fatalf("expected 1 mock, got %d", len(mocks))
+	}
+	content, _, err := mocks[0].Response.Body.Resolve()
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if content != "<h1>via API</h1>" {
+		t.Fatalf("got %q", content)
 	}
 }
 

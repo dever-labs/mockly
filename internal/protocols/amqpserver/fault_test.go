@@ -16,12 +16,19 @@ import (
 	"github.com/dever-labs/mockly/internal/state"
 )
 
-func startServer(t *testing.T, srv interface{ Start(context.Context) error }) {
+func startServer(t *testing.T, srv interface {
+	Start(context.Context) error
+	Ready() <-chan struct{}
+}) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go srv.Start(ctx) //nolint:errcheck
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-srv.Ready():
+	case <-time.After(5 * time.Second):
+		t.Fatal("amqp server never became ready")
+	}
 }
 
 func freePort(t *testing.T) int {

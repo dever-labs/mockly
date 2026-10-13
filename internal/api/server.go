@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -523,6 +524,29 @@ func (s *Server) listHTTPMocks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.http.GetMocks())
 }
 
+// resolveAddedMockBody rejects a body.dir reference (directory expansion
+// isn't supported through this single-mock endpoint — see "mockly add
+// page --dir", which expands client-side and POSTs one mock per file) and
+// resolves any body.file reference (on m's own response, or any of its
+// Sequence entries) to an absolute path relative to the server process's
+// working directory, so relative paths behave predictably regardless of
+// where the API client itself was run from.
+func resolveAddedMockBody(m *config.HTTPMock) error {
+	if m.Response.Body.Dir != "" {
+		return fmt.Errorf(`body.dir isn't supported via this endpoint — use "mockly add page --dir", which expands a folder into one mock per file and adds each individually`)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("determining working directory: %w", err)
+	}
+	expanded, err := config.ExpandHTTPMocks([]config.HTTPMock{*m}, cwd, false)
+	if err != nil {
+		return err
+	}
+	*m = expanded[0]
+	return nil
+}
+
 func (s *Server) addHTTPMock(w http.ResponseWriter, r *http.Request) {
 	if s.http == nil {
 		writeError(w, http.StatusServiceUnavailable, "http protocol not enabled")
@@ -533,11 +557,32 @@ func (s *Server) addHTTPMock(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := resolveAddedMockBody(&m); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if m.ID == "" {
 		m.ID = fmt.Sprintf("http-%d", time.Now().UnixNano())
 	}
 	mocks := s.http.GetMocks()
-	mocks = append(mocks, m)
+	// Upsert by ID rather than always appending: re-running "mockly add
+	// page --file/--dir" (a natural part of iterating on a page's content
+	// or re-applying the same scaffold after a restart) deterministically
+	// reuses the same generated ID(s), so a second run should replace the
+	// existing mock, not silently duplicate it (which would otherwise leave
+	// two same-ID mocks registered, only one of which is reachable via the
+	// update/delete-by-ID endpoints).
+	replaced := false
+	for i, existing := range mocks {
+		if existing.ID == m.ID {
+			mocks[i] = m
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		mocks = append(mocks, m)
+	}
 	s.http.SetMocks(mocks)
 	writeJSON(w, http.StatusCreated, m)
 }
@@ -550,6 +595,10 @@ func (s *Server) updateHTTPMock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var updated config.HTTPMock
 	if err := decodeBody(r, &updated); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := resolveAddedMockBody(&updated); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -616,7 +665,7 @@ func (s *Server) patchHTTPMock(w http.ResponseWriter, r *http.Request) {
 				mocks[i].Response.Status = *patch.Status
 			}
 			if patch.Body != nil {
-				mocks[i].Response.Body = *patch.Body
+				mocks[i].Response.Body = config.NewHTTPBodyLiteral(*patch.Body)
 			}
 			if patch.Headers != nil {
 				if mocks[i].Response.Headers == nil {

@@ -894,6 +894,73 @@ Requires an `Authorization: Digest …` header to be present (no nonce validatio
             type: digest
 ```
 
+#### HTML page mocking (`body: {file: ...}` / `{dir: ...}`)
+
+A response `body` can be a plain string (as above), or a structured
+reference to a file or a whole folder on disk — handy for serving real
+HTML/CSS/JS/images without hand-escaping markup into a YAML string.
+File content is read fresh on every request (no caching), so editing the
+file on disk takes effect immediately, no restart required. Templates
+(`{{ }}`) still render normally inside a file's content, except for
+binary content-types (images, fonts, pdf, wasm, audio/video), which are
+served as-is.
+
+```yaml
+      - id: checkout-page
+        request:
+          method: GET
+          path: /checkout
+        response:
+          status: 200
+          body:
+            file: ./pages/checkout.html   # resolved relative to this config file's directory
+```
+
+The `Content-Type` header is inferred from the file's extension unless
+you set an explicit `headers: {Content-Type: ...}` (which always wins).
+
+**Serving a whole folder (`dir`)**
+
+`body: {dir: ...}` expands, at config-load time, into one generated mock
+per file found recursively underneath that folder (dotfiles/dot-folders
+are skipped). Each file's path relative to the folder is joined with the
+parent mock's own `request.path` using URL (not OS) path semantics:
+
+```yaml
+      - id: docs-site
+        request:
+          method: GET
+          path: /docs
+        response:
+          status: 200
+          body:
+            dir: ./site/docs
+```
+
+Given `./site/docs/index.html` and `./site/docs/guide/intro.html`, this
+registers `GET /docs/index.html`, `GET /docs/guide/intro.html`, **and**
+(the standard "directory index" convention) `GET /docs` itself — any
+`index.html` found at any depth is additionally registered at its parent
+directory's own path. A `body.dir` mock must have a static, literal
+`request.path` (no `path_regex`, wildcards, `{name}` captures, or `re:`
+prefixes) and can't be combined with `sequence`. Loading fails fast if
+two mocks (hand-written or generated) end up with the same method+path.
+
+**Scaffolding a page without editing YAML (`mockly add page`)**
+
+```bash
+# Serve a single HTML file:
+mockly add page --path /checkout --file ./pages/checkout.html
+
+# Expand a whole folder of static assets into one mock per file:
+mockly add page --path /docs --dir ./site/docs
+```
+
+Both forms resolve paths relative to the CLI's own working directory and
+call the same `mockly.yaml` `body.dir` expansion logic under the hood.
+Re-running the same command (e.g. after editing the folder's contents)
+replaces the previously-added mock(s) instead of duplicating them.
+
 ### Outbound Webhooks
 
 Any HTTP mock can fire a templated outbound HTTP callback when it's matched
@@ -2181,6 +2248,7 @@ mockly config      validate [file]
 mockly generate    <spec-file> [-o <file>] [--http-port <n>]
 mockly list
 mockly add http    --method GET --path /foo --status 200 --body '{"ok":true}'
+mockly add page    --path /checkout --file ./page.html | --dir ./site/docs
 mockly delete      <mock-id>
 mockly status
 mockly reset

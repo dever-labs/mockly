@@ -437,7 +437,7 @@ type HTTPAuth struct {
 type HTTPResponse struct {
 	Status  int               `yaml:"status" json:"status"`
 	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
-	Body    string            `yaml:"body,omitempty" json:"body,omitempty"`
+	Body    HTTPBody          `yaml:"body,omitempty" json:"body,omitzero"`
 	Delay   Duration          `yaml:"delay,omitempty" json:"delay,omitempty"`
 
 	// Stream, when set, turns this response into a streamed sequence of
@@ -1746,6 +1746,15 @@ func loadFile(path string) (*Config, error) {
 	}
 
 	ApplyDefaults(&cfg)
+
+	if cfg.Protocols.HTTP != nil {
+		expanded, err := ExpandHTTPMocks(cfg.Protocols.HTTP.Mocks, filepath.Dir(path), true)
+		if err != nil {
+			return nil, fmt.Errorf("parsing config %q: %w", path, err)
+		}
+		cfg.Protocols.HTTP.Mocks = expanded
+	}
+
 	return &cfg, nil
 }
 

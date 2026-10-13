@@ -18,7 +18,7 @@ func TestResolve_HTTPOpenAPI_MergesHandWrittenOverride(t *testing.T) {
 					{
 						ID:       "listorders",
 						Request:  config.HTTPRequest{Method: "GET", Path: "/orders"},
-						Response: config.HTTPResponse{Status: 200, Body: `{"count":42}`},
+						Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"count":42}`)},
 					},
 					// A hand-written mock with no spec counterpart at all.
 					{
@@ -43,7 +43,7 @@ func TestResolve_HTTPOpenAPI_MergesHandWrittenOverride(t *testing.T) {
 	if len(mocks) != 2 {
 		t.Fatalf("got %d mocks, want 2: %+v", len(mocks), mocks)
 	}
-	if mocks[0].ID != "listorders" || mocks[0].Response.Body != `{"count":42}` {
+	if mocks[0].ID != "listorders" || mocks[0].Response.Body.Literal != `{"count":42}` {
 		t.Errorf("generated mock wasn't overridden by hand-written entry: %+v", mocks[0])
 	}
 	if mocks[1].ID != "create-order" {

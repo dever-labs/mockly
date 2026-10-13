@@ -87,10 +87,20 @@ type Server struct {
 	messages *MessageStore
 	listener net.Listener
 	delivery uint64
+
+	ready     chan struct{}
+	readyOnce sync.Once
 }
 
 func New(cfg *config.AMQPConfig, store *state.Store, sc *scenarios.Store, log *logger.Logger) *Server {
-	return &Server{cfg: cfg, store: store, scenarios: sc, log: log, mocks: append([]config.AMQPMock(nil), cfg.Mocks...), messages: newMessageStore(1000)}
+	return &Server{cfg: cfg, store: store, scenarios: sc, log: log, mocks: append([]config.AMQPMock(nil), cfg.Mocks...), messages: newMessageStore(1000), ready: make(chan struct{})}
+}
+
+// Ready returns a channel that's closed once the TCP listener is bound and
+// accepting connections. Useful for tests (and any other caller) that need
+// to wait for actual readiness instead of polling/sleeping.
+func (s *Server) Ready() <-chan struct{} {
+	return s.ready
 }
 
 func (s *Server) SetMocks(mocks []config.AMQPMock) {
@@ -113,6 +123,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("amqp server listen :%d: %w", s.cfg.Port, err)
 	}
 	s.listener = ln
+	s.readyOnce.Do(func() { close(s.ready) })
 	go func() {
 		<-ctx.Done()
 		_ = ln.Close()

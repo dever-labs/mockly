@@ -154,7 +154,7 @@ func TestHTTPServer_RecordMode_ExistingMockTakesPrecedence(t *testing.T) {
 	seed := []config.HTTPMock{{
 		ID:       "hand-written",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/widgets/42"},
-		Response: config.HTTPResponse{Status: 201, Body: `{"source":"hand-written"}`},
+		Response: config.HTTPResponse{Status: 201, Body: config.NewHTTPBodyLiteral(`{"source":"hand-written"}`)},
 	}}
 	base, _ := startRecordingServer(t, upstream.URL, "", seed)
 

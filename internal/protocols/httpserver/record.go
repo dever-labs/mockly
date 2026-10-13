@@ -153,7 +153,7 @@ func (rec *recorder) capture(listener, method, path string, query map[string]str
 		Response: config.HTTPResponse{
 			Status:  status,
 			Headers: headers,
-			Body:    string(body),
+			Body:    config.NewHTTPBodyLiteral(string(body)),
 		},
 	}
 	rec.recorded = append(rec.recorded, mock)

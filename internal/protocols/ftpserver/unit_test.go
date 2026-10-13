@@ -263,7 +263,11 @@ func startFTPServer(t *testing.T, files []config.FTPFile) (addr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go srv.Start(ctx) //nolint:errcheck
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-srv.Ready():
+	case <-time.After(5 * time.Second):
+		t.Fatal("ftp server never became ready")
+	}
 	return fmt.Sprintf("127.0.0.1:%d", port)
 }
 

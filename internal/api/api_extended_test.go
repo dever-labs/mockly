@@ -500,7 +500,7 @@ func TestAPI_Logs_PathParams_InEntry(t *testing.T) {
 	httpBase := startLoggedHTTPServer(t, []config.HTTPMock{{
 		ID:       "thing-by-id",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/things/{id}"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"ok":true}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"ok":true}`)},
 	}}, log)
 
 	resp, err := http.Get(httpBase + "/things/abc123")

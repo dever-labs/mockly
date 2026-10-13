@@ -367,8 +367,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				if entry.Status != 0 {
 					status = entry.Status
 				}
-				if entry.Body != "" {
-					respBody = engine.Render(entry.Body, reqCtx)
+				if !entry.Body.IsEmpty() {
+					var bodyCT string
+					respBody, bodyCT = engine.RenderHTTPBody(entry.Body, reqCtx)
+					if bodyCT != "" && respHdrs["Content-Type"] == "" {
+						respHdrs["Content-Type"] = bodyCT
+					}
 				}
 				for k, v := range entry.Headers {
 					respHdrs[k] = engine.Render(v, reqCtx)
@@ -388,8 +392,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 					if entry.Status != 0 {
 						status = entry.Status
 					}
-					if entry.Body != "" {
-						respBody = engine.Render(entry.Body, reqCtx)
+					if !entry.Body.IsEmpty() {
+						var bodyCT string
+						respBody, bodyCT = engine.RenderHTTPBody(entry.Body, reqCtx)
+						if bodyCT != "" && respHdrs["Content-Type"] == "" {
+							respHdrs["Content-Type"] = bodyCT
+						}
 					}
 					for k, v := range entry.Headers {
 						respHdrs[k] = engine.Render(v, reqCtx)
@@ -405,8 +413,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 					if entry.Status != 0 {
 						status = entry.Status
 					}
-					if entry.Body != "" {
-						respBody = engine.Render(entry.Body, reqCtx)
+					if !entry.Body.IsEmpty() {
+						var bodyCT string
+						respBody, bodyCT = engine.RenderHTTPBody(entry.Body, reqCtx)
+						if bodyCT != "" && respHdrs["Content-Type"] == "" {
+							respHdrs["Content-Type"] = bodyCT
+						}
 					}
 					for k, v := range entry.Headers {
 						respHdrs[k] = engine.Render(v, reqCtx)

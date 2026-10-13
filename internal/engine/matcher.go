@@ -143,10 +143,7 @@ func HTTPMatch(
 			PathParams: pathParams,
 		}
 
-		rendered, err := renderTemplate(m.Response.Body, req)
-		if err != nil {
-			rendered = m.Response.Body
-		}
+		rendered, bodyContentType := RenderHTTPBody(m.Response.Body, req)
 
 		renderedHeaders := make(map[string]string, len(m.Response.Headers))
 		for k, v := range m.Response.Headers {
@@ -155,6 +152,9 @@ func HTTPMatch(
 				rv = v
 			}
 			renderedHeaders[k] = rv
+		}
+		if bodyContentType != "" && !hasHeader(renderedHeaders, "Content-Type") {
+			renderedHeaders["Content-Type"] = bodyContentType
 		}
 
 		status := m.Response.Status
@@ -496,6 +496,17 @@ func matchPattern(pattern, text string) bool {
 		return re.MatchString(text)
 	}
 	return strings.Contains(text, pattern)
+}
+
+// hasHeader reports whether headers already contains a key equal to name,
+// ignoring case (HTTP header names are case-insensitive).
+func hasHeader(headers map[string]string, name string) bool {
+	for k := range headers {
+		if strings.EqualFold(k, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func matchHeaders(want, got map[string]string) bool {
@@ -1027,4 +1038,28 @@ func Render(tmpl string, req RequestContext) string {
 // rather than attempting it against a broken literal template string.
 func RenderErr(tmpl string, req RequestContext) (string, error) {
 	return renderTemplate(tmpl, req)
+}
+
+// RenderHTTPBody resolves body (a literal string or a body.file reference
+// — see config.HTTPBody) and, unless its content is a binary format (see
+// config.IsBinaryContentType), renders it through the same {{ }} template
+// engine as every other response field. It returns the rendered content
+// and, for a file reference, its inferred Content-Type (empty for a plain
+// literal, since callers already control Content-Type via Headers in that
+// case). If the referenced file can't be read (e.g. deleted after config
+// load), an inline error message takes its place so a misconfigured mock
+// is visibly broken instead of silently serving an empty body.
+func RenderHTTPBody(body config.HTTPBody, req RequestContext) (rendered string, contentType string) {
+	content, ct, err := body.Resolve()
+	if err != nil {
+		return fmt.Sprintf("mockly: %s", err), ""
+	}
+	if config.IsBinaryContentType(ct) {
+		return content, ct
+	}
+	out, rerr := renderTemplate(content, req)
+	if rerr != nil {
+		return content, ct
+	}
+	return out, ct
 }

@@ -20,7 +20,7 @@ func TestHTTPMatch_ExactPath(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "m1",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/api/users"},
-		Response: config.HTTPResponse{Status: 200, Body: `[]`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`[]`)},
 	}}
 
 	result, ok := match(mocks, "GET", "/api/users", nil)
@@ -170,7 +170,7 @@ func TestHTTPMatch_StateCondition(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "m-auth",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/me"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"user":"alice"}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"user":"alice"}`)},
 		State:    &config.StateCondition{Key: "authenticated", Value: "true"},
 	}}
 
@@ -194,7 +194,7 @@ func TestHTTPMatch_Template(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "m1",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/time"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"time":"{{now}}"}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"time":"{{now}}"}`)},
 	}}
 	result, ok := match(mocks, "GET", "/time", nil)
 	if !ok {
@@ -210,12 +210,12 @@ func TestHTTPMatch_QueryParams(t *testing.T) {
 		{
 			ID:       "admin",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/users", Query: map[string]string{"role": "admin"}},
-			Response: config.HTTPResponse{Status: 200, Body: `{"role":"admin"}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"role":"admin"}`)},
 		},
 		{
 			ID:       "any",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/users"},
-			Response: config.HTTPResponse{Status: 200, Body: `{"role":"any"}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"role":"any"}`)},
 		},
 	}
 
@@ -281,7 +281,7 @@ func TestHTTPMatch_QueryParamInBody(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "echo-param",
 		Request:  config.HTTPRequest{Method: "GET", Path: "/echo"},
-		Response: config.HTTPResponse{Status: 200, Body: `{"param":"{{.query.foo}}"}`},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"param":"{{.query.foo}}"}`)},
 	}}
 	query := map[string][]string{"foo": {"bar"}}
 	result, ok := engine.HTTPMatch(mocks, "GET", "/echo", query, nil, "", nil)
@@ -825,7 +825,7 @@ func TestHTTPMatch_ResponseTemplateWithRequestBody(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "create",
 		Request:  config.HTTPRequest{Method: "POST", Path: "/emails"},
-		Response: config.HTTPResponse{Status: 201, Body: `{"id":"{{.request.body.project_id}}"}`},
+		Response: config.HTTPResponse{Status: 201, Body: config.NewHTTPBodyLiteral(`{"id":"{{.request.body.project_id}}"}`)},
 	}}
 
 	result, ok := engine.HTTPMatch(mocks, "POST", "/emails", nil, nil, `{"project_id":"proj-xyz"}`, nil)
@@ -1157,12 +1157,12 @@ func TestHTTPMatch_AuthFallback(t *testing.T) {
 				Path:   "/api/users",
 				Auth:   &config.HTTPAuth{Type: "bearer", Token: "valid"},
 			},
-			Response: config.HTTPResponse{Status: 200, Body: `{"users":[]}`},
+			Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"users":[]}`)},
 		},
 		{
 			ID:       "unauthenticated",
 			Request:  config.HTTPRequest{Method: "GET", Path: "/api/users"},
-			Response: config.HTTPResponse{Status: 401, Body: `{"error":"unauthorized"}`},
+			Response: config.HTTPResponse{Status: 401, Body: config.NewHTTPBodyLiteral(`{"error":"unauthorized"}`)},
 		},
 	}
 

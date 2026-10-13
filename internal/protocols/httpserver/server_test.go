@@ -788,6 +788,40 @@ func TestHTTPServer_Sequence_Loop(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_Sequence_SkipsBinaryLiteralWithContentTypeHeader(t *testing.T) {
+	// Same binary-literal-template-skip guarantee as the base response path
+	// (TestHTTPMatch_Template_SkipsBinaryLiteralWithContentTypeHeader in the
+	// engine package), but exercised through a Sequence entry, which has its
+	// own call to engine.RenderHTTPBody in the HTTP server.
+	raw := "\x89PNG\r\n{{now}}" // valid, executable template syntax that must NOT be rendered
+	mocks := []config.HTTPMock{{
+		ID:      "logo",
+		Request: config.HTTPRequest{Method: "GET", Path: "/logo.png"},
+		Sequence: []config.HTTPResponse{
+			{
+				Status:  200,
+				Headers: map[string]string{"Content-Type": "image/png"},
+				Body:    config.NewHTTPBodyLiteral(raw),
+			},
+		},
+		SequenceExhausted: "hold_last",
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/logo.png")
+	if err != nil {
+		t.Fatalf("GET /logo.png: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
+	_ = resp.Body.Close()
+	if string(body) != raw {
+		t.Fatalf("expected raw binary literal untouched, got %q", body)
+	}
+}
+
 func TestHTTPServer_Stream_SSE(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:      "sse",

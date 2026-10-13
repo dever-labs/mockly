@@ -1,4 +1,4 @@
-## AMQP
+# AMQP
 
 AMQP 0.9.1 mock broker. Handles connection, channel, and basic frames, supports publish/consume flows, and captures published messages for inspection via the management API.
 

@@ -1,4 +1,4 @@
-## NATS
+# NATS
 
 Mockly embeds the real [nats-server](https://github.com/nats-io/nats-server) in-process (the same way MQTT embeds mochi-mqtt), so any real `nats.go` / JetStream / KV client can connect and use the full protocol: core pub/sub, subject wildcards, request/reply, and queue groups. On top of that, Mockly offers an optional declarative `mocks` auto-responder layer for the no-client-code fake-service use case.
 
@@ -36,7 +36,7 @@ Set `queue_group` to have the mock join a real NATS queue group, so only one mem
           payload: '{"status":"done"}'
 ```
 
-### JetStream
+## JetStream
 
 Enable JetStream to get real streams, consumers, and KV/Object Store, backed by an on-disk (or ephemeral temp-dir) store:
 

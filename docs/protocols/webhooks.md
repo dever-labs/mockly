@@ -1,4 +1,4 @@
-## Outbound Webhooks
+# Outbound Webhooks
 
 Any HTTP mock can fire a templated outbound HTTP callback when it's matched
 — simulating systems that notify clients asynchronously via server-initiated

@@ -1,4 +1,4 @@
-## LDAP
+# LDAP
 
 LDAP mock server handling Bind (success) and Search requests. Matches on base DN and filter, then returns configured attributes.
 

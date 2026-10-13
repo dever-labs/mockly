@@ -1,4 +1,4 @@
-## TCP
+# TCP
 
 Raw TCP mock server. Matches incoming data as exact string, prefix wildcard, or regex. Supports hex encoding for binary protocols.
 

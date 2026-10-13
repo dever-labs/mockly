@@ -1,4 +1,4 @@
-## SMTP
+# SMTP
 
 SMTP server that captures emails and applies accept/reject rules.
 

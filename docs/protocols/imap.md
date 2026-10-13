@@ -1,4 +1,4 @@
-## IMAP
+# IMAP
 
 IMAP4rev1 mock server serving pre-configured mailboxes and messages. Supports LOGIN, SELECT, FETCH, SEARCH, and LOGOUT.
 

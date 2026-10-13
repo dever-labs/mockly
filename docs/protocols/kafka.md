@@ -1,4 +1,4 @@
-## Kafka
+# Kafka
 
 Kafka wire-protocol mock covering ApiVersions, Metadata, Produce, and Fetch flows. Published messages are stored for later inspection.
 

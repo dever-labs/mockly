@@ -1,4 +1,4 @@
-## Redis
+# Redis
 
 RESP-protocol Redis mock. Intercepts any Redis command and returns a configurable response.
 
@@ -22,7 +22,7 @@ protocols:
           delay: 5ms
 ```
 
-### Stateful mode
+## Stateful mode
 
 By default the Redis mock only matches static mocks — `SET`/`GET` don't actually round-trip data. Set `mode: stateful` to enable a real in-memory datastore:
 

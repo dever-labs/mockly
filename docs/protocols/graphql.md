@@ -1,4 +1,4 @@
-## GraphQL
+# GraphQL
 
 HTTP-based GraphQL mock. Handles `POST /graphql` with `application/json` and `application/graphql` content types, plus `GET` requests with a `query` parameter. Introspection queries return an empty schema.
 
@@ -40,7 +40,7 @@ can be delivered through the [stream management
 API](#stream-management-api-push-close), which can also explicitly end a
 subscription with `complete` or `error`.
 
-### Stream management API (push / close)
+## Stream management API (push / close)
 
 HTTP streams with `stream.keep_open: true`, gRPC streaming calls with
 `keep_open: true`, and GraphQL subscriptions (always) all stay open after

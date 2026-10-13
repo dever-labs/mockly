@@ -1,4 +1,4 @@
-## HTTP
+# HTTP
 
 Full HTTP mock server. Matching on method + path (exact/wildcard/named params/regex), optional query params, header match (with `re:` / `*` pattern support), JSON/multipart/XML body field match, authentication, and state condition.
 
@@ -23,7 +23,7 @@ protocols:
           delay: 20ms
 ```
 
-### Query parameter matching
+## Query parameter matching
 
 ```yaml
       - id: admin-users
@@ -43,7 +43,7 @@ protocols:
 When a query param is repeated (e.g. `?tag=a&tag=b`), a match succeeds if
 **any** occurrence satisfies the configured value/pattern.
 
-### JSON body field matching
+## JSON body field matching
 
 Use dot-notation paths to match fields anywhere in a JSON body:
 
@@ -61,7 +61,7 @@ Use dot-notation paths to match fields anywhere in a JSON body:
           body: '{"ok":true}'
 ```
 
-### Form body field matching
+## Form body field matching
 
 For classic HTML `<form method="post">` submissions (e.g. a hosted
 payment/checkout page posting back card details), `body_form` matches
@@ -103,7 +103,7 @@ with a real HTML form, posted back to `body_form`-matched
 approved/declined responses — no HTML authoring required, just
 `mockly preset use nets`.
 
-### Multipart and XML body field matching
+## Multipart and XML body field matching
 
 For `multipart/form-data` requests (e.g. file uploads), `body_multipart`
 matches individual form fields by name. Text fields are matched by value;
@@ -141,7 +141,7 @@ descending into a child element:
           body: '<ok/>'
 ```
 
-### Response sequences
+## Response sequences
 
 Return a different response on each successive call. Useful for simulating transient errors or pagination.
 
@@ -169,7 +169,7 @@ Return a different response on each successive call. Useful for simulating trans
 | `loop` | Restart from the first entry |
 | `not_found` | Return 404 |
 
-### Streaming responses (SSE / chunked)
+## Streaming responses (SSE / chunked)
 
 Set `response.stream.events` to turn a mock into a sequence of flushed
 events instead of one static body — for Server-Sent Events
@@ -227,7 +227,7 @@ for gRPC streaming and GraphQL subscriptions.
               - data: '{"price":100}'
 ```
 
-### Per-mock fault injection
+## Per-mock fault injection
 
 Every HTTP mock can have its own `fault:` block — independently of protocol-level faults. This is useful for targeted latency tests or intermittent failures on one endpoint without affecting the rest of the protocol server.
 
@@ -269,7 +269,7 @@ window.
             body: '{"error":"rate limit exceeded"}'
 ```
 
-### Near-miss diagnostics for unmatched requests
+## Near-miss diagnostics for unmatched requests
 
 By default, a request that matches no mock returns a plain
 `{"error":"no mock matched"}` (404) — this never changes for normal
@@ -296,7 +296,7 @@ closest-first. Near-miss info is also
 included in the mock's request log entry whenever diagnostics were
 requested, so it shows up in the management UI's live log stream too.
 
-### Authentication matching
+## Authentication matching
 
 Use the `auth:` block to require valid credentials before a mock is considered a match. When auth fails the mock is skipped — add a fallback mock (without `auth`) to return your preferred 401 response.
 
@@ -389,7 +389,7 @@ Requires an `Authorization: Digest …` header to be present (no nonce validatio
             type: digest
 ```
 
-### HTML page mocking (`body: {file: ...}` / `{dir: ...}`)
+## HTML page mocking (`body: {file: ...}` / `{dir: ...}`)
 
 A response `body` can be a plain string (as above), or a structured
 reference to a file or a whole folder on disk — handy for serving real

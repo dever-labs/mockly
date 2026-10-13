@@ -1,4 +1,4 @@
-## WebSocket
+# WebSocket
 
 `on_connect.send` and each `on_message[*].respond` value are rendered as Go templates. The incoming message text is available as `{{.request.body}}`.
 
@@ -17,7 +17,7 @@ protocols:
             respond: '{"event":"pong","echo":"{{.request.body}}"}'
 ```
 
-### Binary frames
+## Binary frames
 
 `match_binary`/`respond_binary` (and `on_connect.send_binary`) hold base64-encoded raw bytes and operate on binary (opcode `0x2`) WebSocket frames — useful for Protobuf/MessagePack-framed APIs or other binary protocols. A rule with `match_binary` only matches binary frames and compares the decoded bytes exactly (no wildcard/regex); plain `match`/`respond` rules are unaffected and keep working exactly as before (including against binary frames, matched as text, for backward compatibility).
 

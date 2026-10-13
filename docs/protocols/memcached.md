@@ -1,4 +1,4 @@
-## Memcached
+# Memcached
 
 Memcached text-protocol mock handling `get`, `set`, `delete`, `flush_all`, `stats`, and `quit`. Keys support `*` wildcards and `re:` regex patterns.
 

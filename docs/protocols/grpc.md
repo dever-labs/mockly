@@ -1,4 +1,4 @@
-## gRPC
+# gRPC
 
 Dynamic gRPC mocking — no compiled `.proto` files needed. Uses a raw codec to intercept any service/method call. Supports unary RPCs as well as server-streaming, client-streaming, and bidirectional-streaming.
 

@@ -1,4 +1,4 @@
-## MQTT
+# MQTT
 
 Full MQTT v3/v4/v5 broker (powered by mochi-mqtt). Configurable topic pattern matching with automatic response publishing.
 

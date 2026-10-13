@@ -1,4 +1,4 @@
-## FTP
+# FTP
 
 FTP mock server with PASV support plus LIST, RETR, STOR, and DELE. Files are pre-loaded from config.
 

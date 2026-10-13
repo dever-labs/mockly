@@ -1,4 +1,4 @@
-## CoAP
+# CoAP
 
 CoAP UDP mock server handling GET, POST, PUT, and DELETE requests. Matches on method + path with exact, wildcard, named segment, or regex patterns. Use `path_regex` when you want a dedicated regex field.
 

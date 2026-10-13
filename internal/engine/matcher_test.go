@@ -205,6 +205,33 @@ func TestHTTPMatch_Template(t *testing.T) {
 	}
 }
 
+func TestHTTPMatch_Template_SkipsBinaryLiteralWithContentTypeHeader(t *testing.T) {
+	// A literal body (e.g. one produced by "mockly add page --file/--dir"
+	// for a binary asset) has no file extension to infer a Content-Type
+	// from, so config.IsBinaryContentType can't short-circuit templating
+	// via HTTPBody.Resolve() alone. RenderHTTPBody must also honor an
+	// explicit binary Content-Type header on the mock itself.
+	raw := "\x89PNG\r\n{{now}}" // {{now}} is valid, executable template syntax, so without the
+	// Content-Type-header fallback this would get silently rendered into a timestamp instead
+	// of being served byte-for-byte as the binary asset it actually is.
+	mocks := []config.HTTPMock{{
+		ID:      "m1",
+		Request: config.HTTPRequest{Method: "GET", Path: "/logo.png"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "image/png"},
+			Body:    config.NewHTTPBodyLiteral(raw),
+		},
+	}}
+	result, ok := match(mocks, "GET", "/logo.png", nil)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if result.Body != raw {
+		t.Fatalf("expected raw binary literal untouched, got %q", result.Body)
+	}
+}
+
 func TestHTTPMatch_QueryParams(t *testing.T) {
 	mocks := []config.HTTPMock{
 		{

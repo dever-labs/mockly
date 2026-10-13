@@ -288,7 +288,7 @@ func TestBuildUsers_AuthNoPriv(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestApplyProtocolVersion(t *testing.T) {
-	users := []gosnmp.UsmSecurityParameters{{UserName: "alice"}}
+	users := []*gosnmp.UsmSecurityParameters{{UserName: "alice"}}
 
 	gotUsers, gotV3Only := applyProtocolVersion("v3", users)
 	if !gotV3Only {
@@ -343,7 +343,7 @@ func TestAuthDigestLen_AllProtocols(t *testing.T) {
 }
 
 func TestFindUser_NotFound(t *testing.T) {
-	ag := newAgent("", false, []gosnmp.UsmSecurityParameters{{UserName: "alice"}}, "engineid", func() uint32 { return 0 }, nil)
+	ag := newAgent("", false, []*gosnmp.UsmSecurityParameters{{UserName: "alice"}}, "engineid", func() uint32 { return 0 }, nil)
 	if u := ag.findUser("bob"); u != nil {
 		t.Errorf("findUser for an unconfigured user: want nil, got %+v", u)
 	}

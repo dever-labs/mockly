@@ -224,7 +224,7 @@ func isClosedConnError(err error) bool {
 //     reject v3 requests at the version-negotiation step directly).
 //   - empty (default): both users and snmpV3Only pass through unchanged,
 //     preserving today's behavior of accepting any dialect.
-func applyProtocolVersion(version string, users []gosnmp.UsmSecurityParameters) ([]gosnmp.UsmSecurityParameters, bool) {
+func applyProtocolVersion(version string, users []*gosnmp.UsmSecurityParameters) ([]*gosnmp.UsmSecurityParameters, bool) {
 	switch version {
 	case "v3":
 		return users, true
@@ -335,11 +335,13 @@ func (s *Server) buildOIDs(mocks []config.SNMPMock) []*pduItem {
 }
 
 // buildUsers converts config V3 users into gosnmp UsmSecurityParameters,
-// deriving each user's localized auth/priv keys from its passphrase.
-func (s *Server) buildUsers() ([]gosnmp.UsmSecurityParameters, error) {
-	users := make([]gosnmp.UsmSecurityParameters, 0, len(s.cfg.V3Users))
+// deriving each user's localized auth/priv keys from its passphrase. Users
+// are held as pointers (not values) so appending to/ranging over the slice
+// never copies the embedded sync.Mutex that govet's copylocks check flags.
+func (s *Server) buildUsers() ([]*gosnmp.UsmSecurityParameters, error) {
+	users := make([]*gosnmp.UsmSecurityParameters, 0, len(s.cfg.V3Users))
 	for _, u := range s.cfg.V3Users {
-		usp := gosnmp.UsmSecurityParameters{
+		usp := &gosnmp.UsmSecurityParameters{
 			UserName: u.Username,
 		}
 		if u.AuthPassphrase != "" {
@@ -353,10 +355,7 @@ func (s *Server) buildUsers() ([]gosnmp.UsmSecurityParameters, error) {
 		if err := usp.InitSecurityKeys(); err != nil {
 			return nil, fmt.Errorf("snmpv3 user %q: %w", u.Username, err)
 		}
-		// usp is a freshly constructed value that has never been locked, so its
-		// embedded (unexported) sync.Mutex is still at its zero value here —
-		// copying it via append is safe despite the govet copylocks warning.
-		users = append(users, usp) //nolint:govet // see comment above
+		users = append(users, usp)
 	}
 	return users, nil
 }

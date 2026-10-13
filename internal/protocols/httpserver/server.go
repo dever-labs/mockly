@@ -369,7 +369,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				}
 				if !entry.Body.IsEmpty() {
 					var bodyCT string
-					respBody, bodyCT = engine.RenderHTTPBody(entry.Body, reqCtx)
+					respBody, bodyCT = engine.RenderHTTPBody(entry.Body, reqCtx, entry.Headers["Content-Type"])
 					if bodyCT != "" && respHdrs["Content-Type"] == "" {
 						respHdrs["Content-Type"] = bodyCT
 					}
@@ -394,7 +394,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 					}
 					if !entry.Body.IsEmpty() {
 						var bodyCT string
-						respBody, bodyCT = engine.RenderHTTPBody(entry.Body, reqCtx)
+						respBody, bodyCT = engine.RenderHTTPBody(entry.Body, reqCtx, entry.Headers["Content-Type"])
 						if bodyCT != "" && respHdrs["Content-Type"] == "" {
 							respHdrs["Content-Type"] = bodyCT
 						}
@@ -415,7 +415,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 					}
 					if !entry.Body.IsEmpty() {
 						var bodyCT string
-						respBody, bodyCT = engine.RenderHTTPBody(entry.Body, reqCtx)
+						respBody, bodyCT = engine.RenderHTTPBody(entry.Body, reqCtx, entry.Headers["Content-Type"])
 						if bodyCT != "" && respHdrs["Content-Type"] == "" {
 							respHdrs["Content-Type"] = bodyCT
 						}

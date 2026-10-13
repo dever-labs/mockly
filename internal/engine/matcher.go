@@ -143,7 +143,7 @@ func HTTPMatch(
 			PathParams: pathParams,
 		}
 
-		rendered, bodyContentType := RenderHTTPBody(m.Response.Body, req)
+		rendered, bodyContentType := RenderHTTPBody(m.Response.Body, req, getHeader(m.Response.Headers, "Content-Type"))
 
 		renderedHeaders := make(map[string]string, len(m.Response.Headers))
 		for k, v := range m.Response.Headers {
@@ -507,6 +507,17 @@ func hasHeader(headers map[string]string, name string) bool {
 		}
 	}
 	return false
+}
+
+// getHeader looks up a header by name, case-insensitively, returning "" if
+// absent.
+func getHeader(headers map[string]string, name string) string {
+	for k, v := range headers {
+		if strings.EqualFold(k, name) {
+			return v
+		}
+	}
+	return ""
 }
 
 func matchHeaders(want, got map[string]string) bool {
@@ -1049,12 +1060,25 @@ func RenderErr(tmpl string, req RequestContext) (string, error) {
 // case). If the referenced file can't be read (e.g. deleted after config
 // load), an inline error message takes its place so a misconfigured mock
 // is visibly broken instead of silently serving an empty body.
-func RenderHTTPBody(body config.HTTPBody, req RequestContext) (rendered string, contentType string) {
+//
+// declaredContentType is the mock's own (unrendered) "Content-Type" header
+// value, if any — used only as a fallback binary-format signal, since a
+// body.file/body.dir reference's inferred Content-Type (from Resolve) is
+// unavailable for a Literal body (e.g. one built by "mockly add page",
+// which transfers binary assets like images/fonts as literal content, not
+// a path reference — see config.ExpandDirToLiteralMocks). Without this,
+// a literal binary body would be handed to the template engine, which is
+// usually harmless (renderTemplate only parses/executes content containing
+// a literal "{{" byte sequence, and a parse/execution failure falls back
+// to the original, unrendered bytes) but isn't a guarantee for arbitrary
+// binary data that happens to both contain "{{" and parse as valid
+// (if nonsensical) template syntax.
+func RenderHTTPBody(body config.HTTPBody, req RequestContext, declaredContentType string) (rendered string, contentType string) {
 	content, ct, err := body.Resolve()
 	if err != nil {
 		return fmt.Sprintf("mockly: %s", err), ""
 	}
-	if config.IsBinaryContentType(ct) {
+	if config.IsBinaryContentType(ct) || config.IsBinaryContentType(declaredContentType) {
 		return content, ct
 	}
 	out, rerr := renderTemplate(content, req)

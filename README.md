@@ -956,10 +956,18 @@ mockly add page --path /checkout --file ./pages/checkout.html
 mockly add page --path /docs --dir ./site/docs
 ```
 
-Both forms resolve paths relative to the CLI's own working directory and
-call the same `mockly.yaml` `body.dir` expansion logic under the hood.
-Re-running the same command (e.g. after editing the folder's contents)
-replaces the previously-added mock(s) instead of duplicating them.
+Both forms resolve paths relative to the CLI's own working directory, then
+read each file's content immediately and send it as a literal response
+body — the management API never resolves a file/folder path supplied by a
+caller, by design (it's a network-reachable control plane, so letting it
+touch the server's filesystem on request would be a path-traversal risk).
+This means mocks added via `mockly add page` are **point-in-time
+snapshots**: unlike `body.file`/`body.dir` configured directly in
+`mockly.yaml` (which always re-read the file fresh from disk on every
+request), editing the source file after running `add page` has no effect
+until you re-run the same command. Re-running it (e.g. after editing the
+folder's contents) replaces the previously-added mock(s) instead of
+duplicating them, so refreshing is just re-running the same command.
 
 ### Outbound Webhooks
 

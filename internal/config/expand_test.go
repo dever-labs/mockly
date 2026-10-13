@@ -406,3 +406,63 @@ func TestExpandHTTPMocks_Dir_StillRejectsHandWrittenSharingGeneratedPath(t *test
 		t.Fatal("expected collision error when generated mock comes before the conflicting hand-written one")
 	}
 }
+
+func TestExpandDirToLiteralMocks_Basic(t *testing.T) {
+	dir := t.TempDir()
+	site := filepath.Join(dir, "site")
+	writeFile(t, filepath.Join(site, "index.html"), "home")
+	writeFile(t, filepath.Join(site, "sub", "page.html"), "sub page")
+
+	parent := HTTPMock{
+		ID:       "site",
+		Request:  HTTPRequest{Method: "GET", Path: "/site"},
+		Response: HTTPResponse{Body: HTTPBody{Dir: "site"}},
+	}
+	out, err := ExpandDirToLiteralMocks(parent, dir)
+	if err != nil {
+		t.Fatalf("expand: %v", err)
+	}
+
+	var root, sub *HTTPMock
+	for i := range out {
+		switch out[i].Request.Path {
+		case "/site":
+			root = &out[i]
+		case "/site/sub/page.html":
+			sub = &out[i]
+		}
+	}
+	if root == nil || sub == nil {
+		t.Fatalf("expected /site and /site/sub/page.html mocks, got %+v", out)
+	}
+	// Content is literal, not a file reference — no server-side filesystem
+	// access needed to serve it, and it survives JSON serialization as-is.
+	if root.Response.Body.File != "" || root.Response.Body.Dir != "" {
+		t.Errorf("expected a pure literal body, got File=%q Dir=%q", root.Response.Body.File, root.Response.Body.Dir)
+	}
+	content, _, err := root.Response.Body.Resolve()
+	if err != nil || content != "home" {
+		t.Fatalf("root content = %q, err=%v", content, err)
+	}
+	if root.Response.Headers["Content-Type"] != "text/html; charset=utf-8" {
+		t.Errorf("expected inferred Content-Type, got %q", root.Response.Headers["Content-Type"])
+	}
+}
+
+func TestExpandDirToLiteralMocks_AllowsAbsoluteDirOutsideBaseDir(t *testing.T) {
+	outside := t.TempDir()
+	writeFile(t, filepath.Join(outside, "a.html"), "A")
+	baseDir := t.TempDir()
+
+	parent := HTTPMock{
+		Request:  HTTPRequest{Method: "GET", Path: "/ext"},
+		Response: HTTPResponse{Body: HTTPBody{Dir: outside}},
+	}
+	out, err := ExpandDirToLiteralMocks(parent, baseDir)
+	if err != nil {
+		t.Fatalf("expected an absolute --dir outside baseDir to be allowed for client-side CLI expansion, got %v", err)
+	}
+	if len(out) == 0 {
+		t.Fatal("expected at least one generated mock")
+	}
+}

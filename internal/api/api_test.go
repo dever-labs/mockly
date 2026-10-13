@@ -8,8 +8,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -404,27 +402,21 @@ func TestAPI_HTTP_AddRejectsBodyDir(t *testing.T) {
 	}
 }
 
-// TestAPI_HTTP_AddResolvesBodyFileAgainstCWD verifies that a mock added via
-// the API with body.file resolves relative to the server process's own
-// working directory (not rejected, not left unresolved).
-func TestAPI_HTTP_AddResolvesBodyFileAgainstCWD(t *testing.T) {
+// TestAPI_HTTP_AddRejectsBodyFile verifies that the single-mock add
+// endpoint rejects a body.file reference outright, rather than resolving
+// it against the server's own filesystem — the management API is a
+// network-reachable control plane and must never resolve a caller-
+// supplied path, even a relative one validated against escapes (CWE-22).
+// Only mockly.yaml (config.Load, in-process, trusted) may reference files
+// by path; "mockly add page --file" instead reads the file client-side
+// and sends its content as a literal body (see cmd/mockly/mocks.go).
+func TestAPI_HTTP_AddRejectsBodyFile(t *testing.T) {
 	base, httpStub, _, _, _ := startAPI(t)
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	fileName := "api_added_page_test.html"
-	fullPath := filepath.Join(cwd, fileName)
-	if err := os.WriteFile(fullPath, []byte("<h1>via API</h1>"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Remove(fullPath) })
 
 	mock := map[string]interface{}{
 		"id":       "file-mock",
 		"request":  map[string]interface{}{"method": "GET", "path": "/page"},
-		"response": map[string]interface{}{"status": 200, "body": map[string]string{"file": fileName}},
+		"response": map[string]interface{}{"status": 200, "body": map[string]string{"file": "page.html"}},
 	}
 	postBody, _ := json.Marshal(mock)
 	resp, err := http.Post(base+"/api/mocks/http", "application/json", bytes.NewReader(postBody))
@@ -432,20 +424,11 @@ func TestAPI_HTTP_AddResolvesBodyFileAgainstCWD(t *testing.T) {
 		t.Fatalf("POST: %v", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
-	if resp.StatusCode != 201 {
-		t.Fatalf("want 201, got %d", resp.StatusCode)
+	if resp.StatusCode != 400 {
+		t.Fatalf("want 400 for body.file via single-mock endpoint, got %d", resp.StatusCode)
 	}
-
-	mocks := httpStub.GetMocks()
-	if len(mocks) != 1 {
-		t.Fatalf("expected 1 mock, got %d", len(mocks))
-	}
-	content, _, err := mocks[0].Response.Body.Resolve()
-	if err != nil {
-		t.Fatalf("resolve: %v", err)
-	}
-	if content != "<h1>via API</h1>" {
-		t.Fatalf("got %q", content)
+	if len(httpStub.GetMocks()) != 0 {
+		t.Errorf("expected no mock to be added, got %d", len(httpStub.GetMocks()))
 	}
 }
 

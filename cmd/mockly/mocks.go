@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -86,10 +88,21 @@ func addHTTPCmd() *cobra.Command {
 // markup to be hand-escaped into a YAML/JSON string. "--file" serves one
 // page at --path; "--dir" expands a whole folder of static assets
 // (HTML/CSS/JS/images/...) into one mock per file, each at --path joined
-// with the file's own path, reusing the same config.ExpandHTTPMocks helper
-// that config.Load uses for a mockly.yaml "body: {dir: ...}" reference —
-// see issue #202's "Directory expansion" section for the full path-mapping
-// rules (index.html aliasing, generated mock IDs, etc).
+// with the file's own path — see issue #202's "Directory expansion"
+// section for the full path-mapping rules (index.html aliasing, generated
+// mock IDs, etc).
+//
+// Both forms read file content client-side (relative to the CLI's own
+// working directory) and POST it as a literal body, rather than sending a
+// file path reference for the (possibly remote, possibly
+// different-working-directory) API server to resolve: the management API
+// is a network-reachable control plane and should never have to resolve a
+// caller-supplied path against its own filesystem. body.file/body.dir path
+// references remain supported, but only via mockly.yaml (config.Load),
+// which resolves them in-process against the config file's own directory.
+// The one tradeoff: a mock added this way is a point-in-time snapshot, not
+// a live view of the file — re-run the same command to pick up edits (it
+// upserts by ID, so repeated runs replace rather than duplicate).
 func addPageCmd() *cobra.Command {
 	var urlPath, file, dir, id string
 	cmd := &cobra.Command{
@@ -108,10 +121,22 @@ func addPageCmd() *cobra.Command {
 			}
 
 			if file != "" {
+				filePath := file
+				if !filepath.IsAbs(filePath) {
+					filePath = filepath.Join(cwd, filePath)
+				}
+				data, err := os.ReadFile(filePath) // #nosec G304 -- filePath comes from the CLI operator's own --file flag, resolved against their own cwd
+				if err != nil {
+					return fmt.Errorf("reading %q: %w", file, err)
+				}
+				var headers map[string]string
+				if ct := mime.TypeByExtension(filepath.Ext(filePath)); ct != "" {
+					headers = map[string]string{"Content-Type": ct}
+				}
 				mock := config.HTTPMock{
 					ID:       id,
 					Request:  config.HTTPRequest{Method: "GET", Path: urlPath},
-					Response: config.HTTPResponse{Status: 200, Body: config.HTTPBody{File: file}},
+					Response: config.HTTPResponse{Status: 200, Headers: headers, Body: config.NewHTTPBodyLiteral(string(data))},
 				}
 				if err := postJSON(apiAddr+"/api/mocks/http", mock); err != nil {
 					return err
@@ -125,7 +150,7 @@ func addPageCmd() *cobra.Command {
 				Request:  config.HTTPRequest{Method: "GET", Path: urlPath},
 				Response: config.HTTPResponse{Status: 200, Body: config.HTTPBody{Dir: dir}},
 			}
-			mocks, err := config.ExpandHTTPMocks([]config.HTTPMock{parent}, cwd, false)
+			mocks, err := config.ExpandDirToLiteralMocks(parent, cwd)
 			if err != nil {
 				return err
 			}

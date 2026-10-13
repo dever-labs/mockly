@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -524,35 +523,32 @@ func (s *Server) listHTTPMocks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.http.GetMocks())
 }
 
-// resolveAddedMockBody rejects a body.dir reference (directory expansion
-// isn't supported through this single-mock endpoint — see "mockly add
-// page --dir", which expands client-side and POSTs one mock per file) and
-// resolves any body.file reference (on m's own response, or any of its
-// Sequence entries) to an absolute path relative to the server process's
-// working directory, so relative paths behave predictably regardless of
-// where the API client itself was run from.
+// resolveAddedMockBody rejects both a body.dir and a body.file reference
+// on an added/updated mock: this single-mock management endpoint is a
+// network-reachable control plane and should never resolve a caller-
+// supplied file path against the server's own filesystem — that would be
+// a path-traversal (CWE-22) attack surface for any untrusted caller able
+// to reach the API, even with escape validation in place. Path references
+// (body.file/body.dir) remain supported, but only via mockly.yaml
+// (config.Load), which resolves them in-process against the config file's
+// own directory, never over the network.
 //
-// This calls ExpandHTTPMocks with restrict=false, which still rejects a
-// *relative* path that escapes the server's working directory (closing
-// the path-traversal hole a remote/untrusted API caller could otherwise
-// exploit with e.g. body.file: "../../etc/passwd") while still allowing
-// an explicit absolute path through unchanged — needed because "mockly
-// add page --dir" resolves its generated mocks' file paths to absolute
-// paths client-side before POSTing them here (see expandDirMock), and
-// those are frequently outside the server's own working directory.
+// The CLI's "mockly add page --file/--dir" command reads file content
+// client-side and POSTs it as a literal body instead of a path reference
+// (see cmd/mockly/mocks.go's addPageCmd and config.ExpandDirToLiteralMocks),
+// so this restriction doesn't affect it.
 func resolveAddedMockBody(m *config.HTTPMock) error {
 	if m.Response.Body.Dir != "" {
 		return fmt.Errorf(`body.dir isn't supported via this endpoint — use "mockly add page --dir", which expands a folder into one mock per file and adds each individually`)
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("determining working directory: %w", err)
+	if m.Response.Body.File != "" {
+		return fmt.Errorf(`body.file isn't supported via this endpoint (it would require resolving a caller-supplied path against the server's filesystem) — use "mockly add page --file", which reads the file client-side and sends its content instead`)
 	}
-	expanded, err := config.ExpandHTTPMocks([]config.HTTPMock{*m}, cwd, false)
-	if err != nil {
-		return err
+	for i, seq := range m.Sequence {
+		if seq.Body.File != "" {
+			return fmt.Errorf(`sequence[%d].body.file isn't supported via this endpoint — provide literal body content instead`, i)
+		}
 	}
-	*m = expanded[0]
 	return nil
 }
 

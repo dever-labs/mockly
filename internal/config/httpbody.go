@@ -344,34 +344,150 @@ func resolveSequenceBodies(seq []HTTPResponse, baseDir string, restrict bool) er
 // path.Join-ed onto the parent mock's own request.path (URL semantics, not
 // OS separators); an "index.html" additionally registers the parent path
 // itself verbatim (standard "directory index" convention), at every depth.
+//
+// Generated children reference their source file by absolute path
+// (HTTPBody.File), so content is re-read live on every request — this is
+// the config.Load path (operator-authored mockly.yaml, read in-process,
+// never serialized to a different machine/process).
 func expandDirMock(m HTTPMock, baseDir string, restrict bool) ([]HTTPMock, error) {
+	dirRoot, parentPath, baseID, relFiles, err := walkDirMock(m, baseDir, restrict)
+	if err != nil {
+		return nil, err
+	}
+
+	children := make([]HTTPMock, 0, len(relFiles)+1)
+	for _, rel := range relFiles {
+		absFile := filepath.Join(dirRoot, filepath.FromSlash(rel))
+		idSuffix := "__" + strings.ReplaceAll(rel, "/", "__")
+		routePath := joinURLPath(parentPath, rel)
+
+		fileChild := m
+		fileChild.ID = baseID + idSuffix
+		fileChild.Request = HTTPRequest{Method: "GET", Path: routePath}
+		fileChild.Response = HTTPResponse{
+			Status:  valueOr(m.Response.Status, 200),
+			Headers: m.Response.Headers,
+			Body:    HTTPBody{File: absFile, resolvedFile: absFile},
+			Delay:   m.Response.Delay,
+		}
+		fileChild.Sequence = nil
+		children = append(children, fileChild)
+
+		if path.Base(rel) == "index.html" {
+			indexChild := fileChild
+			indexChild.ID = baseID
+			indexChild.Request = HTTPRequest{Method: "GET", Path: parentPath}
+			children = append(children, indexChild)
+		}
+	}
+	return children, nil
+}
+
+// ExpandDirToLiteralMocks performs the identical walk/path-mapping as
+// expandDirMock (same ID/route rules, same index.html aliasing), but reads
+// each file's content up front into a Literal body (with an inferred
+// Content-Type header) instead of referencing it by path.
+//
+// This is what the "mockly add page --dir" CLI command uses instead of
+// expandDirMock: the generated mocks are then self-contained content, not
+// path references, so the management API server never has to resolve a
+// network-caller-supplied file path against its own filesystem — the
+// control plane deals purely in content, keeping all path resolution
+// confined to config.Load's trusted, in-process, baseDir-restricted
+// reading of the operator's own mockly.yaml. The one tradeoff is that
+// mocks added this way are a point-in-time snapshot: unlike a body.dir
+// mock loaded from mockly.yaml, they don't live-reload if the source file
+// is edited afterwards — re-run the same "add page --dir" command to
+// refresh them (it upserts by ID, so this doesn't duplicate mocks).
+func ExpandDirToLiteralMocks(m HTTPMock, baseDir string) ([]HTTPMock, error) {
+	dirRoot, parentPath, baseID, relFiles, err := walkDirMock(m, baseDir, false)
+	if err != nil {
+		return nil, err
+	}
+
+	children := make([]HTTPMock, 0, len(relFiles)+1)
+	for _, rel := range relFiles {
+		absFile := filepath.Join(dirRoot, filepath.FromSlash(rel))
+		data, readErr := os.ReadFile(absFile) // #nosec G304 -- absFile was built from a directory walk rooted at an already-validated baseDir, not from caller-supplied path segments
+		if readErr != nil {
+			return nil, fmt.Errorf("mock %q: reading %q: %w", m.ID, absFile, readErr)
+		}
+		ct := mime.TypeByExtension(filepath.Ext(absFile))
+		headers := m.Response.Headers
+		if ct != "" {
+			if headers == nil {
+				headers = map[string]string{}
+			} else {
+				cloned := make(map[string]string, len(headers)+1)
+				for k, v := range headers {
+					cloned[k] = v
+				}
+				headers = cloned
+			}
+			if _, has := headers["Content-Type"]; !has {
+				headers["Content-Type"] = ct
+			}
+		}
+
+		idSuffix := "__" + strings.ReplaceAll(rel, "/", "__")
+		routePath := joinURLPath(parentPath, rel)
+
+		fileChild := m
+		fileChild.ID = baseID + idSuffix
+		fileChild.Request = HTTPRequest{Method: "GET", Path: routePath}
+		fileChild.Response = HTTPResponse{
+			Status:  valueOr(m.Response.Status, 200),
+			Headers: headers,
+			Body:    NewHTTPBodyLiteral(string(data)),
+			Delay:   m.Response.Delay,
+		}
+		fileChild.Sequence = nil
+		children = append(children, fileChild)
+
+		if path.Base(rel) == "index.html" {
+			indexChild := fileChild
+			indexChild.ID = baseID
+			indexChild.Request = HTTPRequest{Method: "GET", Path: parentPath}
+			children = append(children, indexChild)
+		}
+	}
+	return children, nil
+}
+
+// walkDirMock validates m's body.dir reference and request shape, then
+// walks the directory (skipping dotfiles/dot-directories), returning the
+// resolved directory root, the mock's own (trimmed) parent URL path, the
+// base ID generated children's IDs are suffixed onto, and the sorted list
+// of files found (slash-separated, relative to dirRoot) — the common setup
+// shared by expandDirMock and ExpandDirToLiteralMocks.
+func walkDirMock(m HTTPMock, baseDir string, restrict bool) (dirRoot, parentPath, baseID string, relFiles []string, err error) {
 	if m.Request.PathRegex != "" {
-		return nil, fmt.Errorf("mock %q: body.dir requires a static request.path, not path_regex", m.ID)
+		return "", "", "", nil, fmt.Errorf("mock %q: body.dir requires a static request.path, not path_regex", m.ID)
 	}
 	if strings.ContainsAny(m.Request.Path, "*{") || strings.HasPrefix(m.Request.Path, "re:") {
-		return nil, fmt.Errorf("mock %q: body.dir requires a static, literal request.path (no wildcards, named params, or templating)", m.ID)
+		return "", "", "", nil, fmt.Errorf("mock %q: body.dir requires a static, literal request.path (no wildcards, named params, or templating)", m.ID)
 	}
 	if len(m.Sequence) > 0 {
-		return nil, fmt.Errorf("mock %q: body.dir cannot be combined with sequence", m.ID)
+		return "", "", "", nil, fmt.Errorf("mock %q: body.dir cannot be combined with sequence", m.ID)
 	}
 
-	dirRoot, err := resolveBodyPath(m.Response.Body.Dir, baseDir, restrict)
+	dirRoot, err = resolveBodyPath(m.Response.Body.Dir, baseDir, restrict)
 	if err != nil {
-		return nil, fmt.Errorf("mock %q: body.dir: %w", m.ID, err)
+		return "", "", "", nil, fmt.Errorf("mock %q: body.dir: %w", m.ID, err)
 	}
-	info, err := os.Stat(dirRoot)
-	if err != nil {
-		return nil, fmt.Errorf("mock %q: body.dir %q: %w", m.ID, m.Response.Body.Dir, err)
+	info, statErr := os.Stat(dirRoot)
+	if statErr != nil {
+		return "", "", "", nil, fmt.Errorf("mock %q: body.dir %q: %w", m.ID, m.Response.Body.Dir, statErr)
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("mock %q: body.dir %q is not a directory", m.ID, m.Response.Body.Dir)
+		return "", "", "", nil, fmt.Errorf("mock %q: body.dir %q is not a directory", m.ID, m.Response.Body.Dir)
 	}
 
-	parentPath := strings.TrimSuffix(m.Request.Path, "/")
+	parentPath = strings.TrimSuffix(m.Request.Path, "/")
 	if parentPath == "" {
 		parentPath = "/"
 	}
-	baseID := m.ID
+	baseID = m.ID
 	if baseID == "" {
 		baseID = strings.Trim(strings.ReplaceAll(parentPath, "/", "-"), "-")
 		if baseID == "" {
@@ -379,7 +495,6 @@ func expandDirMock(m HTTPMock, baseDir string, restrict bool) ([]HTTPMock, error
 		}
 	}
 
-	var relFiles []string
 	walkErr := filepath.WalkDir(dirRoot, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -402,46 +517,13 @@ func expandDirMock(m HTTPMock, baseDir string, restrict bool) ([]HTTPMock, error
 		return nil
 	})
 	if walkErr != nil {
-		return nil, fmt.Errorf("mock %q: walking body.dir %q: %w", m.ID, m.Response.Body.Dir, walkErr)
+		return "", "", "", nil, fmt.Errorf("mock %q: walking body.dir %q: %w", m.ID, m.Response.Body.Dir, walkErr)
 	}
 	sort.Strings(relFiles)
 	if len(relFiles) == 0 {
-		return nil, fmt.Errorf("mock %q: body.dir %q contains no files", m.ID, m.Response.Body.Dir)
+		return "", "", "", nil, fmt.Errorf("mock %q: body.dir %q contains no files", m.ID, m.Response.Body.Dir)
 	}
-
-	children := make([]HTTPMock, 0, len(relFiles)+1)
-	for _, rel := range relFiles {
-		absFile := filepath.Join(dirRoot, filepath.FromSlash(rel))
-		idSuffix := "__" + strings.ReplaceAll(rel, "/", "__")
-		routePath := joinURLPath(parentPath, rel)
-
-		fileChild := m
-		fileChild.ID = baseID + idSuffix
-		fileChild.Request = HTTPRequest{Method: "GET", Path: routePath}
-		fileChild.Response = HTTPResponse{
-			Status:  valueOr(m.Response.Status, 200),
-			Headers: m.Response.Headers,
-			// File is set to the fully resolved absolute path (not the
-			// dir-relative name) so the generated mock is self-contained:
-			// resolvedFile is unexported and never survives a JSON
-			// round-trip, and the "mockly add page --dir" CLI command
-			// expands directories client-side then POSTs each resulting
-			// mock to the (possibly different-cwd) API server, which must
-			// be able to resolve File on its own.
-			Body:  HTTPBody{File: absFile, resolvedFile: absFile},
-			Delay: m.Response.Delay,
-		}
-		fileChild.Sequence = nil
-		children = append(children, fileChild)
-
-		if path.Base(rel) == "index.html" {
-			indexChild := fileChild
-			indexChild.ID = baseID
-			indexChild.Request = HTTPRequest{Method: "GET", Path: parentPath}
-			children = append(children, indexChild)
-		}
-	}
-	return children, nil
+	return dirRoot, parentPath, baseID, relFiles, nil
 }
 
 // joinURLPath joins base and rel using URL (forward-slash) semantics,

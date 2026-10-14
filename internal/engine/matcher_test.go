@@ -232,6 +232,56 @@ func TestHTTPMatch_Template_SkipsBinaryLiteralWithContentTypeHeader(t *testing.T
 	}
 }
 
+func TestHTTPMatch_Template_HTMLContentType_EscapesReflectedQuery(t *testing.T) {
+	// A text/html response that reflects a query param must contextually
+	// escape it (html/template), not inject it byte-for-byte, so a
+	// malicious query value can't inject markup/script into the page.
+	mocks := []config.HTTPMock{{
+		ID:      "m1",
+		Request: config.HTTPRequest{Method: "GET", Path: "/checkout"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "text/html"},
+			Body:    config.NewHTTPBodyLiteral(`<p>Hello {{.query.name}}</p>`),
+		},
+	}}
+	query := map[string][]string{"name": {`<script>alert(1)</script>`}}
+	result, ok := engine.HTTPMatch(mocks, "GET", "/checkout", query, nil, "", nil)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if strings.Contains(result.Body, "<script>") {
+		t.Fatalf("expected query value to be HTML-escaped, got raw markup: %q", result.Body)
+	}
+	if !strings.Contains(result.Body, "&lt;script&gt;") {
+		t.Fatalf("expected escaped script tag in body, got %q", result.Body)
+	}
+}
+
+func TestHTTPMatch_Template_NonHTMLContentType_DoesNotEscape(t *testing.T) {
+	// A JSON (or any non-HTML) response must keep reflecting request data
+	// unescaped, exactly as before — HTML-escaping would corrupt it (e.g.
+	// a quote inside a JSON string value wrongly becoming &#34;).
+	mocks := []config.HTTPMock{{
+		ID:      "m1",
+		Request: config.HTTPRequest{Method: "GET", Path: "/echo"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Headers: map[string]string{"Content-Type": "application/json"},
+			Body:    config.NewHTTPBodyLiteral(`{"name":"{{.query.name}}"}`),
+		},
+	}}
+	query := map[string][]string{"name": {`O'Brien & <co>`}}
+	result, ok := engine.HTTPMatch(mocks, "GET", "/echo", query, nil, "", nil)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	want := `{"name":"O'Brien & <co>"}`
+	if result.Body != want {
+		t.Fatalf("expected unescaped reflection for non-HTML content type, got %q, want %q", result.Body, want)
+	}
+}
+
 func TestHTTPMatch_QueryParams(t *testing.T) {
 	mocks := []config.HTTPMock{
 		{

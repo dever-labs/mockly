@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	htmltemplate "html/template"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -60,6 +61,30 @@ func cachedTemplate(tmpl string) (*template.Template, error) {
 		return nil, err
 	}
 	templateCache.Store(tmpl, t)
+	return t, nil
+}
+
+// htmlTemplateCache caches parsed html/template.Templates by template
+// string, mirroring templateCache. Kept separate because html/template and
+// text/template are distinct types.
+var htmlTemplateCache sync.Map // map[string]*htmltemplate.Template
+
+// cachedHTMLTemplate returns a cached *htmltemplate.Template for tmpl,
+// parsing it on first use. html/template shares text/template's {{ }}
+// syntax and FuncMap type, but contextually HTML/JS/CSS/URL-escapes every
+// interpolated value based on where it appears in the markup — used for
+// text/html responses so request-derived data (query/headers/body/path
+// params) reflected into a templated HTML body can't inject markup or
+// script into the page.
+func cachedHTMLTemplate(tmpl string) (*htmltemplate.Template, error) {
+	if v, ok := htmlTemplateCache.Load(tmpl); ok {
+		return v.(*htmltemplate.Template), nil
+	}
+	t, err := htmltemplate.New("response").Funcs(BuildFuncMap()).Parse(tmpl)
+	if err != nil {
+		return nil, err
+	}
+	htmlTemplateCache.Store(tmpl, t)
 	return t, nil
 }
 
@@ -1067,20 +1092,9 @@ type RequestContext struct {
 	PathParams map[string]string
 }
 
-// renderTemplate executes a Go text/template against a context that includes
-// both the legacy top-level keys (query, headers, body) and a nested
-// "request" key with method, path, params, and the body parsed as JSON (or,
-// for an application/x-www-form-urlencoded body, as form fields — see
-// formBodyFields).
-func renderTemplate(tmpl string, req RequestContext) (string, error) {
-	if !strings.Contains(tmpl, "{{") {
-		return tmpl, nil
-	}
-	t, err := cachedTemplate(tmpl)
-	if err != nil {
-		return "", fmt.Errorf("parsing template: %w", err)
-	}
-
+// buildTemplateContext assembles the data map passed to both the
+// text/template and html/template renderers, so the two stay in sync.
+func buildTemplateContext(req RequestContext) map[string]interface{} {
 	// Parse body as JSON for {{.request.body.field}} access. Falls back to
 	// form fields (e.g. for a payment page's card-details post-back, so a
 	// receipt page can echo back "{{.request.body.card_number}}") and then
@@ -1094,7 +1108,7 @@ func renderTemplate(tmpl string, req RequestContext) (string, error) {
 		}
 	}
 
-	ctx := map[string]interface{}{
+	return map[string]interface{}{
 		// Backward-compatible top-level keys.
 		"query":   req.Query,
 		"headers": req.Headers,
@@ -1109,11 +1123,62 @@ func renderTemplate(tmpl string, req RequestContext) (string, error) {
 			"params":  req.PathParams,
 		},
 	}
+}
+
+// templateExecutor is the subset of *text/template.Template and
+// *html/template.Template shared by the two renderers below — both types
+// satisfy it, so executeTemplate can run either without caring which.
+type templateExecutor interface {
+	Execute(wr io.Writer, data any) error
+}
+
+// executeTemplate runs tmpl's already-parsed template t (either a
+// text/template or an html/template — see templateExecutor) against req's
+// context and returns the rendered string, or an error if execution fails.
+// Shared by renderTemplate and renderTemplateHTML so the two only differ in
+// which package parsed/cached t.
+func executeTemplate(t templateExecutor, req RequestContext) (string, error) {
 	var buf bytes.Buffer
-	if err := t.Execute(&buf, ctx); err != nil {
+	if err := t.Execute(&buf, buildTemplateContext(req)); err != nil {
 		return "", fmt.Errorf("executing template: %w", err)
 	}
 	return buf.String(), nil
+}
+
+// renderTemplate executes a Go text/template against a context that includes
+// both the legacy top-level keys (query, headers, body) and a nested
+// "request" key with method, path, params, and the body parsed as JSON (or,
+// for an application/x-www-form-urlencoded body, as form fields — see
+// formBodyFields).
+func renderTemplate(tmpl string, req RequestContext) (string, error) {
+	if !strings.Contains(tmpl, "{{") {
+		return tmpl, nil
+	}
+	t, err := cachedTemplate(tmpl)
+	if err != nil {
+		return "", fmt.Errorf("parsing template: %w", err)
+	}
+	return executeTemplate(t, req)
+}
+
+// renderTemplateHTML is renderTemplate's HTML-escaping counterpart: it uses
+// html/template instead of text/template, so every interpolated value
+// (query/header/body/path-param data, which is attacker-controlled in a
+// real deployment) is contextually HTML/JS/CSS/URL-escaped based on where
+// it appears in the markup, instead of written byte-for-byte. The static
+// markup around it is untouched. Used wherever a response's Content-Type
+// is text/html, so a mock that reflects request data into an HTML page
+// (e.g. a worked checkout-page example) can't be used to inject markup or
+// script into that page.
+func renderTemplateHTML(tmpl string, req RequestContext) (string, error) {
+	if !strings.Contains(tmpl, "{{") {
+		return tmpl, nil
+	}
+	t, err := cachedHTMLTemplate(tmpl)
+	if err != nil {
+		return "", fmt.Errorf("parsing template: %w", err)
+	}
+	return executeTemplate(t, req)
 }
 
 // Render is the exported counterpart of renderTemplate for use by protocol
@@ -1126,6 +1191,31 @@ func Render(tmpl string, req RequestContext) string {
 		return tmpl
 	}
 	return out
+}
+
+// RenderHTML is Render's HTML-escaping counterpart (see renderTemplateHTML):
+// use it instead of Render wherever tmpl is written into a text/html
+// response, so request-derived data reflected into it is contextually
+// escaped rather than injected as raw markup/script. On template error it
+// returns the original string unchanged, same as Render.
+func RenderHTML(tmpl string, req RequestContext) string {
+	out, err := renderTemplateHTML(tmpl, req)
+	if err != nil {
+		return tmpl
+	}
+	return out
+}
+
+// IsHTMLContentType reports whether ct names (ignoring parameters like
+// charset and case) the text/html media type — used to decide whether a
+// response field should be rendered through the HTML-escaping template
+// engine (RenderHTML/renderTemplateHTML) instead of the raw one.
+func IsHTMLContentType(ct string) bool {
+	mt, _, err := mime.ParseMediaType(ct)
+	if err != nil {
+		return strings.Contains(strings.ToLower(ct), "text/html")
+	}
+	return strings.EqualFold(mt, "text/html")
 }
 
 // RenderErr is the error-returning counterpart of Render, for callers that
@@ -1142,15 +1232,20 @@ func RenderErr(tmpl string, req RequestContext) (string, error) {
 // RenderHTTPBody resolves body (a literal string or a body.file reference
 // — see config.HTTPBody) and, unless its content is a binary format (see
 // config.IsBinaryContentType), renders it through the same {{ }} template
-// engine as every other response field. It returns the rendered content
-// and, for a file reference, its inferred Content-Type (empty for a plain
-// literal, since callers already control Content-Type via Headers in that
-// case). If the referenced file can't be read (e.g. deleted after config
-// load), an inline error message takes its place so a misconfigured mock
-// is visibly broken instead of silently serving an empty body.
+// engine as every other response field — the HTML-escaping one (see
+// renderTemplateHTML) when the resolved or declared Content-Type is
+// text/html, so request-derived data reflected into an HTML page is
+// contextually escaped rather than injected as raw markup/script;
+// otherwise the plain, unescaped one, unchanged from before. It returns
+// the rendered content and, for a file reference, its inferred
+// Content-Type (empty for a plain literal, since callers already control
+// Content-Type via Headers in that case). If the referenced file can't be
+// read (e.g. deleted after config load), an inline error message takes its
+// place so a misconfigured mock is visibly broken instead of silently
+// serving an empty body.
 //
 // declaredContentType is the mock's own (unrendered) "Content-Type" header
-// value, if any — used only as a fallback binary-format signal, since a
+// value, if any — used as a fallback binary-format/HTML signal, since a
 // body.file/body.dir reference's inferred Content-Type (from Resolve) is
 // unavailable for a Literal body (e.g. one built by "mockly add page",
 // which transfers binary assets like images/fonts as literal content, not
@@ -1168,6 +1263,13 @@ func RenderHTTPBody(body config.HTTPBody, req RequestContext, declaredContentTyp
 	}
 	if config.IsBinaryContentType(ct) || config.IsBinaryContentType(declaredContentType) {
 		return content, ct
+	}
+	if IsHTMLContentType(ct) || IsHTMLContentType(declaredContentType) {
+		out, rerr := renderTemplateHTML(content, req)
+		if rerr != nil {
+			return content, ct
+		}
+		return out, ct
 	}
 	out, rerr := renderTemplate(content, req)
 	if rerr != nil {

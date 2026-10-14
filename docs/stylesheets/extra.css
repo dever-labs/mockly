@@ -1,0 +1,18 @@
+/* Give rendered Mermaid diagrams (with pan/zoom enabled via
+   javascripts/mermaid-zoom.js) a large, fixed-height viewport and a
+   draggable cursor so it's obvious they can be panned/zoomed.
+   An explicit height (not max-height) is required here: without it the
+   container shrinks to the diagram's natural width-driven aspect ratio,
+   which for a wide/flat flowchart renders tiny even on a full-width page. */
+.mermaid {
+  cursor: grab;
+  height: 80vh;
+  min-height: 600px;
+  overflow: hidden;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.2rem;
+}
+
+.mermaid:active {
+  cursor: grabbing;
+}

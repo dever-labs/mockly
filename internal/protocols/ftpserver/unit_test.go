@@ -530,3 +530,43 @@ func parsePASVAddr(t *testing.T, resp string) string {
 	port := p1*256 + p2
 	return fmt.Sprintf("127.0.0.1:%d", port)
 }
+
+// ---------------------------------------------------------------------------
+// listenPassive / passive_port_start
+// ---------------------------------------------------------------------------
+
+func TestListenPassive_UsesConfiguredRange(t *testing.T) {
+	// Find a free high port to use as the range start, so the test doesn't
+	// collide with other listeners in CI.
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("probe listen: %v", err)
+	}
+	start := probe.Addr().(*net.TCPAddr).Port
+	_ = probe.Close()
+
+	srv := &Server{cfg: &config.FTPConfig{PassivePortStart: start}}
+	ln, err := srv.listenPassive()
+	if err != nil {
+		t.Fatalf("listenPassive: %v", err)
+	}
+	defer ln.Close() //nolint:errcheck
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	if port < start || port >= start+1000 {
+		t.Errorf("passive port %d outside configured range [%d, %d)", port, start, start+1000)
+	}
+}
+
+func TestListenPassive_ZeroFallsBackToRandomPort(t *testing.T) {
+	srv := &Server{cfg: &config.FTPConfig{PassivePortStart: 0}}
+	ln, err := srv.listenPassive()
+	if err != nil {
+		t.Fatalf("listenPassive: %v", err)
+	}
+	defer ln.Close() //nolint:errcheck
+
+	if ln.Addr().(*net.TCPAddr).Port == 0 {
+		t.Error("expected an assigned port, got 0")
+	}
+}

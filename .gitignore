@@ -73,3 +73,6 @@ clients/rust/target/
 
 # Rust testcontainers
 clients/rust-testcontainers/target/
+
+# MkDocs build output
+/site/

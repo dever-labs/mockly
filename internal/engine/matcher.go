@@ -1125,6 +1125,26 @@ func buildTemplateContext(req RequestContext) map[string]interface{} {
 	}
 }
 
+// templateExecutor is the subset of *text/template.Template and
+// *html/template.Template shared by the two renderers below — both types
+// satisfy it, so executeTemplate can run either without caring which.
+type templateExecutor interface {
+	Execute(wr io.Writer, data any) error
+}
+
+// executeTemplate runs tmpl's already-parsed template t (either a
+// text/template or an html/template — see templateExecutor) against req's
+// context and returns the rendered string, or an error if execution fails.
+// Shared by renderTemplate and renderTemplateHTML so the two only differ in
+// which package parsed/cached t.
+func executeTemplate(t templateExecutor, req RequestContext) (string, error) {
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, buildTemplateContext(req)); err != nil {
+		return "", fmt.Errorf("executing template: %w", err)
+	}
+	return buf.String(), nil
+}
+
 // renderTemplate executes a Go text/template against a context that includes
 // both the legacy top-level keys (query, headers, body) and a nested
 // "request" key with method, path, params, and the body parsed as JSON (or,
@@ -1138,11 +1158,7 @@ func renderTemplate(tmpl string, req RequestContext) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parsing template: %w", err)
 	}
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, buildTemplateContext(req)); err != nil {
-		return "", fmt.Errorf("executing template: %w", err)
-	}
-	return buf.String(), nil
+	return executeTemplate(t, req)
 }
 
 // renderTemplateHTML is renderTemplate's HTML-escaping counterpart: it uses
@@ -1162,11 +1178,7 @@ func renderTemplateHTML(tmpl string, req RequestContext) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parsing template: %w", err)
 	}
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, buildTemplateContext(req)); err != nil {
-		return "", fmt.Errorf("executing template: %w", err)
-	}
-	return buf.String(), nil
+	return executeTemplate(t, req)
 }
 
 // Render is the exported counterpart of renderTemplate for use by protocol

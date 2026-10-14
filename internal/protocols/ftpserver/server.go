@@ -93,6 +93,27 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 }
 
+// listenPassive opens a data-connection listener for PASV mode. When
+// PassivePortStart is configured (the default is 50000), it binds to the
+// first free port in a 1000-port range starting there, so operators can open
+// a fixed, predictable range through a firewall/NAT instead of allowing
+// every ephemeral port. It falls back to an OS-assigned port if the whole
+// range is exhausted or PassivePortStart is unset/zero.
+func (s *Server) listenPassive() (net.Listener, error) {
+	start := s.cfg.PassivePortStart
+	if start <= 0 {
+		return net.Listen("tcp", "127.0.0.1:0")
+	}
+	const rangeSize = 1000
+	for port := start; port < start+rangeSize; port++ {
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			return ln, nil
+		}
+	}
+	return net.Listen("tcp", "127.0.0.1:0")
+}
+
 func (s *Server) handleConn(conn net.Conn) {
 	defer conn.Close() //nolint:errcheck
 	reader := bufio.NewReader(conn)
@@ -159,7 +180,7 @@ func (s *Server) handleConn(conn net.Conn) {
 			if passive != nil {
 				_ = passive.Close()
 			}
-			passive, err = net.Listen("tcp", "127.0.0.1:0")
+			passive, err = s.listenPassive()
 			if err != nil {
 				_, _ = conn.Write([]byte("425 Can't open data connection\r\n"))
 				continue

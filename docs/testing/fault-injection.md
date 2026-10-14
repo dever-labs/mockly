@@ -44,6 +44,16 @@ curl -X POST http://localhost:9091/api/fault/grpc \
   -H 'Content-Type: application/json' \
   -d '{"code":"UNAVAILABLE","delay":"500ms","error_rate":1.0}'
 
+# Simulate a crashed HTTP server: reset the connection with no response
+curl -X POST http://localhost:9091/api/fault/http \
+  -H 'Content-Type: application/json' \
+  -d '{"abort":true}'
+
+# Simulate a mid-transfer crash: send only the first 128 bytes then hang up
+curl -X POST http://localhost:9091/api/fault/http \
+  -H 'Content-Type: application/json' \
+  -d '{"truncate_body":128}'
+
 # Get all active faults
 curl http://localhost:9091/api/fault
 
@@ -62,7 +72,7 @@ curl http://localhost:9091/api/fault/dns/effective
 
 | Protocol | Fields | Values / notes |
 |---|---|---|
-| `http` | `status`, `body`, `delay`, `delay_range`, `error_rate`, `rate_limit` | HTTP status code (default 503); `delay_range: {min, max}` jitters the delay instead of a fixed value; `rate_limit: {requests_per_second, over_limit_status, body}` returns `over_limit_status` (default 429) once the trailing 1s window is exceeded |
+| `http` | `status`, `body`, `delay`, `delay_range`, `error_rate`, `rate_limit`, `abort`, `truncate_body` | HTTP status code (default 503); `delay_range: {min, max}` jitters the delay instead of a fixed value; `rate_limit: {requests_per_second, over_limit_status, body}` returns `over_limit_status` (default 429) once the trailing 1s window is exceeded; `abort: true` closes the connection immediately with a TCP reset and no response, simulating a crashed server; `truncate_body: <n>` sends only the first `n` bytes of the response body then abruptly closes the connection, simulating a mid-transfer crash — both are API/scenario-only (no `mockly fault set` CLI flag) |
 | `graphql` | `status`, `body`, `delay`, `error_rate` | HTTP status code (default 503) |
 | `websocket` | `close_code`, `message`, `delay`, `error_rate` | WS close code (default 1011) |
 | `grpc` | `code`, `message`, `delay`, `error_rate` | `UNAVAILABLE` \| `NOT_FOUND` \| `DEADLINE_EXCEEDED` \| `PERMISSION_DENIED` \| `RESOURCE_EXHAUSTED` \| `INTERNAL` |

@@ -7,6 +7,7 @@ protocols:
   ftp:
     enabled: true
     port: 2121
+    passive_port_start: 50000
     files:
       - id: daily-report
         path: /reports/daily.csv
@@ -29,6 +30,12 @@ protocols:
         allowed_files:
           - daily-report
 ```
+
+`passive_port_start` (default `50000`) controls the port range used for PASV
+data connections: Mockly binds the first free port in a 1000-port window
+starting there, instead of letting the OS pick a random ephemeral port. Set
+this if you need to open a fixed, predictable range through a firewall or
+NAT for FTP clients connecting to Mockly in passive mode.
 
 ## See also
 

@@ -860,6 +860,13 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 func (s *Server) writeStream(w http.ResponseWriter, r *http.Request, headers map[string]string, stream *config.HTTPStream, reqCtx engine.RequestContext, matchedID string) {
 	fl, _ := w.(http.Flusher)
 	isSSE := strings.Contains(strings.ToLower(headers["Content-Type"]), "text/event-stream")
+	isHTML := engine.IsHTMLContentType(headers["Content-Type"])
+	renderEvent := func(data string) string {
+		if isHTML {
+			return engine.RenderHTML(data, reqCtx)
+		}
+		return engine.Render(data, reqCtx)
+	}
 
 	write := func(ev config.HTTPStreamEvent, data string) {
 		if isSSE {
@@ -888,7 +895,7 @@ func (s *Server) writeStream(w http.ResponseWriter, r *http.Request, headers map
 			if ev.Delay.Duration > 0 {
 				time.Sleep(ev.Delay.Duration)
 			}
-			write(ev, engine.Render(ev.Data, reqCtx))
+			write(ev, renderEvent(ev.Data))
 		}
 		return
 	}
@@ -946,7 +953,7 @@ func (s *Server) writeStream(w http.ResponseWriter, r *http.Request, headers map
 		case <-timerC:
 			ev := stream.Events[idx]
 			idx++
-			write(ev, engine.Render(ev.Data, reqCtx))
+			write(ev, renderEvent(ev.Data))
 		}
 	}
 }

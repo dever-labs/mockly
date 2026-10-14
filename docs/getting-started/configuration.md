@@ -184,6 +184,18 @@ In addition to the legacy shorthand aliases above, templates expose a `request.*
 
 **Sequence counters** (`{{seq "name"}}`) are reset to zero by `POST /api/reset` or `mockly reset`.
 
+!!! note "HTML responses escape reflected request data"
+    When a mock's response `Content-Type` is `text/html`, request-derived
+    values (`{{.query...}}`, `{{.headers...}}`, `{{.request.body...}}`,
+    `{{.request.params...}}`) are rendered through Go's `html/template`
+    instead of the plain `text/template` used for every other content type:
+    each value is contextually HTML/attribute/URL-escaped based on where it
+    appears in the markup, so a mock that reflects request data into an
+    HTML page (e.g. the [Nets checkout preset](../presets.md)) can't be
+    used to inject markup or script. Static markup around the template is
+    untouched, and non-HTML responses (JSON, XML, plain text, …) are
+    unaffected and keep reflecting data byte-for-byte as before.
+
 Example — echo request fields in a create-style API:
 
 ```yaml

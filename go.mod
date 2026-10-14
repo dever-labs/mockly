@@ -13,7 +13,7 @@ require (
 	github.com/gosnmp/gosnmp v1.45.0
 	github.com/miekg/dns v1.1.73
 	github.com/mochi-mqtt/server/v2 v2.7.9
-	github.com/nats-io/nats-server/v2 v2.15.0
+	github.com/nats-io/nats-server/v2 v2.15.1
 	github.com/nats-io/nats.go v1.54.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/rs/xid v1.6.0

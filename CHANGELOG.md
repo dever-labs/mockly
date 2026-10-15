@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.16.0](https://github.com/dever-labs/mockly/compare/v0.15.0...v0.16.0) (2026-10-14)
+
+
+### Features
+
+* **amqp:** add configurable exchange/binding topology ([#219](https://github.com/dever-labs/mockly/issues/219)) ([#334](https://github.com/dever-labs/mockly/issues/334)) ([f2716db](https://github.com/dever-labs/mockly/commit/f2716db932fe10499c69d2a11a261385837c588e))
+* **config:** support multi-file config via include and directory mode ([#339](https://github.com/dever-labs/mockly/issues/339)) ([f8ff1c2](https://github.com/dever-labs/mockly/commit/f8ff1c266ebf8f2df4607633e968634cf183a5df))
+* **graphql:** add graphql-transport-ws subscription support ([#346](https://github.com/dever-labs/mockly/issues/346)) ([2a0b931](https://github.com/dever-labs/mockly/commit/2a0b9319c13512c33f1f9e4a303cc965ccc90eab))
+* **grpc:** add server/client/bidirectional streaming support ([#211](https://github.com/dever-labs/mockly/issues/211)) ([#345](https://github.com/dever-labs/mockly/issues/345)) ([e794894](https://github.com/dever-labs/mockly/commit/e794894caf308fd3b01115c0e96ba6724d622180))
+* **http:** add easier HTML page mocking ([#202](https://github.com/dever-labs/mockly/issues/202)) ([#347](https://github.com/dever-labs/mockly/issues/347)) ([23eec43](https://github.com/dever-labs/mockly/commit/23eec435dbce20eb72955ab6bdf0db3fb963350c))
+* **http:** add per-listener TLS scoping ([#204](https://github.com/dever-labs/mockly/issues/204)) ([#342](https://github.com/dever-labs/mockly/issues/342)) ([87a338d](https://github.com/dever-labs/mockly/commit/87a338dcc11d9b43c41c0a193301f7da68af5960))
+* inline schema references in mockly.yaml + e2e protocol coverage ([#281](https://github.com/dever-labs/mockly/issues/281)) ([6ca93f8](https://github.com/dever-labs/mockly/commit/6ca93f8da70c1020741dd24c34f30b4d7701ac2c))
+* **protocols:** add optional protocolVersion pin per protocol ([#237](https://github.com/dever-labs/mockly/issues/237)) ([#332](https://github.com/dever-labs/mockly/issues/332)) ([7d39ed8](https://github.com/dever-labs/mockly/commit/7d39ed8ae254dda29e36178603cb62d18a481888))
+* **start:** add --watch flag for config hot-reload ([#340](https://github.com/dever-labs/mockly/issues/340)) ([e27cea5](https://github.com/dever-labs/mockly/commit/e27cea55939adba4b245b3b66eaad351b6660851))
+* **tlsutil:** auto-generate self-signed TLS certs when none configured ([#341](https://github.com/dever-labs/mockly/issues/341)) ([261a7f0](https://github.com/dever-labs/mockly/commit/261a7f01623b11a37e21db6dd229b846f3b85f29))
+
+
+### Bug Fixes
+
+* **deps:** bump rustls to 0.23.45 to resolve moderate vulnerabilities ([b684e94](https://github.com/dever-labs/mockly/commit/b684e94e6dedb4cfa95cbcda1d508cbae0eaa2d3))
+* **docker,ci:** run container as non-root, add govulncheck + coverage gate ([#285](https://github.com/dever-labs/mockly/issues/285)) ([64ff87c](https://github.com/dever-labs/mockly/commit/64ff87c2eaf1933c8b21d1c984ab9a7470e7aae8))
+* **http,tls:** close leaked listeners, scope record mode to listener, lock cert-gen ([#343](https://github.com/dever-labs/mockly/issues/343)) ([f302ca6](https://github.com/dever-labs/mockly/commit/f302ca68fcbcf2ea37a10952f946e7301cbd3ae2))
+* **http:** HTML-escape reflected request data in templated responses ([#361](https://github.com/dever-labs/mockly/issues/361)) ([3aa1f90](https://github.com/dever-labs/mockly/commit/3aa1f9040f4c7d6152d3916a2bfd63d90b755e41))
+* **node:** add explicit types:node to tsconfig for TypeScript 7 compat ([#330](https://github.com/dever-labs/mockly/issues/330)) ([0a30af6](https://github.com/dever-labs/mockly/commit/0a30af67e44291ab137cf34c5743df2f051bcad3))
+* **node:** resync package-lock.json with optional driver deps ([#321](https://github.com/dever-labs/mockly/issues/321)) ([f5bf230](https://github.com/dever-labs/mockly/commit/f5bf230765a2cb0bc4367bb65687b2402e6cd01e))
+* **snmp:** replace unmaintained GoSNMPServer with native agent ([#344](https://github.com/dever-labs/mockly/issues/344)) ([905250b](https://github.com/dever-labs/mockly/commit/905250b5beafbf7442eb5f441f1c15804ba4d432))
+
 ## [0.15.0](https://github.com/dever-labs/mockly/compare/v0.14.0...v0.15.0) (2026-10-07)
 
 

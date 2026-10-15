@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <PackageId>Mockly.Driver</PackageId>
-    <Version>0.15.0</Version>
+    <Version>0.16.0</Version>
     <Authors>dever-labs</Authors>
     <Description>Mockly is a single binary that mocks HTTP, gRPC, Kafka, AMQP, MQTT, Redis, SMTP, and a dozen other protocols for integration tests — one process instead of a dozen Docker containers. Mockly.Driver is the C# client: it downloads the right platform binary automatically, starts/stops the server from your test process, and gives you a typed API to register mocks, inject faults, and manage scenarios.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

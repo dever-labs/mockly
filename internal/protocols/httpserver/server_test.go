@@ -1962,6 +1962,56 @@ func TestHTTPServer_GlobalFault_TruncateBody_NoDuplicateHeaders(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_GlobalFault_TruncateBody_NoTransferEncodingSmuggling(t *testing.T) {
+	// A mock/fault may declare its own Transfer-Encoding header (e.g.
+	// simulating a chunked backend). The hijacked branch's body is always
+	// written raw (never actually chunk-encoded) and always appends its own
+	// Content-Length trailer, so a response carrying both Transfer-Encoding
+	// and Content-Length would be a request/response-smuggling vector
+	// (RFC 7230 §3.3.3) for any intermediary — Transfer-Encoding must be
+	// dropped from the raw response entirely.
+	mocks := []config.HTTPMock{{
+		ID:      "data",
+		Request: config.HTTPRequest{Method: "GET", Path: "/data"},
+		Response: config.HTTPResponse{
+			Status: 200,
+			Body:   config.NewHTTPBodyLiteral(`{"result":"complete-payload-here"}`),
+			Headers: map[string]string{
+				"Transfer-Encoding": "chunked",
+			},
+		},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{TruncateBody: 5}})
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	_, _ = fmt.Fprintf(conn, "GET /data HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+
+	var buf strings.Builder
+	tmp := make([]byte, 1024)
+	for {
+		n, readErr := conn.Read(tmp)
+		buf.Write(tmp[:n])
+		if readErr != nil {
+			break
+		}
+	}
+	got := buf.String()
+	if strings.Contains(got, "Transfer-Encoding") {
+		t.Errorf("response must not carry Transfer-Encoding alongside the hardcoded Content-Length, got: %q", got)
+	}
+	if n := strings.Count(got, "Content-Length:"); n != 1 {
+		t.Errorf("want exactly one Content-Length header, got %d in: %q", n, got)
+	}
+}
+
 func TestHTTPServer_GlobalFault_TruncateBody_NoHeaderInjection(t *testing.T) {
 	// The hijacked branch hand-writes raw HTTP/1.1 header lines to the
 	// socket, bypassing net/http's own CRLF-stripping header writer. A

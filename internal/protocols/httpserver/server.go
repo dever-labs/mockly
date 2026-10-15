@@ -876,8 +876,13 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 		// behavior for duplicated headers — including a Content-Length
 		// desync/smuggling risk for any proxy sitting in front of the
 		// client — and it would silently fail to let a fault's headers
-		// actually override them).
-		if strings.EqualFold(k, "Content-Type") || strings.EqualFold(k, "X-Content-Type-Options") || strings.EqualFold(k, "Content-Length") {
+		// actually override them). Transfer-Encoding is dropped outright:
+		// the body written here is always raw (never actually
+		// chunk-encoded), and a response carrying both Transfer-Encoding
+		// and Content-Length is itself a request/response-smuggling vector
+		// per RFC 7230 §3.3.3 (intermediaries may disagree on which one
+		// delimits the message).
+		if strings.EqualFold(k, "Content-Type") || strings.EqualFold(k, "X-Content-Type-Options") || strings.EqualFold(k, "Content-Length") || strings.EqualFold(k, "Transfer-Encoding") {
 			continue
 		}
 		// Header names/values can come from mock config, scenario patches, or

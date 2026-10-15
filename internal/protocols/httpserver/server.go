@@ -815,6 +815,17 @@ func abortConn(w http.ResponseWriter) {
 	_ = conn.Close()
 }
 
+// sanitizeHeaderLine strips CR/LF bytes from s. The hijacked branch of
+// truncateResponse hand-frames a raw HTTP/1.1 response and writes header
+// lines directly to the socket, bypassing net/http's own header writer
+// (which neutralizes embedded "\r"/"\n" in header values to prevent
+// response splitting). Header values here can originate from mock config,
+// scenario patches, or templated/request-derived data, so the same
+// neutralization must be applied by hand before writing.
+func sanitizeHeaderLine(s string) string {
+	return strings.NewReplacer("\r", " ", "\n", " ").Replace(s)
+}
+
 // truncateResponse writes the response status and headers then sends only the
 // first n bytes of body before abruptly closing the connection, simulating a
 // mid-transfer server crash (client gets unexpected EOF). The hijacked
@@ -852,21 +863,30 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
+	contentType = sanitizeHeaderLine(contentType)
 	// Write raw HTTP/1.1 response with an inflated Content-Length so the client
 	// expects more data than it will receive.
 	claimedLen := len(body) + 128
 	_, _ = fmt.Fprintf(buf, "HTTP/1.1 %d %s\r\n", status, http.StatusText(status))
 	for k, v := range headers {
-		// Content-Type and X-Content-Type-Options are always written by the
-		// hardcoded trailer line below; skip any caller-supplied values for
-		// them here so the raw response never ends up with duplicate header
-		// lines (undefined/inconsistent client behavior for duplicated
-		// security-relevant headers, and it would silently fail to let a
-		// fault's headers actually override them).
-		if strings.EqualFold(k, "Content-Type") || strings.EqualFold(k, "X-Content-Type-Options") {
+		// Content-Type, X-Content-Type-Options, and Content-Length are always
+		// written by the hardcoded trailer line below; skip any
+		// caller-supplied values for them here so the raw response never
+		// ends up with duplicate header lines (undefined/inconsistent client
+		// behavior for duplicated headers — including a Content-Length
+		// desync/smuggling risk for any proxy sitting in front of the
+		// client — and it would silently fail to let a fault's headers
+		// actually override them).
+		if strings.EqualFold(k, "Content-Type") || strings.EqualFold(k, "X-Content-Type-Options") || strings.EqualFold(k, "Content-Length") {
 			continue
 		}
-		_, _ = fmt.Fprintf(buf, "%s: %s\r\n", k, v)
+		// Header names/values can come from mock config, scenario patches, or
+		// templated/request-derived data; strip CR/LF before writing them
+		// directly to the socket so a crafted value can't inject extra
+		// header lines or split the response (net/http's own header writer
+		// does this automatically for the non-hijacked path, but this raw
+		// branch bypasses it entirely).
+		_, _ = fmt.Fprintf(buf, "%s: %s\r\n", sanitizeHeaderLine(k), sanitizeHeaderLine(v))
 	}
 	_, _ = fmt.Fprintf(buf, "Content-Length: %d\r\nContent-Type: %s\r\nX-Content-Type-Options: nosniff\r\n\r\n", claimedLen, contentType)
 	_, _ = buf.WriteString(truncated)

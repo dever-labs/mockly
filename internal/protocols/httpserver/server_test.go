@@ -1920,7 +1920,11 @@ func TestHTTPServer_GlobalFault_TruncateBody_NoDuplicateHeaders(t *testing.T) {
 
 	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
 		TruncateBody: 5,
-		Headers:      map[string]string{"X-Content-Type-Options": "should-not-appear", "Content-Type": "text/plain"},
+		Headers: map[string]string{
+			"X-Content-Type-Options": "should-not-appear",
+			"Content-Type":           "text/plain",
+			"Content-Length":         "9999",
+		},
 	}})
 
 	conn, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
@@ -1947,8 +1951,62 @@ func TestHTTPServer_GlobalFault_TruncateBody_NoDuplicateHeaders(t *testing.T) {
 	if n := strings.Count(got, "Content-Type:"); n != 1 {
 		t.Errorf("want exactly one Content-Type header, got %d in: %q", n, got)
 	}
+	if n := strings.Count(got, "Content-Length:"); n != 1 {
+		t.Errorf("want exactly one Content-Length header (not a caller-supplied duplicate), got %d in: %q", n, got)
+	}
+	if strings.Contains(got, "9999") {
+		t.Error("fault-supplied Content-Length value must not leak into the response")
+	}
 	if strings.Contains(got, "should-not-appear") {
 		t.Error("fault-supplied X-Content-Type-Options value must not leak into the response")
+	}
+}
+
+func TestHTTPServer_GlobalFault_TruncateBody_NoHeaderInjection(t *testing.T) {
+	// The hijacked branch hand-writes raw HTTP/1.1 header lines to the
+	// socket, bypassing net/http's own CRLF-stripping header writer. A
+	// header value reaching this path carrying a literal CR/LF (e.g. from a
+	// templated header that echoes request-derived data) must not be able
+	// to inject an extra header line or split the response.
+	mocks := []config.HTTPMock{{
+		ID:      "data",
+		Request: config.HTTPRequest{Method: "GET", Path: "/data"},
+		Response: config.HTTPResponse{
+			Status: 200,
+			Body:   config.NewHTTPBodyLiteral(`{"result":"complete-payload-here"}`),
+			Headers: map[string]string{
+				"X-Echo": "foo\r\nSet-Cookie: pwned=1",
+			},
+		},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{TruncateBody: 5}})
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	_, _ = fmt.Fprintf(conn, "GET /data HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+
+	var buf strings.Builder
+	tmp := make([]byte, 1024)
+	for {
+		n, readErr := conn.Read(tmp)
+		buf.Write(tmp[:n])
+		if readErr != nil {
+			break
+		}
+	}
+	got := buf.String()
+	if strings.Contains(got, "\r\nSet-Cookie:") {
+		t.Errorf("header value containing CRLF must not inject an extra header line, got: %q", got)
+	}
+	if n := strings.Count(got, "\r\n\r\n"); n != 1 {
+		t.Errorf("want exactly one header/body separator (response must not be split), got %d in: %q", n, got)
 	}
 }
 

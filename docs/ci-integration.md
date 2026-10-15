@@ -2,28 +2,45 @@
 
 Mockly is a single static binary with no runtime dependencies — ideal for CI.
 
-## GitHub Actions (composite action)
+## GitHub Actions
 
 ```yaml
 steps:
   - uses: actions/checkout@v5
 
   - name: Start Mockly
+    id: mockly
     uses: dever-labs/mockly/.github/actions/setup-mockly@v0.15.0 # x-release-please-version
     with:
       version: v0.15.0         # x-release-please-version
       config: mockly.yaml      # path to your config
       api-port: 9091           # management API port (default)
+      ready-timeout: 30        # seconds to wait for the API to come up (default)
 
   - name: Run tests
     run: npm test
+
+  - name: Upload mockly logs on failure
+    if: failure()
+    uses: actions/upload-artifact@v4
+    with:
+      name: mockly-logs
+      path: ${{ steps.mockly.outputs.log-file }}
 ```
 
-The action automatically:
+The action verifies the downloaded binary's checksum against the release's
+`checksums.txt`, and automatically:
 - Downloads the right binary for the runner OS/arch
-- Starts mockly in the background
-- Waits up to 30 s for the server to be ready
-- Kills the process after the job completes
+- Starts mockly in the background, capturing its stdout/stderr to the file
+  exposed as the `log-file` output
+- Waits up to `ready-timeout` seconds (default 30) for the server to be ready
+- Stops mockly via a genuine `post` step, which GitHub Actions guarantees to
+  run after every later step in the job — including your test step — even if
+  an earlier step failed. (This action runs as a `node20` JS action rather
+  than a composite action specifically so this teardown step can be a true
+  post-job hook; composite actions have no equivalent mechanism and would run
+  all their steps inline, stopping mockly immediately instead of at the end
+  of the job.)
 
 ---
 

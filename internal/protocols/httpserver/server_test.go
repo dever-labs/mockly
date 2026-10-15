@@ -1994,6 +1994,53 @@ func TestHTTPServer_GlobalFault_TruncateBody_WithStatus(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_GlobalFault_TruncateBody_PreservesRealContentType(t *testing.T) {
+	// The hijacked-connection branch of truncateResponse used to always
+	// hardcode "Content-Type: application/json" regardless of what the mock
+	// actually declared. Verify a non-JSON mock's Content-Type survives.
+	mocks := []config.HTTPMock{{
+		ID:      "page",
+		Request: config.HTTPRequest{Method: "GET", Path: "/page"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Body:    config.NewHTTPBodyLiteral(`<html><body>hi</body></html>`),
+			Headers: map[string]string{"Content-Type": "text/html"},
+		},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{TruncateBody: 5}})
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	_, _ = fmt.Fprintf(conn, "GET /page HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+
+	var buf strings.Builder
+	tmp := make([]byte, 2048)
+	for {
+		n, readErr := conn.Read(tmp)
+		buf.Write(tmp[:n])
+		if readErr != nil {
+			break
+		}
+	}
+	got := buf.String()
+	if !strings.Contains(got, "Content-Type: text/html") {
+		t.Errorf("want mock's real Content-Type (text/html) preserved, got: %q", got)
+	}
+	if strings.Contains(got, "Content-Type: application/json") {
+		t.Error("truncated response must not silently relabel a non-JSON body as application/json")
+	}
+	if !strings.Contains(got, "X-Content-Type-Options: nosniff") {
+		t.Error("truncated response must still set X-Content-Type-Options: nosniff")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Authentication tests
 // ---------------------------------------------------------------------------

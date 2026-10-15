@@ -817,7 +817,10 @@ func abortConn(w http.ResponseWriter) {
 
 // truncateResponse writes the response status and headers then sends only the
 // first n bytes of body before abruptly closing the connection, simulating a
-// mid-transfer server crash (client gets unexpected EOF).
+// mid-transfer server crash (client gets unexpected EOF). The hijacked
+// (raw-socket) branch preserves the response's actual Content-Type — it
+// previously always reported "application/json" regardless of what the
+// mock/fault declared.
 func truncateResponse(w http.ResponseWriter, status int, headers map[string]string, body string, n int) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
@@ -842,6 +845,13 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 	if n < len(truncated) {
 		truncated = truncated[:n]
 	}
+	// Preserve whatever Content-Type the mock/fault actually declared instead
+	// of silently reporting a different one, defaulting the same way as the
+	// non-hijack branch above (and handleRequest's own guard) when unset.
+	contentType := headers["Content-Type"]
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
 	// Write raw HTTP/1.1 response with an inflated Content-Length so the client
 	// expects more data than it will receive.
 	claimedLen := len(body) + 128
@@ -858,7 +868,7 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 		}
 		_, _ = fmt.Fprintf(buf, "%s: %s\r\n", k, v)
 	}
-	_, _ = fmt.Fprintf(buf, "Content-Length: %d\r\nContent-Type: application/json\r\nX-Content-Type-Options: nosniff\r\n\r\n", claimedLen)
+	_, _ = fmt.Fprintf(buf, "Content-Length: %d\r\nContent-Type: %s\r\nX-Content-Type-Options: nosniff\r\n\r\n", claimedLen, contentType)
 	_, _ = buf.WriteString(truncated)
 	_ = buf.Flush()
 	if tc, ok := conn.(*net.TCPConn); ok {

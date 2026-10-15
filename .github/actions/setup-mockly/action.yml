@@ -36,9 +36,9 @@ outputs:
   log-file:
     description: >-
       Path to mockly's captured stdout/stderr log file. Upload it as an
-      artifact in a step with `if: failure()` to debug a failed run, e.g.
-      `uses: actions/upload-artifact@v4` with
-      `path: ${{ steps.<this-step-id>.outputs.log-file }}`.
+      artifact in a step with "if: failure()" to debug a failed run, e.g.
+      "uses: actions/upload-artifact@v4" referencing this step's
+      "outputs.log-file" as the path.
 
 runs:
   using: node20

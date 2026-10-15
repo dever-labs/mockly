@@ -129,6 +129,7 @@ func (s *Server) Start(ctx context.Context) error {
 	for _, l := range listeners {
 		r := chi.NewRouter()
 		r.Use(middleware.Recoverer)
+		r.Use(noSniffMiddleware)
 		r.HandleFunc("/*", s.handlerFor(l.name))
 
 		addr := fmt.Sprintf(":%d", l.port)
@@ -198,6 +199,25 @@ func (s *Server) handlerFor(listenerName string) http.HandlerFunc {
 		r = r.WithContext(context.WithValue(r.Context(), listenerCtxKey{}, listenerName))
 		s.handleRequest(w, r)
 	}
+}
+
+// noSniffMiddleware sets X-Content-Type-Options: nosniff on every response,
+// on every listener. Mock responses may reflect request-derived data
+// verbatim when their declared Content-Type is not HTML (JSON/plain/binary
+// mocks intentionally echo input unescaped — see engine.RenderHTML vs.
+// engine.Render), which is safe as long as a browser renders the response
+// strictly as the declared Content-Type. Without this header, MIME-sniffing
+// could still promote an ambiguous/unknown-typed response (e.g. one with no
+// or a generic Content-Type) into being parsed as HTML, defeating that
+// content-type-based safety assumption. This closes that gap for every
+// response written through w — except truncateResponse's hijacked-connection
+// branch, which bypasses w.Header() entirely and sets its own nosniff header
+// directly (see truncateResponse).
+func noSniffMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // mocksForListener filters mocks down to the ones reachable on listenerName:
@@ -442,11 +462,24 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				if patch.Status != 0 {
 					status = patch.Status
 				}
-				if patch.Body != "" {
-					respBody = engine.Render(patch.Body, reqCtx)
-				}
 				for k, v := range patch.Headers {
 					respHdrs[k] = engine.Render(v, reqCtx)
+				}
+				if patch.Body != "" {
+					// Render with the same Content-Type-aware escaping used
+					// everywhere else a body is produced (engine.RenderHTTPBody).
+					// Applied after patch.Headers above so a patch that overrides
+					// both Content-Type and Body in the same patch is judged by
+					// its own new Content-Type, not the mock's original one. A
+					// scenario patch can override a text/html mock's body with
+					// request-derived templated data, and the plain (non-escaping)
+					// Render would reflect it unescaped — reopening the exact
+					// reflected-XSS class this fix closes elsewhere.
+					if engine.IsHTMLContentType(respHdrs["Content-Type"]) {
+						respBody = engine.RenderHTML(patch.Body, reqCtx)
+					} else {
+						respBody = engine.Render(patch.Body, reqCtx)
+					}
 				}
 				if patch.Delay != nil {
 					delay = patch.Delay.Duration
@@ -528,17 +561,19 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	for k, v := range respHdrs {
 		w.Header().Set(k, v)
 	}
-	if stream != nil && len(stream.Events) > 0 && w.Header().Get("Content-Type") == "" {
-		// Guard against reflected XSS: streamed events may echo
-		// request-derived data via templating, so default to a
-		// non-renderable content type when the mock didn't specify one
-		// (mirrors truncateResponse's existing Content-Type default).
+	if w.Header().Get("Content-Type") == "" {
+		// Guard against reflected XSS: mock responses (streamed or not) may
+		// echo request-derived data via templating, so default to a
+		// non-renderable content type whenever the mock didn't specify one
+		// (mirrors truncateResponse's existing Content-Type default). This
+		// is defense-in-depth alongside the X-Content-Type-Options: nosniff
+		// header set for every response (see noSniffMiddleware).
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	w.WriteHeader(status)
 
 	if stream != nil && len(stream.Events) > 0 {
-		s.writeStream(w, r, respHdrs, stream, reqCtx, matchedID)
+		s.writeStream(w, r, w.Header().Get("Content-Type"), stream, reqCtx, matchedID)
 	} else {
 		_, _ = fmt.Fprint(w, respBody)
 	}
@@ -586,6 +621,13 @@ func (s *Server) recordAndServe(w http.ResponseWriter, r *http.Request, listener
 
 	for k, v := range respHdrs {
 		w.Header().Set(k, v)
+	}
+	// Same default-guard as handleRequest's main path and truncateResponse:
+	// if the proxied upstream response didn't declare a Content-Type, don't
+	// let Go's net/http server auto-sniff the body and potentially promote
+	// it to text/html on write.
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	w.WriteHeader(status)
 	_, _ = w.Write(respBody)
@@ -793,9 +835,23 @@ func abortConn(w http.ResponseWriter) {
 	_ = conn.Close()
 }
 
+// sanitizeHeaderLine strips CR/LF bytes from s. The hijacked branch of
+// truncateResponse hand-frames a raw HTTP/1.1 response and writes header
+// lines directly to the socket, bypassing net/http's own header writer
+// (which neutralizes embedded "\r"/"\n" in header values to prevent
+// response splitting). Header values here can originate from mock config,
+// scenario patches, or templated/request-derived data, so the same
+// neutralization must be applied by hand before writing.
+func sanitizeHeaderLine(s string) string {
+	return strings.NewReplacer("\r", " ", "\n", " ").Replace(s)
+}
+
 // truncateResponse writes the response status and headers then sends only the
 // first n bytes of body before abruptly closing the connection, simulating a
-// mid-transfer server crash (client gets unexpected EOF).
+// mid-transfer server crash (client gets unexpected EOF). The hijacked
+// (raw-socket) branch preserves the response's actual Content-Type — it
+// previously always reported "application/json" regardless of what the
+// mock/fault declared.
 func truncateResponse(w http.ResponseWriter, status int, headers map[string]string, body string, n int) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
@@ -820,14 +876,44 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 	if n < len(truncated) {
 		truncated = truncated[:n]
 	}
+	// Preserve whatever Content-Type the mock/fault actually declared instead
+	// of silently reporting a different one, defaulting the same way as the
+	// non-hijack branch above (and handleRequest's own guard) when unset.
+	contentType := headers["Content-Type"]
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	contentType = sanitizeHeaderLine(contentType)
 	// Write raw HTTP/1.1 response with an inflated Content-Length so the client
 	// expects more data than it will receive.
 	claimedLen := len(body) + 128
 	_, _ = fmt.Fprintf(buf, "HTTP/1.1 %d %s\r\n", status, http.StatusText(status))
 	for k, v := range headers {
-		_, _ = fmt.Fprintf(buf, "%s: %s\r\n", k, v)
+		// Content-Type, X-Content-Type-Options, and Content-Length are always
+		// written by the hardcoded trailer line below; skip any
+		// caller-supplied values for them here so the raw response never
+		// ends up with duplicate header lines (undefined/inconsistent client
+		// behavior for duplicated headers — including a Content-Length
+		// desync/smuggling risk for any proxy sitting in front of the
+		// client — and it would silently fail to let a fault's headers
+		// actually override them). Transfer-Encoding is dropped outright:
+		// the body written here is always raw (never actually
+		// chunk-encoded), and a response carrying both Transfer-Encoding
+		// and Content-Length is itself a request/response-smuggling vector
+		// per RFC 7230 §3.3.3 (intermediaries may disagree on which one
+		// delimits the message).
+		if strings.EqualFold(k, "Content-Type") || strings.EqualFold(k, "X-Content-Type-Options") || strings.EqualFold(k, "Content-Length") || strings.EqualFold(k, "Transfer-Encoding") {
+			continue
+		}
+		// Header names/values can come from mock config, scenario patches, or
+		// templated/request-derived data; strip CR/LF before writing them
+		// directly to the socket so a crafted value can't inject extra
+		// header lines or split the response (net/http's own header writer
+		// does this automatically for the non-hijacked path, but this raw
+		// branch bypasses it entirely).
+		_, _ = fmt.Fprintf(buf, "%s: %s\r\n", sanitizeHeaderLine(k), sanitizeHeaderLine(v))
 	}
-	_, _ = fmt.Fprintf(buf, "Content-Length: %d\r\nContent-Type: application/json\r\n\r\n", claimedLen)
+	_, _ = fmt.Fprintf(buf, "Content-Length: %d\r\nContent-Type: %s\r\nX-Content-Type-Options: nosniff\r\n\r\n", claimedLen, contentType)
 	_, _ = buf.WriteString(truncated)
 	_ = buf.Flush()
 	if tc, ok := conn.(*net.TCPConn); ok {
@@ -857,10 +943,16 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 // If the ResponseWriter doesn't support http.Flusher (shouldn't happen with
 // the standard net/http server used here), events are still written, just
 // without incremental flushing.
-func (s *Server) writeStream(w http.ResponseWriter, r *http.Request, headers map[string]string, stream *config.HTTPStream, reqCtx engine.RequestContext, matchedID string) {
+//
+// contentType is the Content-Type actually written to w (via w.Header(),
+// after any default-guard applied by the caller) rather than the mock's
+// raw, possibly-unset configured header value — so the SSE/HTML detection
+// below always reflects what's really on the wire, instead of a stale
+// snapshot that happens to coincide with it.
+func (s *Server) writeStream(w http.ResponseWriter, r *http.Request, contentType string, stream *config.HTTPStream, reqCtx engine.RequestContext, matchedID string) {
 	fl, _ := w.(http.Flusher)
-	isSSE := strings.Contains(strings.ToLower(headers["Content-Type"]), "text/event-stream")
-	isHTML := engine.IsHTMLContentType(headers["Content-Type"])
+	isSSE := strings.Contains(strings.ToLower(contentType), "text/event-stream")
+	isHTML := engine.IsHTMLContentType(contentType)
 	renderEvent := func(data string) string {
 		if isHTML {
 			return engine.RenderHTML(data, reqCtx)

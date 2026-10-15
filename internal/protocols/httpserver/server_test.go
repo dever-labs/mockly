@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -281,6 +282,50 @@ func TestHTTPServer_ScenarioPatch_Disabled(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Errorf("disabled mock should return 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestHTTPServer_ScenarioPatch_EscapesHTMLBody(t *testing.T) {
+	// A scenario patch's Body was rendered with the plain (non-escaping)
+	// engine.Render regardless of the response's actual Content-Type, unlike
+	// every other body-producing path in this file (which use
+	// engine.RenderHTTPBody / IsHTMLContentType to pick the HTML-escaping
+	// renderer for text/html responses). That let request-derived templated
+	// data reflected via a patch reopen the exact reflected-XSS hole this
+	// server's Content-Type/nosniff hardening was meant to close.
+	mocks := []config.HTTPMock{{
+		ID:      "page",
+		Request: config.HTTPRequest{Method: "GET", Path: "/page"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Body:    config.NewHTTPBodyLiteral(`<p>hi</p>`),
+			Headers: map[string]string{"Content-Type": "text/html"},
+		},
+	}}
+	sc := scenarios.New([]config.Scenario{{
+		ID: "greet",
+		Patches: []config.MockPatch{
+			{MockID: "page", Body: `<p>{{.request.query.name}}</p>`},
+		},
+	}})
+	base := startTestServer(t, mocks, sc)
+	sc.Activate("greet")
+
+	resp, err := http.Get(base + `/page?name=` + url.QueryEscape(`<script>alert(1)</script>`))
+	if err != nil {
+		t.Fatalf("GET /page: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
+	got := string(body)
+	if strings.Contains(got, "<script>") {
+		t.Errorf("scenario patch body must HTML-escape templated data in a text/html response, got: %q", got)
+	}
+	if !strings.Contains(got, "&lt;script&gt;") {
+		t.Errorf("want HTML-escaped script tag in patched body, got: %q", got)
 	}
 }
 
@@ -1030,9 +1075,48 @@ func TestHTTPServer_Stream_DefaultsContentTypeWhenUnset(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); ct != "application/octet-stream" {
 		t.Errorf("want default Content-Type application/octet-stream, got %q", ct)
 	}
+	if nosniff := resp.Header.Get("X-Content-Type-Options"); nosniff != "nosniff" {
+		t.Errorf("want X-Content-Type-Options: nosniff, got %q", nosniff)
+	}
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) != "raw-chunk" {
 		t.Errorf("want raw-chunk, got %q", body)
+	}
+}
+
+func TestHTTPServer_NoSniffHeaderSetOnEveryResponse(t *testing.T) {
+	// X-Content-Type-Options: nosniff is defense-in-depth against a browser
+	// (or Go's own http server) MIME-sniffing an ambiguous response body
+	// into being treated as HTML, regardless of the matched mock's own
+	// Content-Type — so it must be present on ordinary responses too, not
+	// just streamed ones (see TestHTTPServer_Stream_DefaultsContentTypeWhenUnset).
+	mocks := []config.HTTPMock{{
+		ID:      "plain",
+		Request: config.HTTPRequest{Method: "GET", Path: "/plain"},
+		Response: config.HTTPResponse{
+			Status: 200,
+			Body:   config.HTTPBody{Literal: `{"ok":true}`},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/plain")
+	if err != nil {
+		t.Fatalf("GET /plain: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if nosniff := resp.Header.Get("X-Content-Type-Options"); nosniff != "nosniff" {
+		t.Errorf("want X-Content-Type-Options: nosniff, got %q", nosniff)
+	}
+
+	// Also check an unmatched request still gets the header.
+	resp2, err := http.Get(base + "/does-not-exist")
+	if err != nil {
+		t.Fatalf("GET /does-not-exist: %v", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	if nosniff := resp2.Header.Get("X-Content-Type-Options"); nosniff != "nosniff" {
+		t.Errorf("want X-Content-Type-Options: nosniff on unmatched request, got %q", nosniff)
 	}
 }
 
@@ -1857,6 +1941,168 @@ func TestHTTPServer_GlobalFault_TruncateBody(t *testing.T) {
 	if strings.Contains(got, "complete-payload-here") {
 		t.Error("full body must not be present in truncated response")
 	}
+	// The truncated response is written directly to the hijacked connection,
+	// bypassing w.Header() (and thus noSniffMiddleware) entirely, so it must
+	// set X-Content-Type-Options: nosniff itself.
+	if !strings.Contains(got, "X-Content-Type-Options: nosniff") {
+		t.Error("truncated response must set X-Content-Type-Options: nosniff")
+	}
+}
+
+func TestHTTPServer_GlobalFault_TruncateBody_NoDuplicateHeaders(t *testing.T) {
+	// The mock's own response always sets Content-Type, and a fault may also
+	// set arbitrary extra headers (config.HTTPFault.Headers) — including,
+	// in principle, a key that collides with the hardcoded Content-Type/
+	// X-Content-Type-Options trailer truncateResponse's hijack branch always
+	// writes. Neither must be duplicated in the raw response.
+	mocks := []config.HTTPMock{{
+		ID:       "data",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/data"},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"result":"complete-payload-here"}`)},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		TruncateBody: 5,
+		Headers: map[string]string{
+			"X-Content-Type-Options": "should-not-appear",
+			"Content-Type":           "text/plain",
+			"Content-Length":         "9999",
+		},
+	}})
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	_, _ = fmt.Fprintf(conn, "GET /data HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+
+	var buf strings.Builder
+	tmp := make([]byte, 1024)
+	for {
+		n, readErr := conn.Read(tmp)
+		buf.Write(tmp[:n])
+		if readErr != nil {
+			break
+		}
+	}
+	got := buf.String()
+	if n := strings.Count(got, "X-Content-Type-Options:"); n != 1 {
+		t.Errorf("want exactly one X-Content-Type-Options header, got %d in: %q", n, got)
+	}
+	if n := strings.Count(got, "Content-Type:"); n != 1 {
+		t.Errorf("want exactly one Content-Type header, got %d in: %q", n, got)
+	}
+	if n := strings.Count(got, "Content-Length:"); n != 1 {
+		t.Errorf("want exactly one Content-Length header (not a caller-supplied duplicate), got %d in: %q", n, got)
+	}
+	if strings.Contains(got, "9999") {
+		t.Error("fault-supplied Content-Length value must not leak into the response")
+	}
+	if strings.Contains(got, "should-not-appear") {
+		t.Error("fault-supplied X-Content-Type-Options value must not leak into the response")
+	}
+}
+
+func TestHTTPServer_GlobalFault_TruncateBody_NoTransferEncodingSmuggling(t *testing.T) {
+	// A mock/fault may declare its own Transfer-Encoding header (e.g.
+	// simulating a chunked backend). The hijacked branch's body is always
+	// written raw (never actually chunk-encoded) and always appends its own
+	// Content-Length trailer, so a response carrying both Transfer-Encoding
+	// and Content-Length would be a request/response-smuggling vector
+	// (RFC 7230 §3.3.3) for any intermediary — Transfer-Encoding must be
+	// dropped from the raw response entirely.
+	mocks := []config.HTTPMock{{
+		ID:      "data",
+		Request: config.HTTPRequest{Method: "GET", Path: "/data"},
+		Response: config.HTTPResponse{
+			Status: 200,
+			Body:   config.NewHTTPBodyLiteral(`{"result":"complete-payload-here"}`),
+			Headers: map[string]string{
+				"Transfer-Encoding": "chunked",
+			},
+		},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{TruncateBody: 5}})
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	_, _ = fmt.Fprintf(conn, "GET /data HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+
+	var buf strings.Builder
+	tmp := make([]byte, 1024)
+	for {
+		n, readErr := conn.Read(tmp)
+		buf.Write(tmp[:n])
+		if readErr != nil {
+			break
+		}
+	}
+	got := buf.String()
+	if strings.Contains(got, "Transfer-Encoding") {
+		t.Errorf("response must not carry Transfer-Encoding alongside the hardcoded Content-Length, got: %q", got)
+	}
+	if n := strings.Count(got, "Content-Length:"); n != 1 {
+		t.Errorf("want exactly one Content-Length header, got %d in: %q", n, got)
+	}
+}
+
+func TestHTTPServer_GlobalFault_TruncateBody_NoHeaderInjection(t *testing.T) {
+	// The hijacked branch hand-writes raw HTTP/1.1 header lines to the
+	// socket, bypassing net/http's own CRLF-stripping header writer. A
+	// header value reaching this path carrying a literal CR/LF (e.g. from a
+	// templated header that echoes request-derived data) must not be able
+	// to inject an extra header line or split the response.
+	mocks := []config.HTTPMock{{
+		ID:      "data",
+		Request: config.HTTPRequest{Method: "GET", Path: "/data"},
+		Response: config.HTTPResponse{
+			Status: 200,
+			Body:   config.NewHTTPBodyLiteral(`{"result":"complete-payload-here"}`),
+			Headers: map[string]string{
+				"X-Echo": "foo\r\nSet-Cookie: pwned=1",
+			},
+		},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{TruncateBody: 5}})
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	_, _ = fmt.Fprintf(conn, "GET /data HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+
+	var buf strings.Builder
+	tmp := make([]byte, 1024)
+	for {
+		n, readErr := conn.Read(tmp)
+		buf.Write(tmp[:n])
+		if readErr != nil {
+			break
+		}
+	}
+	got := buf.String()
+	if strings.Contains(got, "\r\nSet-Cookie:") {
+		t.Errorf("header value containing CRLF must not inject an extra header line, got: %q", got)
+	}
+	if n := strings.Count(got, "\r\n\r\n"); n != 1 {
+		t.Errorf("want exactly one header/body separator (response must not be split), got %d in: %q", n, got)
+	}
 }
 
 func TestHTTPServer_GlobalFault_TruncateBody_WithStatus(t *testing.T) {
@@ -1898,6 +2144,53 @@ func TestHTTPServer_GlobalFault_TruncateBody_WithStatus(t *testing.T) {
 	}
 	if strings.Contains(got, "server-exploded") {
 		t.Error("full body must not appear in truncated response")
+	}
+}
+
+func TestHTTPServer_GlobalFault_TruncateBody_PreservesRealContentType(t *testing.T) {
+	// The hijacked-connection branch of truncateResponse used to always
+	// hardcode "Content-Type: application/json" regardless of what the mock
+	// actually declared. Verify a non-JSON mock's Content-Type survives.
+	mocks := []config.HTTPMock{{
+		ID:      "page",
+		Request: config.HTTPRequest{Method: "GET", Path: "/page"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Body:    config.NewHTTPBodyLiteral(`<html><body>hi</body></html>`),
+			Headers: map[string]string{"Content-Type": "text/html"},
+		},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{TruncateBody: 5}})
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	_, _ = fmt.Fprintf(conn, "GET /page HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+
+	var buf strings.Builder
+	tmp := make([]byte, 2048)
+	for {
+		n, readErr := conn.Read(tmp)
+		buf.Write(tmp[:n])
+		if readErr != nil {
+			break
+		}
+	}
+	got := buf.String()
+	if !strings.Contains(got, "Content-Type: text/html") {
+		t.Errorf("want mock's real Content-Type (text/html) preserved, got: %q", got)
+	}
+	if strings.Contains(got, "Content-Type: application/json") {
+		t.Error("truncated response must not silently relabel a non-JSON body as application/json")
+	}
+	if !strings.Contains(got, "X-Content-Type-Options: nosniff") {
+		t.Error("truncated response must still set X-Content-Type-Options: nosniff")
 	}
 }
 

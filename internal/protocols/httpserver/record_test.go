@@ -119,6 +119,52 @@ func TestHTTPServer_RecordMode_ProxiesAndCaptures(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_RecordMode_DefaultsContentTypeWhenUpstreamOmitsIt(t *testing.T) {
+	// recordAndServe copies the upstream's response headers verbatim into
+	// the client-facing response; if the upstream genuinely sent no
+	// Content-Type at all (unlike every realistic httptest.Server handler,
+	// which would itself auto-sniff one via net/http's own server), Go's
+	// net/http server serving mockly's own response would auto-sniff and
+	// potentially promote an HTML-looking body to Content-Type: text/html
+	// on the wire — defeating the nosniff/default-Content-Type hardening
+	// applied to every other response-writing path in this file. Simulate a
+	// true no-Content-Type upstream by hand-writing a raw response over a
+	// hijacked connection (bypassing the upstream's own auto-sniffing too).
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/page" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("upstream ResponseWriter does not support hijacking")
+		}
+		conn, buf, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		body := "<html><body>hi</body></html>"
+		_, _ = fmt.Fprintf(buf, "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(body), body)
+		_ = buf.Flush()
+		_ = conn.Close()
+	}))
+	defer upstream.Close()
+
+	base, _ := startRecordingServer(t, upstream.URL, "", nil)
+
+	resp, err := http.Get(base + "/page")
+	if err != nil {
+		t.Fatalf("GET failed: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if ct := resp.Header.Get("Content-Type"); ct != "application/octet-stream" {
+		t.Errorf("want default Content-Type application/octet-stream when upstream omits it, got %q", ct)
+	}
+	if nosniff := resp.Header.Get("X-Content-Type-Options"); nosniff != "nosniff" {
+		t.Errorf("want X-Content-Type-Options: nosniff, got %q", nosniff)
+	}
+}
+
 func TestHTTPServer_RecordMode_FallsBackTo404WhenUpstreamUnreachable(t *testing.T) {
 	// Deliberately unreachable upstream (closed listener).
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

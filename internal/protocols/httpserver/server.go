@@ -209,8 +209,10 @@ func (s *Server) handlerFor(listenerName string) http.HandlerFunc {
 // strictly as the declared Content-Type. Without this header, MIME-sniffing
 // could still promote an ambiguous/unknown-typed response (e.g. one with no
 // or a generic Content-Type) into being parsed as HTML, defeating that
-// content-type-based safety assumption. This closes that gap unconditionally
-// instead of relying on every response path remembering to guard against it.
+// content-type-based safety assumption. This closes that gap for every
+// response written through w — except truncateResponse's hijacked-connection
+// branch, which bypasses w.Header() entirely and sets its own nosniff header
+// directly (see truncateResponse).
 func noSniffMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -847,7 +849,7 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 	for k, v := range headers {
 		_, _ = fmt.Fprintf(buf, "%s: %s\r\n", k, v)
 	}
-	_, _ = fmt.Fprintf(buf, "Content-Length: %d\r\nContent-Type: application/json\r\n\r\n", claimedLen)
+	_, _ = fmt.Fprintf(buf, "Content-Length: %d\r\nContent-Type: application/json\r\nX-Content-Type-Options: nosniff\r\n\r\n", claimedLen)
 	_, _ = buf.WriteString(truncated)
 	_ = buf.Flush()
 	if tc, ok := conn.(*net.TCPConn); ok {

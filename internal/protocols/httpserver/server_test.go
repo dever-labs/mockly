@@ -1896,6 +1896,12 @@ func TestHTTPServer_GlobalFault_TruncateBody(t *testing.T) {
 	if strings.Contains(got, "complete-payload-here") {
 		t.Error("full body must not be present in truncated response")
 	}
+	// The truncated response is written directly to the hijacked connection,
+	// bypassing w.Header() (and thus noSniffMiddleware) entirely, so it must
+	// set X-Content-Type-Options: nosniff itself.
+	if !strings.Contains(got, "X-Content-Type-Options: nosniff") {
+		t.Error("truncated response must set X-Content-Type-Options: nosniff")
+	}
 }
 
 func TestHTTPServer_GlobalFault_TruncateBody_WithStatus(t *testing.T) {

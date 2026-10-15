@@ -1904,6 +1904,54 @@ func TestHTTPServer_GlobalFault_TruncateBody(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_GlobalFault_TruncateBody_NoDuplicateHeaders(t *testing.T) {
+	// The mock's own response always sets Content-Type, and a fault may also
+	// set arbitrary extra headers (config.HTTPFault.Headers) — including,
+	// in principle, a key that collides with the hardcoded Content-Type/
+	// X-Content-Type-Options trailer truncateResponse's hijack branch always
+	// writes. Neither must be duplicated in the raw response.
+	mocks := []config.HTTPMock{{
+		ID:       "data",
+		Request:  config.HTTPRequest{Method: "GET", Path: "/data"},
+		Response: config.HTTPResponse{Status: 200, Body: config.NewHTTPBodyLiteral(`{"result":"complete-payload-here"}`)},
+	}}
+	sc := scenarios.New(nil)
+	base := startTestServer(t, mocks, sc)
+
+	sc.SetDirectFaults(config.ProtocolFaults{HTTP: &config.HTTPFault{
+		TruncateBody: 5,
+		Headers:      map[string]string{"X-Content-Type-Options": "should-not-appear", "Content-Type": "text/plain"},
+	}})
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	_, _ = fmt.Fprintf(conn, "GET /data HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+
+	var buf strings.Builder
+	tmp := make([]byte, 1024)
+	for {
+		n, readErr := conn.Read(tmp)
+		buf.Write(tmp[:n])
+		if readErr != nil {
+			break
+		}
+	}
+	got := buf.String()
+	if n := strings.Count(got, "X-Content-Type-Options:"); n != 1 {
+		t.Errorf("want exactly one X-Content-Type-Options header, got %d in: %q", n, got)
+	}
+	if n := strings.Count(got, "Content-Type:"); n != 1 {
+		t.Errorf("want exactly one Content-Type header, got %d in: %q", n, got)
+	}
+	if strings.Contains(got, "should-not-appear") {
+		t.Error("fault-supplied X-Content-Type-Options value must not leak into the response")
+	}
+}
+
 func TestHTTPServer_GlobalFault_TruncateBody_WithStatus(t *testing.T) {
 	mocks := []config.HTTPMock{{
 		ID:       "data",

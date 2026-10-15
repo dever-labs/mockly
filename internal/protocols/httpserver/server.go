@@ -847,6 +847,15 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 	claimedLen := len(body) + 128
 	_, _ = fmt.Fprintf(buf, "HTTP/1.1 %d %s\r\n", status, http.StatusText(status))
 	for k, v := range headers {
+		// Content-Type and X-Content-Type-Options are always written by the
+		// hardcoded trailer line below; skip any caller-supplied values for
+		// them here so the raw response never ends up with duplicate header
+		// lines (undefined/inconsistent client behavior for duplicated
+		// security-relevant headers, and it would silently fail to let a
+		// fault's headers actually override them).
+		if strings.EqualFold(k, "Content-Type") || strings.EqualFold(k, "X-Content-Type-Options") {
+			continue
+		}
 		_, _ = fmt.Fprintf(buf, "%s: %s\r\n", k, v)
 	}
 	_, _ = fmt.Fprintf(buf, "Content-Length: %d\r\nContent-Type: application/json\r\nX-Content-Type-Options: nosniff\r\n\r\n", claimedLen)

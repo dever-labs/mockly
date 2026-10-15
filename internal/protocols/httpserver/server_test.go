@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -281,6 +282,50 @@ func TestHTTPServer_ScenarioPatch_Disabled(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Errorf("disabled mock should return 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestHTTPServer_ScenarioPatch_EscapesHTMLBody(t *testing.T) {
+	// A scenario patch's Body was rendered with the plain (non-escaping)
+	// engine.Render regardless of the response's actual Content-Type, unlike
+	// every other body-producing path in this file (which use
+	// engine.RenderHTTPBody / IsHTMLContentType to pick the HTML-escaping
+	// renderer for text/html responses). That let request-derived templated
+	// data reflected via a patch reopen the exact reflected-XSS hole this
+	// server's Content-Type/nosniff hardening was meant to close.
+	mocks := []config.HTTPMock{{
+		ID:      "page",
+		Request: config.HTTPRequest{Method: "GET", Path: "/page"},
+		Response: config.HTTPResponse{
+			Status:  200,
+			Body:    config.NewHTTPBodyLiteral(`<p>hi</p>`),
+			Headers: map[string]string{"Content-Type": "text/html"},
+		},
+	}}
+	sc := scenarios.New([]config.Scenario{{
+		ID: "greet",
+		Patches: []config.MockPatch{
+			{MockID: "page", Body: `<p>{{.request.query.name}}</p>`},
+		},
+	}})
+	base := startTestServer(t, mocks, sc)
+	sc.Activate("greet")
+
+	resp, err := http.Get(base + `/page?name=` + url.QueryEscape(`<script>alert(1)</script>`))
+	if err != nil {
+		t.Fatalf("GET /page: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
+	got := string(body)
+	if strings.Contains(got, "<script>") {
+		t.Errorf("scenario patch body must HTML-escape templated data in a text/html response, got: %q", got)
+	}
+	if !strings.Contains(got, "&lt;script&gt;") {
+		t.Errorf("want HTML-escaped script tag in patched body, got: %q", got)
 	}
 }
 

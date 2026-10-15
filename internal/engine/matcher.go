@@ -1207,15 +1207,18 @@ func RenderHTML(tmpl string, req RequestContext) string {
 }
 
 // IsHTMLContentType reports whether ct names (ignoring parameters like
-// charset and case) the text/html media type — used to decide whether a
+// charset and case) a browser-executable HTML media type — text/html or
+// application/xhtml+xml (XHTML is parsed and its <script> content executed
+// identically to text/html by browsers) — used to decide whether a
 // response field should be rendered through the HTML-escaping template
 // engine (RenderHTML/renderTemplateHTML) instead of the raw one.
 func IsHTMLContentType(ct string) bool {
 	mt, _, err := mime.ParseMediaType(ct)
 	if err != nil {
-		return strings.Contains(strings.ToLower(ct), "text/html")
+		lc := strings.ToLower(ct)
+		return strings.Contains(lc, "text/html") || strings.Contains(lc, "application/xhtml+xml")
 	}
-	return strings.EqualFold(mt, "text/html")
+	return strings.EqualFold(mt, "text/html") || strings.EqualFold(mt, "application/xhtml+xml")
 }
 
 // RenderErr is the error-returning counterpart of Render, for callers that

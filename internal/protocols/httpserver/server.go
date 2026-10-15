@@ -462,11 +462,24 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				if patch.Status != 0 {
 					status = patch.Status
 				}
-				if patch.Body != "" {
-					respBody = engine.Render(patch.Body, reqCtx)
-				}
 				for k, v := range patch.Headers {
 					respHdrs[k] = engine.Render(v, reqCtx)
+				}
+				if patch.Body != "" {
+					// Render with the same Content-Type-aware escaping used
+					// everywhere else a body is produced (engine.RenderHTTPBody).
+					// Applied after patch.Headers above so a patch that overrides
+					// both Content-Type and Body in the same patch is judged by
+					// its own new Content-Type, not the mock's original one. A
+					// scenario patch can override a text/html mock's body with
+					// request-derived templated data, and the plain (non-escaping)
+					// Render would reflect it unescaped — reopening the exact
+					// reflected-XSS class this fix closes elsewhere.
+					if engine.IsHTMLContentType(respHdrs["Content-Type"]) {
+						respBody = engine.RenderHTML(patch.Body, reqCtx)
+					} else {
+						respBody = engine.Render(patch.Body, reqCtx)
+					}
 				}
 				if patch.Delay != nil {
 					delay = patch.Delay.Duration
@@ -608,6 +621,13 @@ func (s *Server) recordAndServe(w http.ResponseWriter, r *http.Request, listener
 
 	for k, v := range respHdrs {
 		w.Header().Set(k, v)
+	}
+	// Same default-guard as handleRequest's main path and truncateResponse:
+	// if the proxied upstream response didn't declare a Content-Type, don't
+	// let Go's net/http server auto-sniff the body and potentially promote
+	// it to text/html on write.
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	w.WriteHeader(status)
 	_, _ = w.Write(respBody)

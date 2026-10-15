@@ -1559,3 +1559,25 @@ func TestHTTPDiagnose_CapsToTopN(t *testing.T) {
 		t.Fatalf("expected diagnostics capped to 3, got %d", len(misses))
 	}
 }
+
+func TestIsHTMLContentType(t *testing.T) {
+	cases := []struct {
+		ct   string
+		want bool
+	}{
+		{"text/html", true},
+		{"TEXT/HTML", true},
+		{"text/html; charset=utf-8", true},
+		{"application/xhtml+xml", true},
+		{"APPLICATION/XHTML+XML; charset=utf-8", true},
+		{"application/json", false},
+		{"text/plain", false},
+		{"image/png", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := engine.IsHTMLContentType(tc.ct); got != tc.want {
+			t.Errorf("IsHTMLContentType(%q) = %v, want %v", tc.ct, got, tc.want)
+		}
+	}
+}

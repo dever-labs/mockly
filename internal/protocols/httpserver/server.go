@@ -129,6 +129,7 @@ func (s *Server) Start(ctx context.Context) error {
 	for _, l := range listeners {
 		r := chi.NewRouter()
 		r.Use(middleware.Recoverer)
+		r.Use(noSniffMiddleware)
 		r.HandleFunc("/*", s.handlerFor(l.name))
 
 		addr := fmt.Sprintf(":%d", l.port)
@@ -198,6 +199,23 @@ func (s *Server) handlerFor(listenerName string) http.HandlerFunc {
 		r = r.WithContext(context.WithValue(r.Context(), listenerCtxKey{}, listenerName))
 		s.handleRequest(w, r)
 	}
+}
+
+// noSniffMiddleware sets X-Content-Type-Options: nosniff on every response,
+// on every listener. Mock responses may reflect request-derived data
+// verbatim when their declared Content-Type is not HTML (JSON/plain/binary
+// mocks intentionally echo input unescaped — see engine.RenderHTML vs.
+// engine.Render), which is safe as long as a browser renders the response
+// strictly as the declared Content-Type. Without this header, MIME-sniffing
+// could still promote an ambiguous/unknown-typed response (e.g. one with no
+// or a generic Content-Type) into being parsed as HTML, defeating that
+// content-type-based safety assumption. This closes that gap unconditionally
+// instead of relying on every response path remembering to guard against it.
+func noSniffMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // mocksForListener filters mocks down to the ones reachable on listenerName:
@@ -528,17 +546,19 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	for k, v := range respHdrs {
 		w.Header().Set(k, v)
 	}
-	if stream != nil && len(stream.Events) > 0 && w.Header().Get("Content-Type") == "" {
-		// Guard against reflected XSS: streamed events may echo
-		// request-derived data via templating, so default to a
-		// non-renderable content type when the mock didn't specify one
-		// (mirrors truncateResponse's existing Content-Type default).
+	if w.Header().Get("Content-Type") == "" {
+		// Guard against reflected XSS: mock responses (streamed or not) may
+		// echo request-derived data via templating, so default to a
+		// non-renderable content type whenever the mock didn't specify one
+		// (mirrors truncateResponse's existing Content-Type default). This
+		// is defense-in-depth alongside the X-Content-Type-Options: nosniff
+		// header set for every response (see noSniffMiddleware).
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	w.WriteHeader(status)
 
 	if stream != nil && len(stream.Events) > 0 {
-		s.writeStream(w, r, respHdrs, stream, reqCtx, matchedID)
+		s.writeStream(w, r, w.Header().Get("Content-Type"), stream, reqCtx, matchedID)
 	} else {
 		_, _ = fmt.Fprint(w, respBody)
 	}
@@ -857,10 +877,16 @@ func truncateResponse(w http.ResponseWriter, status int, headers map[string]stri
 // If the ResponseWriter doesn't support http.Flusher (shouldn't happen with
 // the standard net/http server used here), events are still written, just
 // without incremental flushing.
-func (s *Server) writeStream(w http.ResponseWriter, r *http.Request, headers map[string]string, stream *config.HTTPStream, reqCtx engine.RequestContext, matchedID string) {
+//
+// contentType is the Content-Type actually written to w (via w.Header(),
+// after any default-guard applied by the caller) rather than the mock's
+// raw, possibly-unset configured header value — so the SSE/HTML detection
+// below always reflects what's really on the wire, instead of a stale
+// snapshot that happens to coincide with it.
+func (s *Server) writeStream(w http.ResponseWriter, r *http.Request, contentType string, stream *config.HTTPStream, reqCtx engine.RequestContext, matchedID string) {
 	fl, _ := w.(http.Flusher)
-	isSSE := strings.Contains(strings.ToLower(headers["Content-Type"]), "text/event-stream")
-	isHTML := engine.IsHTMLContentType(headers["Content-Type"])
+	isSSE := strings.Contains(strings.ToLower(contentType), "text/event-stream")
+	isHTML := engine.IsHTMLContentType(contentType)
 	renderEvent := func(data string) string {
 		if isHTML {
 			return engine.RenderHTML(data, reqCtx)

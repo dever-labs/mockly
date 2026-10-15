@@ -1030,9 +1030,48 @@ func TestHTTPServer_Stream_DefaultsContentTypeWhenUnset(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); ct != "application/octet-stream" {
 		t.Errorf("want default Content-Type application/octet-stream, got %q", ct)
 	}
+	if nosniff := resp.Header.Get("X-Content-Type-Options"); nosniff != "nosniff" {
+		t.Errorf("want X-Content-Type-Options: nosniff, got %q", nosniff)
+	}
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) != "raw-chunk" {
 		t.Errorf("want raw-chunk, got %q", body)
+	}
+}
+
+func TestHTTPServer_NoSniffHeaderSetOnEveryResponse(t *testing.T) {
+	// X-Content-Type-Options: nosniff is defense-in-depth against a browser
+	// (or Go's own http server) MIME-sniffing an ambiguous response body
+	// into being treated as HTML, regardless of the matched mock's own
+	// Content-Type — so it must be present on ordinary responses too, not
+	// just streamed ones (see TestHTTPServer_Stream_DefaultsContentTypeWhenUnset).
+	mocks := []config.HTTPMock{{
+		ID:      "plain",
+		Request: config.HTTPRequest{Method: "GET", Path: "/plain"},
+		Response: config.HTTPResponse{
+			Status: 200,
+			Body:   config.HTTPBody{Literal: `{"ok":true}`},
+		},
+	}}
+	base := startTestServer(t, mocks, nil)
+
+	resp, err := http.Get(base + "/plain")
+	if err != nil {
+		t.Fatalf("GET /plain: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if nosniff := resp.Header.Get("X-Content-Type-Options"); nosniff != "nosniff" {
+		t.Errorf("want X-Content-Type-Options: nosniff, got %q", nosniff)
+	}
+
+	// Also check an unmatched request still gets the header.
+	resp2, err := http.Get(base + "/does-not-exist")
+	if err != nil {
+		t.Fatalf("GET /does-not-exist: %v", err)
+	}
+	defer resp2.Body.Close() //nolint:errcheck
+	if nosniff := resp2.Header.Get("X-Content-Type-Options"); nosniff != "nosniff" {
+		t.Errorf("want X-Content-Type-Options: nosniff on unmatched request, got %q", nosniff)
 	}
 }
 

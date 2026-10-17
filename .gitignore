@@ -33,11 +33,15 @@ mockly.yaml
 # Node client
 clients/node/node_modules/
 clients/node/dist/
-clients/node/bin/
+# clients/node/bin/install.mjs is a hand-written static launcher (not
+# build-generated) and is tracked in git — see clients/node/bin/install.mjs.
 
 # Node testcontainers
 clients/node-testcontainers/node_modules/
 clients/node-testcontainers/dist/
+
+# Node CLI wrapper
+clients/node-cli/node_modules/
 
 # Python client
 clients/python/.pytest_cache/

@@ -1,0 +1,43 @@
+{
+  "name": "@dever-labs/mockly-cli",
+  "version": "0.16.0",
+  "description": "Run the Mockly mock server via npx — npx @dever-labs/mockly-cli start",
+  "keywords": [
+    "mock",
+    "testing",
+    "http",
+    "cli",
+    "mockly",
+    "test-server"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dever-labs/mockly.git",
+    "directory": "clients/node-cli"
+  },
+  "bugs": {
+    "url": "https://github.com/dever-labs/mockly/issues"
+  },
+  "homepage": "https://github.com/dever-labs/mockly/tree/main/clients/node-cli#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "type": "module",
+  "bin": {
+    "mockly": "./bin/mockly.mjs"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dever-labs/mockly-driver": "0.16.0"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.2"
+  }
+}

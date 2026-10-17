@@ -50,11 +50,15 @@ jobs:
             jq --arg v "$VERSION" '.version = $v | .packages[""].version = $v' package-lock.json \
             > package-lock.json.tmp && mv package-lock.json.tmp package-lock.json)
 
+          # node-cli depends on @dever-labs/mockly-driver directly (not optional).
+          (cd clients/node-cli && npm install --package-lock-only \
+            "@dever-labs/mockly-driver@$VERSION")
+
       - name: Commit lock file updates
         if: ${{ steps.release.outputs.pr }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add clients/node/package-lock.json clients/node-testcontainers/package-lock.json
+          git add clients/node/package-lock.json clients/node-testcontainers/package-lock.json clients/node-cli/package-lock.json
           git diff --staged --quiet || git commit -m "chore: regenerate npm lock files for version bump"
           git push

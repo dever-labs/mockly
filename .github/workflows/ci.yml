@@ -465,6 +465,14 @@ jobs:
           npm run build
           npm publish --access public --provenance
 
+      - name: Publish CLI package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: clients/node-cli
+        run: |
+          npm install
+          npm publish --access public --provenance
+
   # ─── Publish PyPI package ────────────────────────────────────────────────────
   python-publish:
     name: Publish PyPI

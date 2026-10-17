@@ -16,6 +16,14 @@ The Mockly binary is downloaded automatically for your platform when you run `np
 npx mockly-install
 ```
 
+Running mockly standalone (not from a test suite)? Use the CLI wrapper instead:
+
+```sh
+npx @dever-labs/mockly-cli start --config mockly.yaml
+```
+
+See [`@dever-labs/mockly-cli`](https://www.npmjs.com/package/@dever-labs/mockly-cli) for details.
+
 ## Quickstart
 
 ```ts

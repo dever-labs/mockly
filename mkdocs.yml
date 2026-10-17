@@ -125,6 +125,7 @@ nav:
       - Go: clients/go.md
       - Node.js / TypeScript: clients/node.md
       - Java: clients/java.md
+      - Kotlin: clients/kotlin.md
       - .NET / C#: clients/dotnet.md
       - Python: clients/python.md
       - Rust: clients/rust.md

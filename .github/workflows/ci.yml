@@ -349,6 +349,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Org-level secret (visibility: ALL) also used by dever-labs/postly to
           # push updated Homebrew formulas/casks to dever-labs/homebrew-tap.
+          # Also used by goreleaser's `scoops:` pipe to push the Scoop
+          # manifest to dever-labs/scoop-bucket.
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
         run: goreleaser release --clean
 

@@ -26,6 +26,17 @@ brew install dever-labs/tap/mockly
 This installs from the [`dever-labs/homebrew-tap`](https://github.com/dever-labs/homebrew-tap)
 repository, which is updated automatically on every release.
 
+### Windows: Scoop
+
+```powershell
+scoop bucket add dever-labs https://github.com/dever-labs/scoop-bucket
+scoop install mockly
+```
+
+This installs from the [`dever-labs/scoop-bucket`](https://github.com/dever-labs/scoop-bucket)
+repository, which is updated automatically on every release. See
+[CI integration](../ci-integration.md#any-ci-install-script) for the `install.ps1` alternative.
+
 ### Node.js / npm: npx
 
 ```sh

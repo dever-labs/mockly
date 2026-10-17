@@ -42,11 +42,41 @@ builds:
     ldflags:
       - -s -w
 
+  # Duplicate windows/amd64-only build, used solely to produce the zipped
+  # archive below for Scoop. Archives have no `goos` filter of their own
+  # (only `format_overrides`, which would apply to every OS sharing the
+  # `mockly` build id and collide with the raw .exe archive's name), so the
+  # cleanest way to get an archive containing *only* the Windows binary is
+  # to give it its own build id.
+  - id: mockly-windows
+    main: ./cmd/mockly
+    binary: mockly
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w
+
 archives:
   - id: mockly
     ids: [mockly]
     formats: [binary]
     name_template: "mockly-{{ .Os }}-{{ .Arch }}"
+
+  # Windows-only zip archive, published alongside (not replacing) the raw
+  # mockly-windows-amd64.exe binary asset above — install.ps1 and
+  # checksums.txt both reference that raw binary by its exact name, so it
+  # can't be removed. Scoop specifically requires a zipped archive (it
+  # errors out on `formats: [binary]`), hence this separate archive (backed
+  # by the separate `mockly-windows` build above) just for the scoops pipe
+  # below.
+  - id: windows-zip
+    ids: [mockly-windows]
+    formats: [zip]
+    name_template: "mockly-{{ .Os }}-{{ .Arch }}-archive"
 
 checksum:
   name_template: checksums.txt
@@ -107,6 +137,28 @@ homebrew_casks:
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/dever-labs/mockly
     description: Mock server for HTTP, gRPC, Redis, Kafka, and 17 other protocols
+    commit_author:
+      name: github-actions[bot]
+      email: github-actions[bot]@users.noreply.github.com
+
+# Scoop bucket (Windows). `directory: bucket` matches scoop's convention of
+# keeping manifests in a `bucket/` subdirectory (required for `scoop bucket
+# add` to detect the manifests at all — a bucket with manifests in its root
+# shows up as having 0 packages). `ids: [windows-zip]` selects the zip
+# archive defined above (not the raw-binary `mockly` archive) — Scoop
+# requires a zipped archive, see the comment on that archive for why.
+scoops:
+  - name: mockly
+    ids: [windows-zip]
+    directory: bucket
+    repository:
+      owner: dever-labs
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/dever-labs/mockly
+    description: Mock server for HTTP, gRPC, Redis, Kafka, and 17 other protocols
+    license: MIT
     commit_author:
       name: github-actions[bot]
       email: github-actions[bot]@users.noreply.github.com

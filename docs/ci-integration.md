@@ -107,6 +107,13 @@ $env:MOCKLY_VERSION = "v0.15.0" # x-release-please-version
 irm https://raw.githubusercontent.com/dever-labs/mockly/main/install.ps1 | iex
 ```
 
+Or via [Scoop](https://scoop.sh):
+
+```powershell
+scoop bucket add dever-labs https://github.com/dever-labs/scoop-bucket
+scoop install mockly
+```
+
 ---
 
 ## Linux packages (.deb/.rpm)

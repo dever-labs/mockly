@@ -4,6 +4,7 @@ import io.mockly.driver.MocklyServer
 import io.mockly.driver.model.CallSummary
 import io.mockly.driver.model.FaultConfig
 import io.mockly.driver.model.Mock
+import io.mockly.driver.model.Scenario
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Duration
@@ -27,7 +28,7 @@ suspend fun MocklyServer.addMockSuspending(mock: Mock) = io { addMock(mock) }
 suspend fun MocklyServer.resetSuspending() = io { reset() }
 
 /** Suspending equivalent of [MocklyServer.createScenario]. */
-suspend fun MocklyServer.createScenarioSuspending(scenario: io.mockly.driver.model.Scenario) =
+suspend fun MocklyServer.createScenarioSuspending(scenario: Scenario) =
     io { createScenario(scenario) }
 
 /** Suspending equivalent of [MocklyServer.activateScenario]. */

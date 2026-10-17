@@ -6,8 +6,12 @@
 #
 # release-please (not goreleaser) owns creating the git tag and the GitHub
 # Release object + changelog; release.mode: keep-existing below means
-# goreleaser only attaches artifacts to that already-existing release and
-# never touches its title/body.
+# goreleaser preserves that existing release's body/notes and only attaches
+# artifacts to it. Note: goreleaser always (re)sets the release *name* from
+# release.name_template (default "{{ .Tag }}"), regardless of this mode —
+# this is a no-op today because release-please's release titles are already
+# just the bare tag, but if that naming convention ever changes, goreleaser
+# would silently reset the title back to the tag on each run.
 #
 # The UI (assets/dist/) must already be built before goreleaser runs — CI
 # downloads the ui-dist artifact produced by the "ui" job first, exactly as

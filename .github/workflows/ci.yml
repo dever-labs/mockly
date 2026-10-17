@@ -211,8 +211,7 @@ jobs:
     needs: [test, ui, test-testcontainers]
     runs-on: ubuntu-latest
     permissions:
-      contents: write # attach release assets (release events only)
-      packages: write # push the Docker image to ghcr.io (release events only)
+      contents: read
     env:
       GORELEASER_VERSION: "2.18.3"
     steps:
@@ -244,18 +243,14 @@ jobs:
           sudo install -m 0755 goreleaser /usr/local/bin/goreleaser
           goreleaser --version
 
-      - name: Log in to GitHub Container Registry
-        if: github.event_name == 'release'
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      - name: Run goreleaser (publish release assets + Docker image)
-        if: github.event_name == 'release'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: goreleaser release --clean
-
+      # Always runs in snapshot mode here, even on a `release` event: this
+      # job only needs to produce binaries/checksums/a local (unpushed)
+      # Docker image for the downstream publish jobs below, which never
+      # needs write access to repo contents or GHCR. The real publish
+      # (attaching assets to the release, pushing the Docker image) happens
+      # in the separate `publish-release` job, which is the only job that
+      # ever holds those write permissions, and only on real release events.
       - name: Run goreleaser (snapshot validation, nothing published)
-        if: github.event_name != 'release'
         run: goreleaser release --snapshot --clean
 
       # goreleaser's `formats: [binary]` archive keeps the original build
@@ -302,6 +297,57 @@ jobs:
         with:
           name: mockly-windows-amd64
           path: dist-flat/mockly-windows-amd64.exe
+
+  # ─── Publish release assets + Docker image (release events only) ──────────
+  # Deliberately a separate job from `build` so that `contents: write` /
+  # `packages: write` are only ever granted on a real `release` event, never
+  # ambiently available during ordinary push/PR runs.
+  publish-release:
+    name: Publish release assets
+    needs: [build]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # attach release assets
+      packages: write # push the Docker image to ghcr.io
+    env:
+      GORELEASER_VERSION: "2.18.3"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0 # goreleaser needs full tag history to diff releases
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # actions/setup-go@v7.0.0
+        with:
+          go-version: "1.26"
+          check-latest: true
+          cache: false
+
+      - name: Download UI artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact@v6
+        with:
+          name: ui-dist
+          path: assets/dist/
+
+      - name: Install goreleaser
+        run: |
+          set -euo pipefail
+          asset="goreleaser_Linux_x86_64.tar.gz"
+          base="https://github.com/goreleaser/goreleaser/releases/download/v${GORELEASER_VERSION}"
+          curl -sSfL "${base}/${asset}" -o "${asset}"
+          curl -sSfL "${base}/checksums.txt" -o goreleaser_checksums.txt
+          grep " ${asset}\$" goreleaser_checksums.txt | sha256sum -c -
+          tar xzf "${asset}" goreleaser
+          sudo install -m 0755 goreleaser /usr/local/bin/goreleaser
+          goreleaser --version
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Run goreleaser (publish release assets + Docker image)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: goreleaser release --clean
 
   # ─── Publish NuGet package ──────────────────────────────────────────────────
   nuget-publish:

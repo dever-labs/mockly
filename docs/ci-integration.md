@@ -109,6 +109,31 @@ irm https://raw.githubusercontent.com/dever-labs/mockly/main/install.ps1 | iex
 
 ---
 
+## Linux packages (.deb/.rpm)
+
+Every release publishes `.deb` and `.rpm` packages (amd64 and arm64) as release
+assets, for fleets or Dockerfile/provisioning scripts managed through
+`apt`/`yum` rather than a raw binary download. There's no hosted apt/yum
+repository (yet) — download the asset for your release and architecture
+directly:
+
+```sh
+# Debian/Ubuntu
+curl -sSfL -o mockly.deb \
+  https://github.com/dever-labs/mockly/releases/latest/download/mockly-linux-amd64.deb
+sudo apt install ./mockly.deb
+
+# RHEL/Fedora/CentOS
+curl -sSfL -o mockly.rpm \
+  https://github.com/dever-labs/mockly/releases/latest/download/mockly-linux-amd64.rpm
+sudo yum install ./mockly.rpm
+```
+
+Both packages install the `mockly` binary to `/usr/bin/mockly`, so it's
+immediately on `PATH`.
+
+---
+
 ## Docker
 
 ```sh

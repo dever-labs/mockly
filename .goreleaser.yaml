@@ -71,9 +71,6 @@ dockers:
 # hosted apt/yum repo is set up (would need repo signing-key infra and a
 # hosting location) — evaluated and deliberately deferred, tracked as a
 # possible future follow-up if there's demand for `apt install mockly`.
-#
-# Homebrew tap packaging is tracked as a separate follow-up issue; not
-# configured here.
 nfpms:
   - id: mockly
     ids: [mockly]
@@ -94,3 +91,22 @@ nfpms:
     contents:
       - src: LICENSE
         dst: /usr/share/doc/mockly/LICENSE
+
+# Homebrew tap (macOS + Linux). goreleaser's classic `brews:` (Formula)
+# config is deprecated in v2 in favor of `homebrew_casks:` below, which
+# Homebrew's modern Cask DSL supports for plain CLI binaries (via the
+# `binary` stanza) just as well as traditional GUI .app casks — the
+# dever-labs/homebrew-tap repo already hosts the Postly GUI cask, so this
+# reuses that same tap/repo rather than creating a new one.
+homebrew_casks:
+  - name: mockly
+    repository:
+      owner: dever-labs
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/dever-labs/mockly
+    description: Mock server for HTTP, gRPC, Redis, Kafka, and 17 other protocols
+    commit_author:
+      name: github-actions[bot]
+      email: github-actions[bot]@users.noreply.github.com

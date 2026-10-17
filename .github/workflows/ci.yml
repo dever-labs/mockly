@@ -347,6 +347,9 @@ jobs:
       - name: Run goreleaser (publish release assets + Docker image)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Org-level secret (visibility: ALL) also used by dever-labs/postly to
+          # push updated Homebrew formulas/casks to dever-labs/homebrew-tap.
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
         run: goreleaser release --clean
 
   # ─── Publish NuGet package ──────────────────────────────────────────────────

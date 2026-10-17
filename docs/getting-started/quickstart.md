@@ -17,6 +17,15 @@ Every release also publishes `.deb` and `.rpm` packages as release assets (see
 install commands) — handy for fleets or Dockerfile/provisioning scripts that
 manage tooling through `apt`/`yum` rather than a raw binary download.
 
+### macOS / Linux: Homebrew
+
+```sh
+brew install dever-labs/tap/mockly
+```
+
+This installs from the [`dever-labs/homebrew-tap`](https://github.com/dever-labs/homebrew-tap)
+repository, which is updated automatically on every release.
+
 ## Run with a config file
 
 ```sh

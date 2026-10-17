@@ -146,6 +146,21 @@ amd64/arm64).
 
 ---
 
+## npm / npx
+
+```sh
+npx @dever-labs/mockly-cli start --config mockly.yaml
+```
+
+Downloads the matching platform binary on first run (no separate install
+step) via [`@dever-labs/mockly-cli`](https://www.npmjs.com/package/@dever-labs/mockly-cli) —
+useful in JS/TS-only CI pipelines that already have Node.js available and
+would rather not shell out to curl/Docker/apt. Supports the same
+`MOCKLY_DOWNLOAD_BASE_URL`/`MOCKLY_BINARY_PATH`/proxy environment variables
+as [`@dever-labs/mockly-driver`](clients/node.md).
+
+---
+
 ## Docker
 
 ```sh

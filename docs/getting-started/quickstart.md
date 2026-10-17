@@ -26,6 +26,17 @@ brew install dever-labs/tap/mockly
 This installs from the [`dever-labs/homebrew-tap`](https://github.com/dever-labs/homebrew-tap)
 repository, which is updated automatically on every release.
 
+### Node.js / npm: npx
+
+```sh
+npx @dever-labs/mockly-cli start --config mockly.yaml
+```
+
+No install step needed — the first run downloads the matching platform binary automatically.
+See [`@dever-labs/mockly-cli`](https://www.npmjs.com/package/@dever-labs/mockly-cli) for details,
+or [the Node.js client docs](../clients/node.md) if you want to drive Mockly programmatically
+from a test suite instead.
+
 ## Run with a config file
 
 ```sh

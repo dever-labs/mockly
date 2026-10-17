@@ -196,33 +196,28 @@ jobs:
       - name: Run .NET testcontainers tests
         run: dotnet test clients/dotnet --filter "Category=Integration" -v minimal
 
-  # ─── Cross-platform Go binaries ─────────────────────────────────────────────
+  # ─── Cross-platform binaries, checksums & Docker image (goreleaser) ────────
+  # goreleaser (.goreleaser.yaml) cross-compiles all 5 targets, generates
+  # checksums.txt, and builds the release Docker image in one pass, replacing
+  # the previous hand-rolled per-arch build matrix + checksum/upload script +
+  # docker build/push steps. On non-release events it only validates the
+  # pipeline (`--snapshot`, nothing published); on the `release` event
+  # (fired by release-please creating the GitHub Release) it actually
+  # publishes. release-please still owns the tag/release/changelog —
+  # release.mode: keep-existing means goreleaser only attaches artifacts to
+  # the release release-please already created.
   build:
-    name: Build Binary (${{ matrix.goos }}-${{ matrix.goarch }})
+    name: Build (goreleaser)
     needs: [test, ui, test-testcontainers]
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-            suffix: ""
-          - goos: linux
-            goarch: arm64
-            suffix: ""
-          - goos: darwin
-            goarch: amd64
-            suffix: ""
-          - goos: darwin
-            goarch: arm64
-            suffix: ""
-          - goos: windows
-            goarch: amd64
-            suffix: ".exe"
+    env:
+      GORELEASER_VERSION: "2.18.3"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0 # goreleaser needs full tag history to diff releases
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # actions/setup-go@v7.0.0
         with:
@@ -236,47 +231,123 @@ jobs:
           name: ui-dist
           path: assets/dist/
 
-      - name: Build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
+      - name: Install goreleaser
         run: |
-          go build -ldflags="-s -w" \
-            -o dist/mockly-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }} \
-            ./cmd/mockly
+          set -euo pipefail
+          asset="goreleaser_Linux_x86_64.tar.gz"
+          base="https://github.com/goreleaser/goreleaser/releases/download/v${GORELEASER_VERSION}"
+          curl -sSfL "${base}/${asset}" -o "${asset}"
+          curl -sSfL "${base}/checksums.txt" -o goreleaser_checksums.txt
+          grep " ${asset}\$" goreleaser_checksums.txt | sha256sum -c -
+          tar xzf "${asset}" goreleaser
+          sudo install -m 0755 goreleaser /usr/local/bin/goreleaser
+          goreleaser --version
 
-      - name: Upload binary
+      # Always runs in snapshot mode here, even on a `release` event: this
+      # job only needs to produce binaries/checksums/a local (unpushed)
+      # Docker image for the downstream publish jobs below, which never
+      # needs write access to repo contents or GHCR. The real publish
+      # (attaching assets to the release, pushing the Docker image) happens
+      # in the separate `publish-release` job, which is the only job that
+      # ever holds those write permissions, and only on real release events.
+      - name: Run goreleaser (snapshot validation, nothing published)
+        run: goreleaser release --snapshot --clean
+
+      # goreleaser's `formats: [binary]` archive keeps the original build
+      # path/filename (e.g. dist/mockly_linux_amd64_v1/mockly) and only
+      # records the intended "mockly-linux-amd64"-style name in its
+      # metadata — flatten to that naming so downstream publish jobs (which
+      # expect e.g. dist/mockly-linux-amd64) need no changes.
+      - name: Flatten binaries for downstream artifact upload
+        run: |
+          set -euo pipefail
+          mkdir -p dist-flat
+          jq -r '.[] | select(.type=="Binary" and (.name | startswith("mockly-"))) | "\(.name)\t\(.path)"' dist/artifacts.json \
+            | while IFS=$'\t' read -r name path; do
+                cp "$path" "dist-flat/$name"
+              done
+          ls -la dist-flat/
+
+      - name: Upload mockly-linux-amd64
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact@v7.0.2
         with:
-          name: mockly-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/
+          name: mockly-linux-amd64
+          path: dist-flat/mockly-linux-amd64
 
-  # ─── Release ────────────────────────────────────────────────────────────────
-  release:
-    name: Release
+      - name: Upload mockly-linux-arm64
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact@v7.0.2
+        with:
+          name: mockly-linux-arm64
+          path: dist-flat/mockly-linux-arm64
+
+      - name: Upload mockly-darwin-amd64
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact@v7.0.2
+        with:
+          name: mockly-darwin-amd64
+          path: dist-flat/mockly-darwin-amd64
+
+      - name: Upload mockly-darwin-arm64
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact@v7.0.2
+        with:
+          name: mockly-darwin-arm64
+          path: dist-flat/mockly-darwin-arm64
+
+      - name: Upload mockly-windows-amd64
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact@v7.0.2
+        with:
+          name: mockly-windows-amd64
+          path: dist-flat/mockly-windows-amd64.exe
+
+  # ─── Publish release assets + Docker image (release events only) ──────────
+  # Deliberately a separate job from `build` so that `contents: write` /
+  # `packages: write` are only ever granted on a real `release` event, never
+  # ambiently available during ordinary push/PR runs.
+  publish-release:
+    name: Publish release assets
     needs: [build, e2e]
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # attach release assets
+      packages: write # push the Docker image to ghcr.io
+    env:
+      GORELEASER_VERSION: "2.18.3"
     steps:
-      - name: Download all binaries
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0 # goreleaser needs full tag history to diff releases
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # actions/setup-go@v7.0.0
+        with:
+          go-version: "1.26"
+          check-latest: true
+          cache: false
+
+      - name: Download UI artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact@v6
         with:
-          pattern: mockly-*
-          merge-multiple: true
-          path: dist/
+          name: ui-dist
+          path: assets/dist/
 
-      - name: Generate checksums
-        working-directory: dist
-        run: sha256sum * > checksums.txt
+      - name: Install goreleaser
+        run: |
+          set -euo pipefail
+          asset="goreleaser_Linux_x86_64.tar.gz"
+          base="https://github.com/goreleaser/goreleaser/releases/download/v${GORELEASER_VERSION}"
+          curl -sSfL "${base}/${asset}" -o "${asset}"
+          curl -sSfL "${base}/checksums.txt" -o goreleaser_checksums.txt
+          grep " ${asset}\$" goreleaser_checksums.txt | sha256sum -c -
+          tar xzf "${asset}" goreleaser
+          sudo install -m 0755 goreleaser /usr/local/bin/goreleaser
+          goreleaser --version
 
-      - name: Upload release assets
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Run goreleaser (publish release assets + Docker image)
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: gh release upload "${{ github.ref_name }}" dist/* --clobber
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: goreleaser release --clean
 
   # ─── Publish NuGet package ──────────────────────────────────────────────────
   nuget-publish:
@@ -390,29 +461,6 @@ jobs:
           npm install
           npm run build
           npm publish --access public --provenance
-
-
-  docker:
-    name: Docker Image
-    needs: [build, e2e]
-    if: github.event_name == 'release'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7.0.1
-
-      - name: Log in to GitHub Container Registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      - name: Build and push Docker image
-        run: |
-          IMAGE="ghcr.io/${{ github.repository }}"
-          TAG="${{ github.ref_name }}"
-          docker build -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" .
-          docker push "${IMAGE}:${TAG}"
-          docker push "${IMAGE}:latest"
 
   # ─── Publish PyPI package ────────────────────────────────────────────────────
   python-publish:

@@ -1,0 +1,70 @@
+# goreleaser configuration — see https://goreleaser.com
+#
+# Builds cross-platform mockly binaries, generates checksums.txt, and builds
+# the release Docker image, replacing the hand-rolled steps previously
+# scattered across .github/workflows/ci.yml's build/release/docker jobs.
+#
+# release-please (not goreleaser) owns creating the git tag and the GitHub
+# Release object + changelog; release.mode: keep-existing below means
+# goreleaser preserves that existing release's body/notes and only attaches
+# artifacts to it. Note: goreleaser always (re)sets the release *name* from
+# release.name_template (default "{{ .Tag }}"), regardless of this mode —
+# this is a no-op today because release-please's release titles are already
+# just the bare tag, but if that naming convention ever changes, goreleaser
+# would silently reset the title back to the tag on each run.
+#
+# The UI (assets/dist/) must already be built before goreleaser runs — CI
+# downloads the ui-dist artifact produced by the "ui" job first, exactly as
+# the previous hand-rolled build job did, so there is no `before.hooks` UI
+# build step here.
+version: 2
+
+project_name: mockly
+
+builds:
+  - id: mockly
+    main: ./cmd/mockly
+    binary: mockly
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    # Matches the previous `go build -ldflags="-s -w"` exactly — no version
+    # symbols are injected since cmd/mockly has no `main.version` var today.
+    ldflags:
+      - -s -w
+
+archives:
+  - id: mockly
+    ids: [mockly]
+    formats: [binary]
+    name_template: "mockly-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  mode: keep-existing
+
+dockers:
+  - id: mockly
+    use: buildx
+    dockerfile: Dockerfile.release
+    goos: linux
+    goarch: amd64
+    image_templates:
+      - "ghcr.io/dever-labs/mockly:{{ .Tag }}"
+      - "ghcr.io/dever-labs/mockly:latest"
+    build_flag_templates:
+      - "--platform=linux/amd64"
+
+# Homebrew tap / nfpm (.deb/.rpm) packaging are tracked as follow-up issues;
+# intentionally not configured here yet.

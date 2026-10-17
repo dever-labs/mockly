@@ -144,8 +144,9 @@ homebrew_casks:
 # Scoop bucket (Windows). `directory: bucket` matches scoop's convention of
 # keeping manifests in a `bucket/` subdirectory (required for `scoop bucket
 # add` to detect the manifests at all — a bucket with manifests in its root
-# shows up as having 0 packages). Default `use: archive` works unmodified
-# since our Windows archive is already `formats: [binary]`.
+# shows up as having 0 packages). `ids: [windows-zip]` selects the zip
+# archive defined above (not the raw-binary `mockly` archive) — Scoop
+# requires a zipped archive, see the comment on that archive for why.
 scoops:
   - name: mockly
     ids: [windows-zip]

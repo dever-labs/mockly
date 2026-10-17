@@ -10,6 +10,13 @@ cd mockly
 make build        # builds UI + Go binary
 ```
 
+### Linux: apt / yum
+
+Every release also publishes `.deb` and `.rpm` packages as release assets (see
+[CI integration](../ci-integration.md#linux-packages-debrpm) for the exact
+install commands) — handy for fleets or Dockerfile/provisioning scripts that
+manage tooling through `apt`/`yum` rather than a raw binary download.
+
 ## Run with a config file
 
 ```sh

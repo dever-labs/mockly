@@ -134,6 +134,18 @@ immediately on `PATH`.
 
 ---
 
+## Homebrew (macOS/Linux)
+
+```sh
+brew install dever-labs/tap/mockly
+```
+
+Published via the [`dever-labs/homebrew-tap`](https://github.com/dever-labs/homebrew-tap)
+repository, updated automatically by goreleaser on every release (darwin/linux,
+amd64/arm64).
+
+---
+
 ## Docker
 
 ```sh

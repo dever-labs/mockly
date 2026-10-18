@@ -38,20 +38,21 @@ jobs:
           cache: 'npm'
           cache-dependency-path: clients/package-lock.json
 
-      # clients/node, clients/node-cli, clients/node-testcontainers, and
-      # clients/node's own platform sub-packages are an npm workspace rooted at
-      # clients/ (see clients/package.json). This lets intra-repo dependencies
-      # (e.g. clients/node-cli -> @dever-labs/mockly-driver) resolve via local
-      # workspace links instead of the npm registry, so release-please's
-      # extra-files jsonpath entries can bump clients/package-lock.json's
-      # version fields directly and keep it in sync with version bumps
-      # before the bumped packages are actually published.
-      # --force is required because some platform sub-packages intentionally
-      # target other OS/CPU combinations (os/cpu fields in package.json); npm
-      # refuses workspace-local links across platforms by default even though
-      # that's exactly the point of optionalDependencies here.
+      # clients/node, clients/node-cli, and clients/node-testcontainers are an
+      # npm workspace rooted at clients/ (see clients/package.json). This lets
+      # intra-repo dependencies (e.g. clients/node-cli -> mockly-driver)
+      # resolve via local workspace links instead of the npm registry, so
+      # release-please's extra-files jsonpath entries can bump
+      # clients/package-lock.json's version fields directly and keep it in
+      # sync with version bumps before the bumped packages are actually
+      # published. The OS/CPU-restricted mockly-driver-* platform
+      # sub-packages are linked the same way via the root package.json's
+      # `overrides` field rather than being workspace members themselves
+      # (npm workspaces have no way to treat an os/cpu-restricted member as
+      # optional — see npm/cli#6138 — so listing them as workspace members
+      # would force every install to pass --force).
       - name: Install workspace dependencies
-        run: npm ci --force
+        run: npm ci
         working-directory: clients
 
       - name: Typecheck
@@ -76,9 +77,9 @@ jobs:
           cache: 'npm'
           cache-dependency-path: clients/package-lock.json
 
-      # See the `ci` job above for why --force and the shared workspace root.
+      # See the `ci` job above for why the shared workspace root.
       - name: Install workspace dependencies
-        run: npm ci --force
+        run: npm ci
         working-directory: clients
 
       # clients/node-cli depends on @dever-labs/mockly-driver, which now
@@ -108,9 +109,9 @@ jobs:
           cache: 'npm'
           cache-dependency-path: clients/package-lock.json
 
-      # See the `ci` job above for why --force and the shared workspace root.
+      # See the `ci` job above for why the shared workspace root.
       - name: Install workspace dependencies
-        run: npm ci --force
+        run: npm ci
         working-directory: clients
 
       - name: Typecheck

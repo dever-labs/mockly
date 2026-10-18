@@ -158,10 +158,9 @@ jobs:
 
       # clients/node-testcontainers is part of the clients/ npm workspace (see
       # clients/package.json) alongside the other Node packages, so install
-      # from there. --force is required for the workspace's cross-platform
-      # optional driver sub-packages (see node-client.yml for details).
+      # from there (see node-client.yml for details on the workspace setup).
       - name: Install Node workspace dependencies
-        run: npm ci --force
+        run: npm ci
         working-directory: clients
 
       - name: Run Node testcontainers tests
@@ -469,10 +468,9 @@ jobs:
       # clients/node, clients/node-cli, and clients/node-testcontainers are an
       # npm workspace rooted at clients/ (see clients/package.json and
       # node-client.yml). One shared install covers devDependencies for all
-      # three build/publish steps below. --force is required for the
-      # workspace's cross-platform optional driver sub-packages.
+      # three build/publish steps below.
       - name: Install workspace dependencies
-        run: npm ci --force
+        run: npm ci
         working-directory: clients
 
       - name: Build and publish main package

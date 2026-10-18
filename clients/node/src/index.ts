@@ -3,6 +3,7 @@ export { install, getBinaryPath, DEFAULT_MOCKLY_VERSION } from './install.js'
 export { getFreePort } from './utils.js'
 export type {
   ActiveScenariosResponse,
+  AuthRequirement,
   CallEntry,
   CallSummary,
   FaultConfig,

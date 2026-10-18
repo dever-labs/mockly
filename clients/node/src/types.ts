@@ -1,9 +1,31 @@
+/** Authentication requirement for an HTTP mock. */
+export interface AuthRequirement {
+  /** Authentication scheme. */
+  type: 'bearer' | 'basic' | 'api_key' | 'ntlm' | 'digest'
+  /** Expected bearer token (`bearer` only). Supports `*` and `re:…` regex. */
+  token?: string
+  /** Expected Basic auth username (`basic` only). */
+  username?: string
+  /** Expected Basic auth password (`basic` only). */
+  password?: string
+  /** Header name carrying the API key (`api_key` only). Mutually exclusive with `query`. */
+  header?: string
+  /** Query param name carrying the API key (`api_key` only). Mutually exclusive with `header`. */
+  query?: string
+  /** Expected API key value (`api_key` only). Supports `*` and `re:…` regex. */
+  value?: string
+}
+
 /** Request matching criteria for an HTTP mock. */
 export interface MockRequest {
   method: string
   path: string
   /** Exact header value matching — e.g. `{ Authorization: 'Bearer token123' }` */
   headers?: Record<string, string>
+  /** Required query params — values support `*` as a wildcard. */
+  query?: Record<string, string>
+  /** Requires the incoming request to carry valid credentials. */
+  auth?: AuthRequirement
 }
 
 /** Response definition for an HTTP mock. */

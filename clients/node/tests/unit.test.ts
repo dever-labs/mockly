@@ -254,6 +254,34 @@ describe('addMock', () => {
     await expect(server.addMock(mock)).rejects.toThrow(/addMock.*500/)
     await fake.close()
   })
+
+  it('serializes query and auth matchers on the request (regression for #388)', async () => {
+    let capturedBody = ''
+
+    const fake = await startFakeServer((_method, _url, body) => {
+      capturedBody = body
+      return { status: 201 }
+    })
+
+    const server = await makeServerStub(fake.url)
+    const mock = {
+      id: 'query-auth-mock',
+      request: {
+        method: 'GET',
+        path: '/users',
+        query: { tenant: '*' },
+        auth: { type: 'bearer' as const, token: '*' },
+      },
+      response: { status: 200 },
+    }
+    await expect(server.addMock(mock)).resolves.toBeUndefined()
+
+    const parsed = JSON.parse(capturedBody)
+    expect(parsed.request.query).toEqual({ tenant: '*' })
+    expect(parsed.request.auth).toEqual({ type: 'bearer', token: '*' })
+
+    await fake.close()
+  })
 })
 
 describe('deleteMock', () => {
@@ -919,5 +947,23 @@ describe('waitForCalls', () => {
     } finally {
       await fake.close()
     }
+  })
+})
+
+// ── CJS build (regression test for #387) ──────────────────────────────────────
+
+describe('CJS build', () => {
+  it('loads from a CommonJS require() and exposes the public API', () => {
+    const distCjs = _req.resolve('../dist/index.cjs')
+    // Clear the module cache so re-running tests in watch mode picks up a
+    // freshly rebuilt dist/index.cjs rather than a stale cached copy.
+    delete _req.cache[distCjs]
+    const mod = _req(distCjs)
+
+    expect(typeof mod.MocklyServer).toBe('function')
+    expect(typeof mod.install).toBe('function')
+    expect(typeof mod.getBinaryPath).toBe('function')
+    expect(typeof mod.getFreePort).toBe('function')
+    expect(typeof mod.DEFAULT_MOCKLY_VERSION).toBe('string')
   })
 })

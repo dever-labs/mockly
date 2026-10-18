@@ -57,6 +57,10 @@ func TestResolve_AsyncAPI_SharedSpecAcrossProtocols(t *testing.T) {
 			Kafka: &config.KafkaConfig{
 				Enabled:  true,
 				AsyncAPI: "events.yaml",
+				Mocks: []config.KafkaMock{
+					// A hand-written mock with no spec counterpart.
+					{ID: "extra-kafka-mock", Topic: "orders.extra"},
+				},
 			},
 			WebSocket: &config.WebSocketConfig{
 				Enabled:  true,
@@ -77,7 +81,10 @@ func TestResolve_AsyncAPI_SharedSpecAcrossProtocols(t *testing.T) {
 		t.Fatalf("unexpected warnings: %v", warnings)
 	}
 
-	if len(cfg.Protocols.Kafka.Mocks) != 1 || cfg.Protocols.Kafka.Mocks[0].ID != "publishordercreated" {
+	if len(cfg.Protocols.Kafka.Mocks) != 2 {
+		t.Fatalf("Kafka mocks = %+v", cfg.Protocols.Kafka.Mocks)
+	}
+	if cfg.Protocols.Kafka.Mocks[0].ID != "publishordercreated" || cfg.Protocols.Kafka.Mocks[1].ID != "extra-kafka-mock" {
 		t.Fatalf("Kafka mocks = %+v", cfg.Protocols.Kafka.Mocks)
 	}
 	if len(cfg.Protocols.WebSocket.Mocks) != 1 {
@@ -85,6 +92,60 @@ func TestResolve_AsyncAPI_SharedSpecAcrossProtocols(t *testing.T) {
 	}
 	if got := cfg.Protocols.WebSocket.Mocks[0].OnConnect.Send; got != `{"status":"override"}` {
 		t.Errorf("WebSocket on_connect override didn't apply, got %q", got)
+	}
+}
+
+func TestResolve_AsyncAPI_MQTT_AMQP_NATS(t *testing.T) {
+	cfg := &config.Config{
+		Protocols: config.ProtocolsConfig{
+			MQTT: &config.MQTTConfig{
+				Enabled:  true,
+				AsyncAPI: "mqtt-amqp-nats-events.yaml",
+				Mocks: []config.MQTTMock{
+					{ID: "extra-mqtt-mock", Topic: "devices/extra"},
+				},
+			},
+			AMQP: &config.AMQPConfig{
+				Enabled:  true,
+				AsyncAPI: "mqtt-amqp-nats-events.yaml",
+				Mocks: []config.AMQPMock{
+					{ID: "extra-amqp-mock", RoutingKey: "payments.extra"},
+				},
+			},
+			NATS: &config.NATSConfig{
+				Enabled:  true,
+				AsyncAPI: "mqtt-amqp-nats-events.yaml",
+				Mocks: []config.NATSMock{
+					{ID: "extra-nats-mock", Subject: "stats.extra"},
+				},
+			},
+		},
+	}
+
+	warnings, err := Resolve(cfg, "testdata")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+
+	if len(cfg.Protocols.MQTT.Mocks) != 2 {
+		t.Fatalf("MQTT mocks = %+v, want 2 (1 generated + 1 hand-written)", cfg.Protocols.MQTT.Mocks)
+	}
+	if cfg.Protocols.MQTT.Mocks[0].ID != "receivedevicestatus" {
+		t.Errorf("generated MQTT mock missing/misordered: %+v", cfg.Protocols.MQTT.Mocks)
+	}
+	if cfg.Protocols.MQTT.Mocks[1].ID != "extra-mqtt-mock" {
+		t.Errorf("hand-written MQTT mock not appended: %+v", cfg.Protocols.MQTT.Mocks)
+	}
+
+	if len(cfg.Protocols.AMQP.Mocks) != 2 || cfg.Protocols.AMQP.Mocks[0].ID != "receivepayment" || cfg.Protocols.AMQP.Mocks[1].ID != "extra-amqp-mock" {
+		t.Fatalf("AMQP mocks = %+v", cfg.Protocols.AMQP.Mocks)
+	}
+
+	if len(cfg.Protocols.NATS.Mocks) != 2 || cfg.Protocols.NATS.Mocks[0].ID != "receivestats" || cfg.Protocols.NATS.Mocks[1].ID != "extra-nats-mock" {
+		t.Fatalf("NATS mocks = %+v", cfg.Protocols.NATS.Mocks)
 	}
 }
 

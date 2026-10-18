@@ -171,8 +171,8 @@ Response bodies **and response headers** are rendered as Go templates. Built-in 
 | `{{state_set "key" "value"}}` | *(empty string)* | Write a value into the runtime state store |
 | `{{state_set_ttl "key" "value" 300}}` | *(empty string)* | Write a value that auto-expires after N seconds |
 | `{{dict "k1" v1 "k2" v2}}` | `map[k1:v1 k2:v2]` | Build a map, e.g. to pass as `jwt_sign` claims |
-| `{{jwt_sign (dict "sub" "guest") "my-key"}}` | *(JWT string)* | Sign claims as a compact RS256 JWT with the given key id |
-| `{{jwks_json "my-key"}}` | *(JWKS JSON)* | Public JWKS document for one or more `jwt_sign` key ids |
+| `{{jwt_sign (dict "sub" "guest") "my-key"}}` | *(JWT string)* | Sign claims as a compact JWT (RS256 by default; optional 3rd arg selects RS384/RS512/ES256/ES384/ES512) |
+| `{{jwks_json "my-key"}}` | *(JWKS JSON)* | Public JWKS document for one or more `jwt_sign` key ids (`"kid:ALG"` to pick a non-default alg) |
 
 ### Request context
 
@@ -200,14 +200,23 @@ relying parties (such as Backstage's `oidc` auth provider) that validate
 the `nonce` claim per the OIDC Core spec.
 
 - `jwt_sign (dict "sub" "guest" "nonce" $nonce) "my-key"` signs the given
-  claims as a compact RS256 JWT. A 2048-bit RSA key pair is generated the
-  first time a given key id (`"my-key"` above) is used, and reused for the
-  lifetime of the running `mockly` process. `iat`/`exp` are filled in with
-  sane defaults (now / now+1h) when not already present in the claims map.
+  claims as a compact JWT, defaulting to RS256. A key pair (RSA or EC,
+  matching the chosen alg) is generated the first time a given key id
+  (`"my-key"` above) is used, and reused for the lifetime of the running
+  `mockly` process. `iat`/`exp` are filled in with sane defaults (now /
+  now+1h) when not already present in the claims map. Pass an explicit
+  third argument to sign with a different algorithm, e.g.
+  `jwt_sign (dict "sub" "guest") "my-ec-key" "ES256"`. Supported algs:
+  `RS256` (default), `RS384`, `RS512`, `ES256`, `ES384`, `ES512`. A given
+  key id is permanently bound to whichever alg it was first used with —
+  reusing it with a different alg is an error, so use a distinct key id
+  per algorithm.
 - `jwks_json "my-key"` serves that same key's real public half as a JWKS
   document (`{"keys": [...]}`), so a client's JWKS-based verifier accepts
   the signed tokens. Pass multiple key ids to serve several keys from one
-  endpoint.
+  endpoint. To serve a key that hasn't been signed with yet (e.g. the
+  JWKS endpoint is hit before the first `/token` call), suffix the key id
+  with `:ALG`, e.g. `jwks_json "my-ec-key:ES256"`.
 - `state_set "key" "value"` / `state_set_ttl "key" "value" 300` write into
   the same runtime state store used by `state:` match conditions and the
   management API (`/api/state`); `state "key"` reads it back (empty string

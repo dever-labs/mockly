@@ -63,6 +63,12 @@ jobs:
       - name: Run Java tests
         run: mvn -B test -f clients/java/pom.xml
 
+      - name: Install Java driver (mockly-kotlin dependency)
+        run: mvn -B install -f clients/java/pom.xml -DskipTests -q
+
+      - name: Run Kotlin client tests
+        run: mvn -B test -f clients/kotlin/pom.xml
+
   # ─── UI build ───────────────────────────────────────────────────────────────
   ui:
     name: UI Build
@@ -546,6 +552,13 @@ jobs:
           MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: mvn -B deploy -Prelease -f clients/java/testcontainers/pom.xml -DskipTests
+
+      - name: Deploy Kotlin client to Maven Central
+        env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: mvn -B deploy -Prelease -f clients/kotlin/pom.xml -DskipTests
 
   rust-publish:
     name: Publish crates.io

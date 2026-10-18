@@ -7,6 +7,7 @@ Mockly ships official clients for both native-process and Docker-backed test set
 | **Go** | `github.com/dever-labs/mockly/clients/go` | `github.com/dever-labs/mockly/clients/go/testcontainers` | `go get github.com/dever-labs/mockly/clients/go` or `go get github.com/dever-labs/mockly/clients/go/testcontainers` |
 | **Node.js / TypeScript** | `@dever-labs/mockly-driver` | `@dever-labs/mockly-testcontainers` | `npm i -D @dever-labs/mockly-driver` or `npm i -D @dever-labs/mockly-testcontainers testcontainers` |
 | **Java** | `io.github.dever-labs:mockly-driver` | `io.github.dever-labs:mockly-testcontainers` | See Maven/Gradle below |
+| **Kotlin** | `io.github.dever-labs:mockly-driver-kotlin` | _(use `mockly-testcontainers`, the Java module, directly)_ | See Maven/Gradle below |
 | **.NET / C#** | `Mockly.Driver` | `Testcontainers.Mockly` | `dotnet add package Mockly.Driver` or `dotnet add package Testcontainers.Mockly` |
 | **Python** | `mockly-driver` | `mockly-testcontainers` | `pip install mockly-driver` or `pip install mockly-testcontainers` |
 | **Rust** | `mockly-driver` | `mockly-testcontainers` | `mockly-driver = "0.15.0"` <!-- x-release-please-version --> or `mockly-testcontainers = "0.13.1"` <!-- x-release-please-version --> in `[dev-dependencies]` |
@@ -78,6 +79,33 @@ try (MocklyServer server = MocklyServer.ensure(MocklyConfig.builder().build())) 
 ```
 
 [→ Full Java docs](java.md)
+
+## Kotlin
+
+```xml
+<dependency>
+  <groupId>io.github.dever-labs</groupId>
+  <artifactId>mockly-driver-kotlin</artifactId>
+  <version>0.15.0</version> <!-- x-release-please-version -->
+  <scope>test</scope>
+</dependency>
+```
+
+```kotlin
+import io.mockly.driver.kotlin.*
+
+val server = mocklyServer { httpPort = 0 }
+server.addMock(mock("get-user") {
+    request("GET", "/users/1")
+    response(200) { body = """{"id":1}""" }
+})
+// server.httpBase = "http://127.0.0.1:<port>"
+server.stop()
+```
+
+A thin, idiomatic Kotlin DSL wrapper over the Java client — same binary, same HTTP protocol, no duplicated logic.
+
+[→ Full Kotlin docs](kotlin.md)
 
 ## .NET / C#
 
@@ -232,6 +260,7 @@ Full references:
 - [Go](go.md)
 - [Node.js / TypeScript](node.md)
 - [Java](java.md)
+- [Kotlin](kotlin.md)
 - [.NET / C#](dotnet.md)
 - [Python](python.md)
 - [Rust](rust.md)

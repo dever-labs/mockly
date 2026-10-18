@@ -154,7 +154,7 @@ export class StartedMocklyContainer {
   }
 
   async deactivateScenario(id: string): Promise<void> {
-    const res = await this.delete(`/api/scenarios/${encodeURIComponent(id)}/activate`)
+    const res = await this.post(`/api/scenarios/${encodeURIComponent(id)}/deactivate`, null)
     this.assertOk(res, `deactivateScenario(${id})`)
   }
 

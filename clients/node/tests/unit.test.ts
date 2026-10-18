@@ -317,7 +317,7 @@ describe('activateScenario', () => {
 })
 
 describe('deactivateScenario', () => {
-  it('sends DELETE to /api/scenarios/{id}/activate', async () => {
+  it('sends POST to /api/scenarios/{id}/deactivate', async () => {
     let capturedMethod = ''
     let capturedUrl = ''
 
@@ -329,8 +329,8 @@ describe('deactivateScenario', () => {
 
     const server = await makeServerStub(fake.url)
     await expect(server.deactivateScenario('sc1')).resolves.toBeUndefined()
-    expect(capturedMethod).toBe('DELETE')
-    expect(capturedUrl).toBe('/api/scenarios/sc1/activate')
+    expect(capturedMethod).toBe('POST')
+    expect(capturedUrl).toBe('/api/scenarios/sc1/deactivate')
 
     await fake.close()
   })

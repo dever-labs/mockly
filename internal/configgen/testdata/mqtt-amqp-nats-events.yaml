@@ -1,0 +1,61 @@
+asyncapi: 3.0.0
+info:
+  title: Multi-protocol events
+  version: 1.0.0
+servers:
+  mqttBroker:
+    host: mqtt.example.com:1883
+    protocol: mqtt
+  amqpBroker:
+    host: amqp.example.com:5672
+    protocol: amqp
+  natsBroker:
+    host: nats.example.com:4222
+    protocol: nats
+channels:
+  deviceStatus:
+    address: devices/status
+    servers:
+      - $ref: '#/servers/mqttBroker'
+    messages:
+      deviceStatusMsg:
+        payload:
+          type: object
+          properties:
+            online:
+              type: boolean
+  paymentQueue:
+    address: payments.queue
+    servers:
+      - $ref: '#/servers/amqpBroker'
+    messages:
+      paymentMsg:
+        payload:
+          type: object
+          properties:
+            amount:
+              type: number
+  statsSubject:
+    address: stats.updates
+    servers:
+      - $ref: '#/servers/natsBroker'
+    messages:
+      statsMsg:
+        payload:
+          type: object
+          properties:
+            count:
+              type: integer
+operations:
+  receiveDeviceStatus:
+    action: receive
+    channel:
+      $ref: '#/channels/deviceStatus'
+  receivePayment:
+    action: receive
+    channel:
+      $ref: '#/channels/paymentQueue'
+  receiveStats:
+    action: receive
+    channel:
+      $ref: '#/channels/statsSubject'

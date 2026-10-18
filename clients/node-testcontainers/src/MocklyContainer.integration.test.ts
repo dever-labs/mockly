@@ -21,9 +21,10 @@ describeIntegration('MocklyContainer integration', () => {
   })
 
   beforeEach(async () => {
+    // reset() alone clears dynamic mocks/scenarios/faults/state *and* recorded
+    // calls/logs — see the dedicated 'reset() clears recorded calls' test
+    // below. No need to also call clearLogs()/clearAllCalls() here.
     await container.reset()
-    await container.clearLogs()
-    await container.clearAllCalls()
   })
 
   afterAll(async () => {
@@ -178,6 +179,37 @@ describeIntegration('MocklyContainer integration', () => {
     await requestPromise
 
     expect(calls.count).toBeGreaterThanOrEqual(1)
+  })
+
+  test('reset() clears recorded calls and logs', async () => {
+    await container.addMock({
+      id: 'reset-calls-test',
+      request: { method: 'GET', path: '/reset-calls-test' },
+      response: { status: 200, body: 'ok' },
+    })
+
+    await fetch(`${container.getHttpBase()}/reset-calls-test`)
+
+    const callsBeforeReset = await container.getCalls('reset-calls-test')
+    expect(callsBeforeReset.count).toBeGreaterThan(0)
+    const logsBeforeReset = await container.getLogs()
+    expect(logsBeforeReset.length).toBeGreaterThan(0)
+
+    await container.reset()
+
+    // reset() removes dynamically added mocks too, so re-add it to query its
+    // (now-empty) call history rather than getting a 404/empty-by-definition.
+    await container.addMock({
+      id: 'reset-calls-test',
+      request: { method: 'GET', path: '/reset-calls-test' },
+      response: { status: 200, body: 'ok' },
+    })
+
+    const callsAfterReset = await container.getCalls('reset-calls-test')
+    expect(callsAfterReset.count).toBe(0)
+    expect(callsAfterReset.calls).toEqual([])
+    const logsAfterReset = await container.getLogs()
+    expect(logsAfterReset).toEqual([])
   })
 })
 

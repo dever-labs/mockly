@@ -96,6 +96,12 @@ defmodule Mockly.Testcontainers.Container do
   @doc "The management API port exposed on the host for the running container."
   def api_port(%Container{} = container), do: Testcontainers.get_port(container, @api_port)
 
+  @doc false
+  def default_http_port, do: @http_port
+
+  @doc false
+  def default_api_port, do: @api_port
+
   @doc "Base URL (`http://host:port`) for the mocked HTTP protocol."
   def http_base_url(%Container{} = container) do
     "http://#{Testcontainers.get_host(container)}:#{MocklyContainer.http_port(container)}"
@@ -113,13 +119,18 @@ defmodule Mockly.Testcontainers.Container do
     @impl true
     def build(%MocklyContainer{} = config) do
       new(config.image)
-      |> with_exposed_ports([8090, 9091])
+      |> with_exposed_ports([
+        MocklyContainer.default_http_port(),
+        MocklyContainer.default_api_port()
+      ])
       |> with_copy_to("/config/mockly.yaml", config.config_yaml)
       |> with_cmd(["start", "-c", "/config/mockly.yaml"])
       |> with_reuse(config.reuse)
       |> with_check_image(config.check_image)
       |> with_waiting_strategy(
-        HttpWaitStrategy.new("/api/protocols", 9091, status_code: 200)
+        HttpWaitStrategy.new("/api/protocols", MocklyContainer.default_api_port(),
+          status_code: 200
+        )
         |> Map.put(:timeout, config.wait_timeout)
       )
       |> valid_image!()

@@ -91,8 +91,11 @@ defmodule Mockly.Testcontainers.Test.FakeApi do
           parsed -> parsed
         end
 
-      {:error, _} ->
+      {:error, :closed} ->
         parse(acc)
+
+      {:error, reason} ->
+        raise "FakeApi: failed to read request: #{inspect(reason)}"
     end
   end
 

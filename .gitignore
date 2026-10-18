@@ -78,5 +78,13 @@ clients/rust/target/
 # Rust testcontainers
 clients/rust-testcontainers/target/
 
+# PHP client
+clients/php/.phpunit.result.cache
+clients/php/.phpunit.cache/
+
+# PHP testcontainers
+clients/php-testcontainers/.phpunit.result.cache
+clients/php-testcontainers/.phpunit.cache/
+
 # MkDocs build output
 /site/

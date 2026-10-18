@@ -31,6 +31,7 @@
         "clients/java/src/main/java/io/mockly/driver/MocklyInstaller.java",
         "clients/python/src/mockly_driver/_install.py",
         "clients/node/src/install.ts",
+        "clients/php/src/Installer.php",
         "clients/rust-testcontainers/Cargo.toml",
         "README.md",
         "docs/clients/go.md",
@@ -38,6 +39,7 @@
         "docs/clients/kotlin.md",
         "docs/clients/node.md",
         "docs/clients/python.md",
+        "docs/clients/php.md",
         "docs/clients/rust.md",
         "docs/clients/dotnet.md",
         "clients/go/README.md",
@@ -47,6 +49,7 @@
         "clients/node/README.md",
         "clients/node-testcontainers/README.md",
         "clients/python/README.md",
+        "clients/php/README.md",
         "clients/rust/README.md",
         "clients/rust-testcontainers/README.md",
         "clients/dotnet/README.md"

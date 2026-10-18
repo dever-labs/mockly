@@ -10,6 +10,7 @@ Mockly ships official clients for both native-process and Docker-backed test set
 | **Kotlin** | `io.github.dever-labs:mockly-driver-kotlin` | _(use `mockly-testcontainers`, the Java module, directly)_ | See Maven/Gradle below |
 | **.NET / C#** | `Mockly.Driver` | `Testcontainers.Mockly` | `dotnet add package Mockly.Driver` or `dotnet add package Testcontainers.Mockly` |
 | **Python** | `mockly-driver` | `mockly-testcontainers` | `pip install mockly-driver` or `pip install mockly-testcontainers` |
+| **PHP** | `dever-labs/mockly-driver` | `dever-labs/mockly-testcontainers` | `composer require --dev dever-labs/mockly-driver` or `composer require --dev dever-labs/mockly-testcontainers` |
 | **Rust** | `mockly-driver` | `mockly-testcontainers` | `mockly-driver = "0.15.0"` <!-- x-release-please-version --> or `mockly-testcontainers = "0.13.1"` <!-- x-release-please-version --> in `[dev-dependencies]` |
 
 Driver clients:
@@ -146,6 +147,28 @@ server.stop()
 
 [→ Full Python docs](python.md)
 
+## PHP
+
+```sh
+composer require --dev dever-labs/mockly-driver
+```
+
+```php
+use Mockly\Driver\MocklyServer;
+use Mockly\Driver\Model\{Mock, MockRequest, MockResponse};
+
+$server = MocklyServer::ensure();
+$server->addMock(new Mock(
+    id: 'get-user',
+    request: new MockRequest(method: 'GET', path: '/users/1'),
+    response: new MockResponse(status: 200, body: '{"id":1}'),
+));
+// $server->httpBase = "http://127.0.0.1:<port>"
+$server->stop();
+```
+
+[→ Full PHP docs](php.md)
+
 ## Rust
 
 ```toml
@@ -244,6 +267,19 @@ with MocklyContainer() as container:
     response = urllib.request.urlopen(f"{container.get_http_base()}/ping")
 ```
 
+### PHP
+
+```php
+$container = (new MocklyContainer())->start();
+$container->addMock(new Mock(
+    id: 'ping',
+    request: new MockRequest(method: 'GET', path: '/ping'),
+    response: new MockResponse(status: 200, body: '{"ok":true}'),
+));
+$body = file_get_contents($container->getHttpBase() . '/ping');
+$container->stop();
+```
+
 ### Rust
 
 ```rust
@@ -263,6 +299,7 @@ Full references:
 - [Kotlin](kotlin.md)
 - [.NET / C#](dotnet.md)
 - [Python](python.md)
+- [PHP](php.md)
 - [Rust](rust.md)
 
 ---

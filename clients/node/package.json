@@ -50,7 +50,7 @@
   ],
   "scripts": {
     "build": "tsc --project tsconfig.json && npm run build:cjs",
-    "build:cjs": "esbuild src/index.ts --bundle --platform=node --format=cjs --outfile=dist/index.cjs --external:js-yaml --target=node18 --banner:js=\"const __mockly_import_meta_url = require('url').pathToFileURL(__filename).href;\" --define:import.meta.url=__mockly_import_meta_url",
+    "build:cjs": "esbuild src/index.ts --bundle --platform=node --format=cjs --outfile=dist/index.cjs --external:js-yaml --target=node18 --banner:js=\"\\\"use strict\\\";const __mockly_import_meta_url = require('url').pathToFileURL(__filename).href;\" --define:import.meta.url=__mockly_import_meta_url",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "pretest": "npm run build",
     "test": "vitest run",

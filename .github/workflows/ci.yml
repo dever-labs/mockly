@@ -356,7 +356,10 @@ jobs:
           # Org-level secret (visibility: ALL) also used by dever-labs/postly to
           # push updated Homebrew formulas/casks to dever-labs/homebrew-tap.
           # Also used by goreleaser's `scoops:` pipe to push the Scoop
-          # manifest to dever-labs/scoop-bucket.
+          # manifest to dever-labs/scoop-bucket, and (once #381's one-time
+          # bootstrap is done and `skip_upload: true` is removed from the
+          # `winget:` pipe) to push to the dever-labs/winget-pkgs fork and
+          # open a PR against microsoft/winget-pkgs.
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
         run: goreleaser release --clean
 

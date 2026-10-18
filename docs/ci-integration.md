@@ -114,6 +114,10 @@ scoop bucket add dever-labs https://github.com/dever-labs/scoop-bucket
 scoop install mockly
 ```
 
+!!! note "winget support: not yet available"
+    goreleaser generates a winget manifest on every release, but it isn't
+    published yet — see [issue #381](https://github.com/dever-labs/mockly/issues/381).
+
 ---
 
 ## Linux packages (.deb/.rpm)

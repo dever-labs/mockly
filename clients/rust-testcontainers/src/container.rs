@@ -13,6 +13,7 @@ use mockly_driver::{
 pub struct MocklyContainer {
     inner: Container<MocklyImage>,
     http_port: u16,
+    api_port: u16,
     api: ApiClient,
 }
 
@@ -27,6 +28,7 @@ impl MocklyContainer {
         Self {
             inner: container,
             http_port,
+            api_port,
             api: ApiClient::new(format!("http://127.0.0.1:{api_port}")),
         }
     }
@@ -44,12 +46,7 @@ impl MocklyContainer {
     }
 
     pub fn api_port(&self) -> u16 {
-        self.api
-            .api_base
-            .rsplit(':')
-            .next()
-            .and_then(|p| p.parse().ok())
-            .expect("api_base should contain a valid port")
+        self.api_port
     }
 
     pub fn http_base(&self) -> String {

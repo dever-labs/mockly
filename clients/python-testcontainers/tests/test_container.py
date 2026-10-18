@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 from mockly_testcontainers import MocklyContainer
 from mockly_testcontainers._types import (
+    ActiveScenariosResponse,
     CallEntry,
     FaultConfig,
     Mock,
@@ -221,6 +222,220 @@ def test_with_options_renders_scenarios_into_config():
     assert '"X-Test": "1"' in container._config_yaml
     assert 'delay: "10ms"' in container._config_yaml
     assert "disabled: false" in container._config_yaml
+
+
+def test_list_mocks_parses_json_array():
+    container = MocklyContainer()
+    container._request = MagicMock(
+        return_value=b'[{"id":"m1","request":{"method":"GET","path":"/a"},"response":{"status":200}}]'
+    )
+
+    mocks = container.list_mocks()
+
+    assert mocks == [
+        Mock(id="m1", request=MockRequest(method="GET", path="/a"), response=MockResponse(status=200))
+    ]
+    container._request.assert_called_once_with("GET", "/api/mocks/http", expected=(200,))
+
+
+def test_update_mock_puts_serialized_body():
+    container = MocklyContainer()
+    container._request = MagicMock(
+        return_value=b'{"id":"m1","request":{"method":"GET","path":"/a"},"response":{"status":201}}'
+    )
+
+    mock = Mock(id="m1", request=MockRequest(method="GET", path="/a"), response=MockResponse(status=201))
+    result = container.update_mock("m1", mock)
+
+    assert result.response.status == 201
+    container._request.assert_called_once_with(
+        "PUT",
+        "/api/mocks/http/m1",
+        {
+            "id": "m1",
+            "request": {"method": "GET", "path": "/a"},
+            "response": {"status": 201},
+        },
+        expected=(200,),
+    )
+
+
+def test_get_state_returns_map():
+    container = MocklyContainer()
+    container._request = MagicMock(return_value=b'{"env":"prod"}')
+
+    state = container.get_state()
+
+    assert state == {"env": "prod"}
+    container._request.assert_called_once_with("GET", "/api/state", expected=(200,))
+
+
+def test_set_state_posts_and_returns_map():
+    container = MocklyContainer()
+    container._request = MagicMock(return_value=b'{"env":"prod"}')
+
+    result = container.set_state({"env": "prod"})
+
+    assert result == {"env": "prod"}
+    container._request.assert_called_once_with("POST", "/api/state", {"env": "prod"}, expected=(200,))
+
+
+def test_delete_state_sends_delete():
+    container = MocklyContainer()
+    container._request = MagicMock()
+
+    container.delete_state("env")
+
+    container._request.assert_called_once_with("DELETE", "/api/state/env", expected=(200,))
+
+
+def test_reset_posts_to_reset_endpoint():
+    container = MocklyContainer()
+    container._request = MagicMock()
+
+    container.reset()
+
+    container._request.assert_called_once_with("POST", "/api/reset", expected=(200,))
+
+
+def test_activate_scenario_posts_to_activate_endpoint():
+    container = MocklyContainer()
+    container._request = MagicMock()
+
+    container.activate_scenario("sc1")
+
+    container._request.assert_called_once_with("POST", "/api/scenarios/sc1/activate", expected=(200,))
+
+
+def test_deactivate_scenario_posts_to_deactivate_endpoint():
+    container = MocklyContainer()
+    container._request = MagicMock()
+
+    container.deactivate_scenario("sc1")
+
+    container._request.assert_called_once_with("POST", "/api/scenarios/sc1/deactivate", expected=(200,))
+
+
+def test_list_scenarios_parses_json_array():
+    container = MocklyContainer()
+    container._request = MagicMock(return_value=b'[{"id":"sc1","name":"Scenario","patches":[]}]')
+
+    scenarios = container.list_scenarios()
+
+    assert scenarios == [Scenario(id="sc1", name="Scenario", patches=[])]
+    container._request.assert_called_once_with("GET", "/api/scenarios", expected=(200,))
+
+
+def test_create_scenario_posts_and_parses_response():
+    container = MocklyContainer()
+    container._request = MagicMock(return_value=b'{"id":"sc1","name":"Scenario","patches":[]}')
+
+    scenario = Scenario(id="sc1", name="Scenario", patches=[])
+    result = container.create_scenario(scenario)
+
+    assert result == scenario
+    container._request.assert_called_once_with(
+        "POST",
+        "/api/scenarios",
+        {"id": "sc1", "name": "Scenario", "patches": []},
+        expected=(201,),
+    )
+
+
+def test_get_scenario_fetches_by_id():
+    container = MocklyContainer()
+    container._request = MagicMock(return_value=b'{"id":"sc1","name":"Scenario","patches":[]}')
+
+    result = container.get_scenario("sc1")
+
+    assert result.id == "sc1"
+    container._request.assert_called_once_with("GET", "/api/scenarios/sc1", expected=(200,))
+
+
+def test_update_scenario_puts_and_parses_response():
+    container = MocklyContainer()
+    container._request = MagicMock(return_value=b'{"id":"sc1","name":"Updated","patches":[]}')
+
+    scenario = Scenario(id="sc1", name="Updated", patches=[])
+    result = container.update_scenario("sc1", scenario)
+
+    assert result.name == "Updated"
+    container._request.assert_called_once_with(
+        "PUT",
+        "/api/scenarios/sc1",
+        {"id": "sc1", "name": "Updated", "patches": []},
+        expected=(200,),
+    )
+
+
+def test_delete_scenario_sends_delete():
+    container = MocklyContainer()
+    container._request = MagicMock()
+
+    container.delete_scenario("sc1")
+
+    container._request.assert_called_once_with("DELETE", "/api/scenarios/sc1", expected=(200,))
+
+
+def test_list_active_scenarios_parses_response():
+    container = MocklyContainer()
+    container._request = MagicMock(
+        return_value=b'{"active":["sc1"],"scenarios":[{"id":"sc1","name":"Scenario","patches":[]}]}'
+    )
+
+    result = container.list_active_scenarios()
+
+    assert result == ActiveScenariosResponse(
+        active=["sc1"], scenarios=[Scenario(id="sc1", name="Scenario", patches=[])]
+    )
+    container._request.assert_called_once_with("GET", "/api/scenarios/active", expected=(200,))
+
+
+def test_clear_fault_sends_delete():
+    container = MocklyContainer()
+    container._request = MagicMock()
+
+    container.clear_fault()
+
+    container._request.assert_called_once_with("DELETE", "/api/fault", expected=(200,))
+
+
+def test_clear_logs_sends_delete():
+    container = MocklyContainer()
+    container._request = MagicMock()
+
+    container.clear_logs()
+
+    container._request.assert_called_once_with("DELETE", "/api/logs", expected=(200,))
+
+
+def test_get_calls_fetches_summary():
+    container = MocklyContainer()
+    container._request = MagicMock(return_value=b'{"mock_id":"m1","count":4,"calls":[]}')
+
+    result = container.get_calls("m1")
+
+    assert result.mock_id == "m1"
+    assert result.count == 4
+    container._request.assert_called_once_with("GET", "/api/calls/http/m1", expected=(200,))
+
+
+def test_clear_calls_sends_delete():
+    container = MocklyContainer()
+    container._request = MagicMock()
+
+    container.clear_calls("m1")
+
+    container._request.assert_called_once_with("DELETE", "/api/calls/http/m1", expected=(200,))
+
+
+def test_clear_all_calls_sends_delete():
+    container = MocklyContainer()
+    container._request = MagicMock()
+
+    container.clear_all_calls()
+
+    container._request.assert_called_once_with("DELETE", "/api/calls/http", expected=(200,))
 
 
 def test_patch_mock_serializes_patch_body():

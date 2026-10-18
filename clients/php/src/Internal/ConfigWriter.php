@@ -72,10 +72,19 @@ final class ConfigWriter
     /** @param list<Scenario>|null $scenarios */
     public static function writeToTempFile(int $httpPort, int $apiPort, ?array $scenarios): string
     {
-        $path = tempnam(sys_get_temp_dir(), 'mockly-') . '.yaml';
-        file_put_contents($path, self::render($httpPort, $apiPort, $scenarios));
+        // tempnam() creates the file at its returned path; renaming to a
+        // ".yaml" suffix would otherwise leak that original zero-byte file,
+        // so we reuse the created path instead of appending a suffix to it.
+        $path = tempnam(sys_get_temp_dir(), 'mockly-');
+        if ($path === false) {
+            throw new \RuntimeException('Failed to create temporary config file');
+        }
 
-        return $path;
+        $yamlPath = $path . '.yaml';
+        rename($path, $yamlPath);
+        file_put_contents($yamlPath, self::render($httpPort, $apiPort, $scenarios));
+
+        return $yamlPath;
     }
 
     /** Wraps a string in double-quotes with minimal escaping for YAML. */

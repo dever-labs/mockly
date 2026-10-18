@@ -34,6 +34,8 @@ final class MocklyContainer
 
     private readonly GenericContainer $container;
     private ?StartedGenericContainer $started = null;
+    private ?string $httpBase = null;
+    private ?string $apiBase = null;
     private string $configYaml;
 
     public function __construct(string $image = self::DEFAULT_IMAGE)
@@ -69,6 +71,8 @@ final class MocklyContainer
             ->withWait((new WaitForHttp(self::API_PORT))->withPath('/api/protocols'));
 
         $this->started = $this->container->start();
+        $this->httpBase = "http://{$this->started->getHost()}:{$this->started->getMappedPort(self::HTTP_PORT)}";
+        $this->apiBase = "http://{$this->started->getHost()}:{$this->started->getMappedPort(self::API_PORT)}";
 
         return $this;
     }
@@ -77,25 +81,18 @@ final class MocklyContainer
     {
         $this->started?->stop();
         $this->started = null;
+        $this->httpBase = null;
+        $this->apiBase = null;
     }
 
     public function getHttpBase(): string
     {
-        return "http://{$this->startedContainer()->getHost()}:{$this->startedContainer()->getMappedPort(self::HTTP_PORT)}";
+        return $this->httpBase ?? throw new RuntimeException('MocklyContainer has not been started; call start() first.');
     }
 
     public function getApiBase(): string
     {
-        return "http://{$this->startedContainer()->getHost()}:{$this->startedContainer()->getMappedPort(self::API_PORT)}";
-    }
-
-    private function startedContainer(): StartedGenericContainer
-    {
-        if ($this->started === null) {
-            throw new RuntimeException('MocklyContainer has not been started; call start() first.');
-        }
-
-        return $this->started;
+        return $this->apiBase ?? throw new RuntimeException('MocklyContainer has not been started; call start() first.');
     }
 
     public function addMock(Mock $mock): void
@@ -251,7 +248,19 @@ final class MocklyContainer
         $path = '/api/calls/http/' . rawurlencode($mockId) . '/wait';
         $body = ['count' => $count, 'timeout' => "{$timeoutSeconds}s"];
 
-        return self::parseCallSummary($this->requestJson('POST', $path, $body, [200]));
+        try {
+            $data = $this->requestJson('POST', $path, $body, [200]);
+        } catch (RuntimeException $exc) {
+            if (str_contains($exc->getMessage(), '408')) {
+                throw new RuntimeException(
+                    "waitForCalls: timeout waiting for {$count} call(s) on '{$mockId}'",
+                    previous: $exc,
+                );
+            }
+            throw $exc;
+        }
+
+        return self::parseCallSummary($data);
     }
 
     private static function withOptionalMatchedId(string $path, ?string $matchedId): string

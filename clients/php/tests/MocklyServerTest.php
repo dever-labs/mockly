@@ -212,6 +212,20 @@ final class MocklyServerTest extends TestCase
         self::assertCount(1, $scenario->patches);
     }
 
+    public function testListScenariosSendsGetAndParses(): void
+    {
+        self::$fake->setResponse(200, json_encode([
+            ['id' => 's1', 'name' => 'Test', 'patches' => []],
+        ]));
+
+        $scenarios = $this->server()->listScenarios();
+
+        self::assertSame('GET', self::$fake->lastRequest()['method']);
+        self::assertSame('/api/scenarios', self::$fake->lastRequest()['path']);
+        self::assertCount(1, $scenarios);
+        self::assertSame('s1', $scenarios[0]->id);
+    }
+
     public function testGetScenarioSendsGet(): void
     {
         self::$fake->setResponse(200, json_encode(['id' => 's1', 'name' => 'Test', 'patches' => []]));

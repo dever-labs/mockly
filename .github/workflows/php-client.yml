@@ -1,0 +1,65 @@
+name: PHP client CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'clients/php/**'
+      - 'clients/php-testcontainers/**'
+  pull_request:
+    paths:
+      - 'clients/php/**'
+      - 'clients/php-testcontainers/**'
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: clients/php
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # shivammathur/setup-php@v2.40.0
+        with:
+          php-version: '8.1'
+          extensions: curl, json
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Test
+        run: composer test
+
+  ci-testcontainers:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: clients/php-testcontainers
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # shivammathur/setup-php@v2.40.0
+        with:
+          php-version: '8.1'
+          extensions: curl, json
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Test
+        run: composer test

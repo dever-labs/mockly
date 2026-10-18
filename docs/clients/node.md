@@ -167,6 +167,11 @@ await server.clearCalls('get-orders')
 await server.clearAllCalls()
 ```
 
+> `clearCalls`/`clearAllCalls` are for clearing call history mid-test without
+> touching mocks, scenarios, or state. If you want a full reset between tests,
+> `server.reset()` already clears recorded calls too — see [Reset and
+> stop](#reset-and-stop).
+
 ### State
 
 ```ts
@@ -213,7 +218,11 @@ await server.clearFault()
 ### Reset and stop
 
 ```ts
-// Reset all dynamic mocks, active scenarios, and faults; keeps startup config
+// Resets the server back to its startup state in one call: removes dynamic
+// mocks, deactivates scenarios, clears fault injection, clears recorded
+// calls/logs and call counts, and clears the state store. Mocks from the
+// startup config are preserved. There's no need to also call
+// clearAllCalls()/clearLogs() — reset() already covers them.
 await server.reset()
 
 // Kill the process

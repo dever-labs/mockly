@@ -312,7 +312,7 @@ describe('StartedMocklyContainer', () => {
       ['http://localhost:19091/api/scenarios/payments-down', { method: 'DELETE' }],
       ['http://localhost:19091/api/scenarios/active'],
       ['http://localhost:19091/api/scenarios/payments-down/activate', { method: 'POST', headers: {}, body: undefined }],
-      ['http://localhost:19091/api/scenarios/payments-down/activate', { method: 'DELETE' }],
+      ['http://localhost:19091/api/scenarios/payments-down/deactivate', { method: 'POST', headers: {}, body: undefined }],
       ['http://localhost:19091/api/fault/http', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, delay: '10ms', status: 503, error_rate: 0.5 }) }],
       ['http://localhost:19091/api/fault', { method: 'DELETE' }],
       ['http://localhost:19091/api/logs'],

@@ -37,6 +37,14 @@ This installs from the [`dever-labs/scoop-bucket`](https://github.com/dever-labs
 repository, which is updated automatically on every release. See
 [CI integration](../ci-integration.md#any-ci-install-script) for the `install.ps1` alternative.
 
+!!! note "winget support: not yet available"
+    A `winget install mockly` package is planned but not live yet — goreleaser
+    already generates a valid manifest on every release, but publishing it to
+    [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs) requires
+    a one-time manual submission first. See
+    [issue #381](https://github.com/dever-labs/mockly/issues/381) for status.
+    Use Scoop or the `install.ps1` script above in the meantime.
+
 ### Node.js / npm: npx
 
 ```sh

@@ -81,6 +81,15 @@ jobs:
         run: npm ci --force
         working-directory: clients
 
+      # clients/node-cli depends on @dever-labs/mockly-driver, which now
+      # resolves via a workspace link to clients/node's source rather than a
+      # published registry tarball — so its dist/ build output (imported by
+      # clients/node's package.json "main"/"module" fields) must exist before
+      # clients/node-cli's tests can import it.
+      - name: Build mockly-driver (workspace dependency)
+        run: npm run build
+        working-directory: clients/node
+
       - name: Test
         run: npm test
         working-directory: clients/node-cli

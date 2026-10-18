@@ -162,3 +162,49 @@ scoops:
     commit_author:
       name: github-actions[bot]
       email: github-actions[bot]@users.noreply.github.com
+
+# winget (Windows Package Manager). Unlike homebrew_casks/scoops above,
+# which publish to dever-labs-owned repos we control outright, winget
+# packages live in Microsoft's microsoft/winget-pkgs repo and are submitted
+# via a fork + pull request — see #381. That first-ever submission (and the
+# fork/token it depends on) is a visible, one-way, third-party action that
+# needs explicit human sign-off, so this pipe ships with `skip_upload: true`
+# for now: goreleaser still generates and validates the manifest into
+# dist/ on every run (catching config drift/schema errors in CI), but never
+# pushes to a repository or opens a PR.
+#
+# One-time bootstrap required before flipping this live (tracked in #381):
+#   1. Fork microsoft/winget-pkgs into the dever-labs org.
+#   2. Confirm TAP_GITHUB_TOKEN (or a dedicated token) has push access to
+#      that fork and `public_repo` scope to open PRs against the upstream
+#      microsoft/winget-pkgs repo.
+#   3. Manually submit the first dever-labs.mockly manifest (e.g. via
+#      `wingetcreate submit`) so winget-pkgs' validation bot approves the
+#      new package identifier once.
+# After that, remove `skip_upload: true` so the release CI job pushes to
+# the fork and opens a PR automatically on every subsequent release, the
+# same way homebrew_casks/scoops already do.
+winget:
+  - name: mockly
+    ids: [windows-zip]
+    publisher: dever-labs
+    package_identifier: dever-labs.mockly
+    license: MIT
+    license_url: https://github.com/dever-labs/mockly/blob/main/LICENSE
+    homepage: https://github.com/dever-labs/mockly
+    short_description: Mock server for HTTP, gRPC, Redis, Kafka, and 17 other protocols
+    publisher_url: https://github.com/dever-labs
+    publisher_support_url: https://github.com/dever-labs/mockly/issues
+    skip_upload: true
+    repository:
+      owner: dever-labs
+      name: winget-pkgs
+      branch: "mockly-{{ .Version }}"
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        draft: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master

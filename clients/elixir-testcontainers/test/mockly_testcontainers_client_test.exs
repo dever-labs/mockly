@@ -109,4 +109,132 @@ defmodule Mockly.Testcontainers.ClientTest do
     assert {:error, {:unexpected_status, 500, %{"error" => "boom"}}} =
              Client.add_mock(base_url, %{"id" => "m1"})
   end
+
+  # --- State ---------------------------------------------------------------
+
+  test "get_state sends GET to /api/state", %{fake: fake, base_url: base_url} do
+    FakeApi.set_response(fake, 200, ~s({"foo":"bar"}))
+
+    assert {:ok, %{"foo" => "bar"}} = Client.get_state(base_url)
+    assert FakeApi.last_request(fake).method == "GET"
+    assert FakeApi.last_request(fake).path == "/api/state"
+  end
+
+  test "set_state sends POST with the key/value map", %{fake: fake, base_url: base_url} do
+    FakeApi.set_response(fake, 200, ~s({"foo":"bar"}))
+
+    assert {:ok, %{"foo" => "bar"}} = Client.set_state(base_url, %{"foo" => "bar"})
+
+    req = FakeApi.last_request(fake)
+    assert req.method == "POST"
+    assert req.path == "/api/state"
+    assert req.body == ~s({"foo":"bar"})
+  end
+
+  test "delete_state sends DELETE to the key's path and returns :ok", %{
+    fake: fake,
+    base_url: base_url
+  } do
+    FakeApi.set_response(fake, 204, "")
+    assert :ok = Client.delete_state(base_url, "foo")
+
+    req = FakeApi.last_request(fake)
+    assert req.method == "DELETE"
+    assert req.path == "/api/state/foo"
+  end
+
+  # --- Scenarios -------------------------------------------------------------
+
+  test "list_scenarios sends GET and decodes a JSON array", %{fake: fake, base_url: base_url} do
+    FakeApi.set_response(fake, 200, ~s([{"id":"s1"}]))
+
+    assert {:ok, [%{"id" => "s1"}]} = Client.list_scenarios(base_url)
+    assert FakeApi.last_request(fake).method == "GET"
+    assert FakeApi.last_request(fake).path == "/api/scenarios"
+  end
+
+  test "create_scenario sends POST with the scenario body", %{fake: fake, base_url: base_url} do
+    FakeApi.set_response(fake, 201, ~s({"id":"s1"}))
+
+    assert {:ok, %{"id" => "s1"}} = Client.create_scenario(base_url, %{"id" => "s1"})
+
+    req = FakeApi.last_request(fake)
+    assert req.method == "POST"
+    assert req.path == "/api/scenarios"
+    assert req.body == ~s({"id":"s1"})
+  end
+
+  test "get_scenario sends GET to the scenario's path", %{fake: fake, base_url: base_url} do
+    FakeApi.set_response(fake, 200, ~s({"id":"s1"}))
+
+    assert {:ok, %{"id" => "s1"}} = Client.get_scenario(base_url, "s1")
+    assert FakeApi.last_request(fake).path == "/api/scenarios/s1"
+  end
+
+  test "deactivate_scenario sends POST to the deactivate path", %{
+    fake: fake,
+    base_url: base_url
+  } do
+    FakeApi.set_response(fake, 200, "")
+    assert :ok = Client.deactivate_scenario(base_url, "s1")
+    assert FakeApi.last_request(fake).path == "/api/scenarios/s1/deactivate"
+  end
+
+  test "list_active_scenarios sends GET to /api/scenarios/active", %{
+    fake: fake,
+    base_url: base_url
+  } do
+    FakeApi.set_response(fake, 200, ~s({"active":["s1"]}))
+
+    assert {:ok, %{"active" => ["s1"]}} = Client.list_active_scenarios(base_url)
+    assert FakeApi.last_request(fake).path == "/api/scenarios/active"
+  end
+
+  # --- Fault injection ---------------------------------------------------
+
+  test "set_fault sends POST with the fault config and returns :ok", %{
+    fake: fake,
+    base_url: base_url
+  } do
+    FakeApi.set_response(fake, 200, "")
+    assert :ok = Client.set_fault(base_url, %{"status" => 500})
+
+    req = FakeApi.last_request(fake)
+    assert req.method == "POST"
+    assert req.path == "/api/fault/http"
+    assert req.body == ~s({"status":500})
+  end
+
+  test "clear_fault sends DELETE to /api/fault", %{fake: fake, base_url: base_url} do
+    FakeApi.set_response(fake, 204, "")
+    assert :ok = Client.clear_fault(base_url)
+    assert FakeApi.last_request(fake).method == "DELETE"
+    assert FakeApi.last_request(fake).path == "/api/fault"
+  end
+
+  # --- Logs & calls ----------------------------------------------------------
+
+  test "clear_logs sends DELETE to /api/logs", %{fake: fake, base_url: base_url} do
+    FakeApi.set_response(fake, 204, "")
+    assert :ok = Client.clear_logs(base_url)
+    assert FakeApi.last_request(fake).method == "DELETE"
+    assert FakeApi.last_request(fake).path == "/api/logs"
+  end
+
+  test "get_calls sends GET to the mock's calls path", %{fake: fake, base_url: base_url} do
+    FakeApi.set_response(fake, 200, ~s({"count":2}))
+
+    assert {:ok, %{"count" => 2}} = Client.get_calls(base_url, "m1")
+    assert FakeApi.last_request(fake).method == "GET"
+    assert FakeApi.last_request(fake).path == "/api/calls/http/m1"
+  end
+
+  test "clear_calls sends DELETE to the mock's calls path", %{fake: fake, base_url: base_url} do
+    FakeApi.set_response(fake, 204, "")
+    assert :ok = Client.clear_calls(base_url, "m1")
+
+    req = FakeApi.last_request(fake)
+    assert req.method == "DELETE"
+    assert req.path == "/api/calls/http/m1"
+  end
 end

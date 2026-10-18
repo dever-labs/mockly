@@ -82,4 +82,19 @@ defmodule Mockly.Testcontainers.ContainerTest do
       ContainerBuilder.build(config)
     end
   end
+
+  test "with_check_image/2 allows an otherwise-rejected image to pass validation" do
+    config =
+      Container.new()
+      |> Container.with_image("my-registry.local/mockly-fork:dev")
+      |> Container.with_check_image(~r/^my-registry\.local\/mockly-fork(:.+)?$/)
+
+    built = ContainerBuilder.build(config)
+    assert built.image == "my-registry.local/mockly-fork:dev"
+  end
+
+  test "default_http_port/0 and default_api_port/0 match the exposed ports" do
+    assert Container.default_http_port() == 8090
+    assert Container.default_api_port() == 9091
+  end
 end

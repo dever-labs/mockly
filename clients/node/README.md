@@ -31,6 +31,8 @@ The Mockly binary is downloaded automatically for your platform when you run `np
 npx mockly-install
 ```
 
+Works from both ESM (`import`) and CommonJS (`require`) consumers — the package ships a dual build (`dist/index.js` for `import`, `dist/index.cjs` for `require`), so it loads correctly in CJS test loaders too (e.g. Playwright's spec transpilation).
+
 ---
 
 ## Usage
@@ -104,6 +106,21 @@ await server.addMock({
 ```
 
 > **Note:** Header matching is exact. Place mocks with header constraints _before_ less-specific fallbacks.
+
+`request` also accepts `query` (required query params — `*` matches any value) and `auth` (a required authentication scheme: `bearer`, `basic`, `api_key`, `ntlm`, or `digest`):
+
+```ts
+await server.addMock({
+  id: 'list-users-for-tenant',
+  request: {
+    method: 'GET',
+    path: '/users',
+    query: { tenant: '*' },
+    auth: { type: 'bearer', token: '*' },
+  },
+  response: { status: 200, body: '[]' },
+})
+```
 
 ### `server.deleteMock(id)`
 

@@ -63,7 +63,7 @@ Open `http://localhost:9091` for the web UI, or call the management API at the s
 | Component testing, scenarios, fault injection | [docs/testing/](docs/testing/) |
 | Preset configs | [docs/presets.md](docs/presets.md) |
 | CLI & Management API reference | [docs/reference/](docs/reference/) |
-| Client libraries (Go, Node, Java, Kotlin, .NET, Python, Rust) | [docs/clients/](docs/clients/) |
+| Client libraries (Go, Node, Java, Kotlin, .NET, Python, PHP, Rust) | [docs/clients/](docs/clients/) |
 | CI integration (GitHub Actions, GitLab CI, Docker) | [docs/ci-integration.md](docs/ci-integration.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
 | Development & contributing | [docs/contributing.md](docs/contributing.md) |
@@ -82,6 +82,7 @@ Mockly ships official clients for both native-process and Docker-backed test set
 | **Kotlin** | `io.github.dever-labs:mockly-driver-kotlin` | _(use `mockly-testcontainers`, the Java module)_ |
 | **.NET / C#** | `Mockly.Driver` | `Testcontainers.Mockly` |
 | **Python** | `mockly-driver` | `mockly-testcontainers` |
+| **PHP** | `dever-labs/mockly-driver` | `dever-labs/mockly-testcontainers` |
 | **Rust** | `mockly-driver` | `mockly-testcontainers` |
 
 **→ [Full client library docs](docs/clients/index.md)**

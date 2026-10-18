@@ -128,6 +128,7 @@ nav:
       - Kotlin: clients/kotlin.md
       - .NET / C#: clients/dotnet.md
       - Python: clients/python.md
+      - PHP: clients/php.md
       - Rust: clients/rust.md
   - CI Integration: ci-integration.md
   - Architecture: architecture.md

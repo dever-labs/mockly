@@ -1,0 +1,37 @@
+{
+    "name": "dever-labs/mockly-driver",
+    "description": "PHP client for Mockly — start/stop servers and manage HTTP mocks in tests",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["mock", "testing", "http", "integration-test", "mockly"],
+    "homepage": "https://github.com/dever-labs/mockly/tree/main/clients/php",
+    "support": {
+        "issues": "https://github.com/dever-labs/mockly/issues",
+        "source": "https://github.com/dever-labs/mockly"
+    },
+    "require": {
+        "php": ">=8.1",
+        "ext-curl": "*",
+        "ext-json": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Mockly\\Driver\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Mockly\\Driver\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
+}

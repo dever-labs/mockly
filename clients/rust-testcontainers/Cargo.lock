@@ -1165,7 +1165,7 @@ dependencies = [
 
 [[package]]
 name = "mockly-driver"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -1175,7 +1175,7 @@ dependencies = [
 
 [[package]]
 name = "mockly-testcontainers"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "mockly-driver",
  "reqwest",

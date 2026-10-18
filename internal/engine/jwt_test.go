@@ -16,7 +16,33 @@ import (
 	"time"
 
 	"github.com/dever-labs/mockly/internal/engine"
+	"github.com/dever-labs/mockly/internal/state"
 )
+
+// ---------------------------------------------------------------------------
+// SetStore
+// ---------------------------------------------------------------------------
+
+// TestSetStore_WiresExplicitStore verifies the production wiring path
+// (cmd/mockly calls engine.SetStore(store) once at startup with the same
+// *state.Store shared by every protocol server): after SetStore, the
+// "state"/"state_set" template functions must read/write that exact store
+// instance, not some other (e.g. lazily-created fallback) one.
+func TestSetStore_WiresExplicitStore(t *testing.T) {
+	s := state.New()
+	engine.SetStore(s)
+	t.Cleanup(func() { engine.SetStore(state.New()) }) // avoid leaking into later tests
+
+	key := "test:setstore:" + randSuffix(t)
+	if out := execute(t, `{{state_set "`+key+`" "wired"}}{{state "`+key+`"}}`); out != "wired" {
+		t.Fatalf("state round trip via SetStore-wired store: got %q, want %q", out, "wired")
+	}
+
+	v, ok := s.Get(key)
+	if !ok || v != "wired" {
+		t.Errorf("expected the explicit store passed to SetStore to contain the written value, got (%q, %v)", v, ok)
+	}
+}
 
 // ---------------------------------------------------------------------------
 // state / state_set

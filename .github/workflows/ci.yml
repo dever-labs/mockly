@@ -156,8 +156,16 @@ jobs:
         with:
           node-version: "22"
 
+      # clients/node-testcontainers is part of the clients/ npm workspace (see
+      # clients/package.json) alongside the other Node packages, so install
+      # from there. --force is required for the workspace's cross-platform
+      # optional driver sub-packages (see node-client.yml for details).
+      - name: Install Node workspace dependencies
+        run: npm ci --force
+        working-directory: clients
+
       - name: Run Node testcontainers tests
-        run: npm ci && npm run test:integration
+        run: npm run test:integration
         working-directory: clients/node-testcontainers
 
       # Python
@@ -458,12 +466,20 @@ jobs:
             npm publish "$pkg" --access public --provenance
           done
 
+      # clients/node, clients/node-cli, and clients/node-testcontainers are an
+      # npm workspace rooted at clients/ (see clients/package.json and
+      # node-client.yml). One shared install covers devDependencies for all
+      # three build/publish steps below. --force is required for the
+      # workspace's cross-platform optional driver sub-packages.
+      - name: Install workspace dependencies
+        run: npm ci --force
+        working-directory: clients
+
       - name: Build and publish main package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         working-directory: clients/node
         run: |
-          npm install
           npm run build
           npm publish --access public --provenance
 
@@ -472,7 +488,6 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         working-directory: clients/node-testcontainers
         run: |
-          npm install
           npm run build
           npm publish --access public --provenance
 
@@ -481,7 +496,6 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         working-directory: clients/node-cli
         run: |
-          npm install
           npm publish --access public --provenance
 
   # ─── Publish PyPI package ────────────────────────────────────────────────────

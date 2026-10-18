@@ -31,6 +31,11 @@ Thumbs.db
 mockly.yaml
 
 # Node client
+# clients/node, clients/node-cli, clients/node-testcontainers, and the
+# mockly-driver-* platform sub-packages are an npm workspace rooted at
+# clients/ (see clients/package.json); npm hoists shared deps into a
+# top-level clients/node_modules/.
+clients/node_modules/
 clients/node/node_modules/
 clients/node/dist/
 # clients/node/bin/install.mjs is a hand-written static launcher (not

@@ -3,12 +3,16 @@ import { createServer } from 'http'
 import type { AddressInfo } from 'net'
 import { existsSync, readFileSync, rmSync } from 'fs'
 import { createRequire } from 'module'
-import { dirname } from 'path'
+import { dirname, join } from 'path'
 import { getFreePort } from '../src/utils.js'
 import { getBinaryPath, DEFAULT_MOCKLY_VERSION } from '../src/install.js'
 
-// Detect whether the platform-specific optional package is installed so tests
-// that depend on the bundled binary can be skipped/run conditionally.
+// Detect whether the platform-specific optional package is installed *with its
+// actual binary content* (not merely resolvable) so tests that depend on the
+// bundled binary can be skipped/run conditionally. Mirrors the real lookup in
+// `getBinaryPath()` (src/install.ts): a workspace-linked checkout of the
+// platform package resolves fine but only ships a `.gitkeep` placeholder — the
+// real binary is only present once installed from a published npm tarball.
 const _req = createRequire(import.meta.url)
 const _platformPkgs: Record<string, string> = {
   'linux-x64':   '@dever-labs/mockly-driver-linux-x64',
@@ -20,7 +24,13 @@ const _platformPkgs: Record<string, string> = {
 function _hasBundledBinary(): boolean {
   const pkg = _platformPkgs[`${process.platform}-${process.arch}`]
   if (!pkg) return false
-  try { _req.resolve(`${pkg}/package.json`); return true } catch { return false }
+  try {
+    const pkgJsonPath = _req.resolve(`${pkg}/package.json`)
+    const ext = process.platform === 'win32' ? '.exe' : ''
+    return existsSync(join(dirname(pkgJsonPath), 'bin', `mockly${ext}`))
+  } catch {
+    return false
+  }
 }
 const bundledBinaryAvailable = _hasBundledBinary()
 

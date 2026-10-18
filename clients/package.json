@@ -1,0 +1,11 @@
+{
+  "name": "mockly-clients-workspace-root",
+  "private": true,
+  "description": "npm workspace root tying together the Node client packages that depend on each other's exact versions within this repo (@dever-labs/mockly-driver, its per-platform sub-packages, @dever-labs/mockly-cli, @dever-labs/mockly-testcontainers). This lets npm resolve those intra-repo dependencies via local workspace links instead of the npm registry, so clients/package-lock.json's version fields can be bumped directly via release-please's `extra-files` jsonpath mechanism (see release-please-config.json) and stay consistent with version bumps before the bumped packages are actually published.",
+  "workspaces": [
+    "node",
+    "node/packages/*",
+    "node-cli",
+    "node-testcontainers"
+  ]
+}

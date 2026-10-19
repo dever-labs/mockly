@@ -128,7 +128,7 @@ Removes a mock by id.
 
 ### `server.reset()`
 
-Removes all dynamically added mocks, deactivates scenarios, and clears fault injection. Mocks defined in startup config are preserved. Call in `beforeEach` to keep tests isolated.
+Resets the server back to its startup state in a single call: removes dynamically added mocks (mocks defined in startup config are preserved), deactivates scenarios, clears fault injection, clears all recorded calls/logs and call counts, and clears the state store. There's no need to also call `clearAllCalls()` or `clearLogs()` — `reset()` already covers them. Call in `beforeEach`/`afterEach` to keep tests isolated.
 
 ### Scenarios
 

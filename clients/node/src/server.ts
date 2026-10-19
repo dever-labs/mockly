@@ -286,10 +286,17 @@ export class MocklyServer {
   }
 
   /**
-   * Resets all state: removes dynamically added mocks, deactivates scenarios,
-   * and clears fault injection. Mocks from the startup config are preserved.
+   * Resets the server back to its startup state in a single call:
    *
-   * Call this in `beforeEach` to keep tests isolated.
+   * - Removes dynamically added mocks (mocks from the startup config are preserved)
+   * - Deactivates all scenarios
+   * - Clears fault injection
+   * - Clears recorded calls/logs and call counts, i.e. {@link getCalls} and
+   *   {@link getLogs} return empty results right after `reset()` — there is no
+   *   need to also call {@link clearAllCalls} or {@link clearLogs}
+   * - Clears the entire state store ({@link getState} returns `{}` afterwards)
+   *
+   * Call this in `beforeEach`/`afterEach` to keep tests isolated.
    */
   async reset(): Promise<void> {
     await this._post('/api/reset', null)

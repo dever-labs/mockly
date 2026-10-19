@@ -167,7 +167,12 @@ Response bodies **and response headers** are rendered as Go templates. Built-in 
 | `{{.body}}` | *(request body)* | Incoming request body |
 | `{{.headers.X-Foo}}` | *(header value)* | Incoming request header |
 | `{{.query.foo}}` | *(query value)* | Incoming request query parameter |
-| `{{state "key"}}` | *(state value)* | Value from runtime state store |
+| `{{state "key"}}` | *(state value)* | Value from runtime state store, or empty string if unset |
+| `{{state_set "key" "value"}}` | *(empty string)* | Write a value into the runtime state store |
+| `{{state_set_ttl "key" "value" 300}}` | *(empty string)* | Write a value that auto-expires after N seconds |
+| `{{dict "k1" v1 "k2" v2}}` | `map[k1:v1 k2:v2]` | Build a map, e.g. to pass as `jwt_sign` claims |
+| `{{jwt_sign (dict "sub" "guest") "my-key"}}` | *(JWT string)* | Sign claims as a compact JWT (RS256 by default; optional 3rd arg selects RS384/RS512/ES256/ES384/ES512) |
+| `{{jwks_json "my-key"}}` | *(JWKS JSON)* | Public JWKS document for one or more `jwt_sign` key ids (`"kid:ALG"` to pick a non-default alg) |
 
 ### Request context
 
@@ -183,6 +188,78 @@ In addition to the legacy shorthand aliases above, templates expose a `request.*
 | `{{.request.body.field}}` | `…` | JSON field from request body (alias: `{{.body}}` for raw body still works) |
 
 **Sequence counters** (`{{seq "name"}}`) are reset to zero by `POST /api/reset` or `mockly reset`.
+
+### Signed JWTs and carrying state between requests (OIDC)
+
+`jwt_sign`/`jwks_json` let a mock sign real, verifiable JSON Web Tokens
+instead of serving a static pre-signed fixture, and `state`/`state_set`
+let one mock's response pass a value forward to a later request — e.g. so
+an OIDC `/authorize` redirect can stash the caller's `nonce` and a later
+`/token` response can echo it back into a signed `id_token`, satisfying
+relying parties (such as Backstage's `oidc` auth provider) that validate
+the `nonce` claim per the OIDC Core spec.
+
+- `jwt_sign (dict "sub" "guest" "nonce" $nonce) "my-key"` signs the given
+  claims as a compact JWT, defaulting to RS256. A key pair (RSA or EC,
+  matching the chosen alg) is generated the first time a given key id
+  (`"my-key"` above) is used, and reused for the lifetime of the running
+  `mockly` process. `iat`/`exp` are filled in with sane defaults (now /
+  now+1h) when not already present in the claims map. Pass an explicit
+  third argument to sign with a different algorithm, e.g.
+  `jwt_sign (dict "sub" "guest") "my-ec-key" "ES256"`. Supported algs:
+  `RS256` (default), `RS384`, `RS512`, `ES256`, `ES384`, `ES512`. A given
+  key id is permanently bound to whichever alg it was first used with —
+  reusing it with a different alg is an error, so use a distinct key id
+  per algorithm.
+- `jwks_json "my-key"` serves that same key's real public half as a JWKS
+  document (`{"keys": [...]}`), so a client's JWKS-based verifier accepts
+  the signed tokens. Pass multiple key ids to serve several keys from one
+  endpoint. To serve a key that hasn't been signed with yet (e.g. the
+  JWKS endpoint is hit before the first `/token` call), suffix the key id
+  with `:ALG`, e.g. `jwks_json "my-ec-key:ES256"`.
+- `state_set "key" "value"` / `state_set_ttl "key" "value" 300` write into
+  the same runtime state store used by `state:` match conditions and the
+  management API (`/api/state`); `state "key"` reads it back (empty string
+  if unset or expired). Both are typically used with `{{- -}}` trim
+  markers so their empty-string output doesn't leak stray whitespace into
+  the response.
+
+Example — `/authorize` stashes the nonce, `/token` signs it into the
+`id_token`:
+
+```yaml
+- id: authorize
+  request:
+    method: GET
+    path: /oauth2/authorize
+  response:
+    status: 302
+    headers:
+      Location: '{{- state_set_ttl "nonce:mock-code" .query.nonce 300 -}}{{.query.redirect_uri}}?code=mock-code&state={{.query.state}}'
+    body: ""
+
+- id: jwks
+  request:
+    method: GET
+    path: /.well-known/jwks.json
+  response:
+    status: 200
+    body: '{{ jwks_json "mockly-rsa-key-1" }}'
+
+- id: token
+  request:
+    method: POST
+    path: /oauth2/token
+  response:
+    status: 200
+    body: |
+      {
+        "id_token": "{{ jwt_sign (dict "iss" "http://localhost:8080" "aud" "my-app" "sub" "user-123" "nonce" (state "nonce:mock-code")) "mockly-rsa-key-1" }}"
+      }
+```
+
+See the [`oauth2`](../presets.md) and [`keycloak`](../presets.md) presets
+for the full working versions of this pattern.
 
 !!! note "HTML responses escape reflected request data"
     When a mock's response `Content-Type` is `text/html`, request-derived

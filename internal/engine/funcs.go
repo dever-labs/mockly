@@ -24,19 +24,19 @@ func BuildFuncMap() template.FuncMap {
 	return template.FuncMap{
 		// ── time ────────────────────────────────────────────────────────────
 		"now":      func() string { return time.Now().UTC().Format(time.RFC3339) },
-		"date":     fnDate,     // date "2006-01-02"
-		"date_add": fnDateAdd,  // date_add "2006-01-02" "24h"
+		"date":     fnDate,    // date "2006-01-02"
+		"date_add": fnDateAdd, // date_add "2006-01-02" "24h"
 
 		// ── string transforms ────────────────────────────────────────────────
 		"upper": strings.ToUpper,
 		"lower": strings.ToLower,
 
 		// ── random primitives ────────────────────────────────────────────────
-		"uuid":        fnUUID,        // uuid
-		"rand_int":    fnRandInt,     // rand_int MIN MAX
-		"rand_float":  fnRandFloat,   // rand_float MIN MAX DECIMALS
-		"rand_string": fnRandString,  // rand_string LENGTH [charset]
-		"rand_bool":   fnRandBool,    // rand_bool
+		"uuid":        fnUUID,       // uuid
+		"rand_int":    fnRandInt,    // rand_int MIN MAX
+		"rand_float":  fnRandFloat,  // rand_float MIN MAX DECIMALS
+		"rand_string": fnRandString, // rand_string LENGTH [charset]
+		"rand_bool":   fnRandBool,   // rand_bool
 
 		// ── selection ────────────────────────────────────────────────────────
 		"pick": fnPick, // pick "a" "b" "c" ...
@@ -49,6 +49,16 @@ func BuildFuncMap() template.FuncMap {
 
 		// ── text ─────────────────────────────────────────────────────────────
 		"lorem": fnLorem, // lorem N
+
+		// ── runtime state store ─────────────────────────────────────────────
+		"state":         fnStateGet,    // state "key" → stored value, or ""
+		"state_set":     fnStateSet,    // state_set "key" "value"
+		"state_set_ttl": fnStateSetTTL, // state_set_ttl "key" "value" TTL_SECONDS
+
+		// ── JWT / JWKS signing (OIDC presets) ───────────────────────────────
+		"dict":      fnDict,     // dict "k1" v1 "k2" v2 ... → map for jwt_sign
+		"jwt_sign":  fnJWTSign,  // jwt_sign (dict ...) "key-id" → signed RS256 JWT
+		"jwks_json": fnJWKSJSON, // jwks_json "key-id" [...] → JWKS JSON for the given key id(s)
 	}
 }
 

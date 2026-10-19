@@ -159,4 +159,11 @@ delete above to reset just one namespace instead of wiping everything.
 |---|---|---|
 | `POST` | `/api/reset` | Reset all mocks/state/logs/fault/scenarios to config defaults |
 
+Resetting removes dynamically added mocks (startup-config mocks are kept),
+deactivates scenarios, clears fault injection, clears the state store, and
+clears recorded logs — since `/api/calls/*` reads are filtered views over the
+same log store, this also clears recorded calls and call counts. There's no
+need to separately call `DELETE /api/calls/http` or `DELETE /api/logs` after a
+reset.
+
 ---

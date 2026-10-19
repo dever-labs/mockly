@@ -103,7 +103,7 @@ const container = await new MocklyContainerBuilder()
 | `getState()` | Read the state map. |
 | `setState(kvMap)` | Merge/replace state and return the updated map. |
 | `deleteState(key)` | Delete a single state key. |
-| `reset()` | Remove dynamic mocks, deactivate scenarios, and clear faults. |
+| `reset()` | Reset to startup state: remove dynamic mocks, deactivate scenarios, clear faults, clear recorded calls/logs and call counts, and clear state. |
 | `listScenarios()` | List configured scenarios. |
 | `createScenario(scenario)` | Create a scenario. |
 | `getScenario(id)` | Read a scenario by ID. |

@@ -13,6 +13,7 @@ import (
 	"github.com/dever-labs/mockly/assets"
 	"github.com/dever-labs/mockly/internal/api"
 	"github.com/dever-labs/mockly/internal/config"
+	"github.com/dever-labs/mockly/internal/engine"
 	"github.com/dever-labs/mockly/internal/logger"
 	"github.com/dever-labs/mockly/internal/metrics"
 	"github.com/dever-labs/mockly/internal/protocols/amqpserver"
@@ -83,6 +84,7 @@ func launch(ctx context.Context, errCh chan<- error, start func(context.Context)
 
 func runServers(cfg *config.Config, watch bool) error {
 	store := state.New()
+	engine.SetStore(store) // wires "state"/"state_set" template functions to this store
 	sc := scenarios.New(cfg.Scenarios)
 	log := logger.New(500)
 	wh := webhook.New(500)

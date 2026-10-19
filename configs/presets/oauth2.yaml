@@ -53,7 +53,7 @@ protocols:
               "grant_types_supported": ["authorization_code", "implicit", "client_credentials", "password", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
               "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt", "none"],
               "subject_types_supported": ["public"],
-              "id_token_signing_alg_values_supported": ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"],
+              "id_token_signing_alg_values_supported": ["RS256"],
               "claims_supported": ["sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "name", "given_name", "family_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "email", "email_verified", "gender", "birthdate", "zoneinfo", "locale", "phone_number", "phone_number_verified", "address", "updated_at"],
               "code_challenge_methods_supported": ["plain", "S256"],
               "end_session_endpoint": "http://localhost:8080/oauth2/logout",
@@ -63,6 +63,8 @@ protocols:
             }
 
       # ── JWKS ──────────────────────────────────────────────────────────────
+      # Served dynamically via jwks_json so it always matches whatever key
+      # the "token-success" mock below actually signs id_tokens with.
       - id: jwks
         request:
           method: GET
@@ -71,28 +73,26 @@ protocols:
           status: 200
           headers:
             Content-Type: application/json
-          body: |
-            {
-              "keys": [
-                {
-                  "kid": "mockly-rsa-key-1",
-                  "kty": "RSA",
-                  "use": "sig",
-                  "alg": "RS256",
-                  "n": "mockly-rsa-modulus-placeholder",
-                  "e": "AQAB"
-                },
-                {
-                  "kid": "mockly-ec-key-1",
-                  "kty": "EC",
-                  "use": "sig",
-                  "alg": "ES256",
-                  "crv": "P-256",
-                  "x": "mockly-ec-x-placeholder",
-                  "y": "mockly-ec-y-placeholder"
-                }
-              ]
-            }
+          body: '{{ jwks_json "mockly-rsa-key-1" }}'
+
+      # ── Authorization endpoint (browser authorization_code flow) ─────────
+      # Mocks the redirect a real authorization server would issue after a
+      # user logs in: a 302 straight to the caller's redirect_uri with a
+      # mock ?code= and the original ?state= echoed back. Also stashes the
+      # request's "nonce" (if any) keyed by that code, so the /token
+      # response below can echo it into the signed id_token's "nonce"
+      # claim — letting clients that validate nonce per the OIDC Core spec
+      # (e.g. Backstage's oidc provider) complete a full login against this
+      # preset. There's no login page and no redirect_uri allow-list check.
+      - id: authorize
+        request:
+          method: GET
+          path: /oauth2/authorize
+        response:
+          status: 302
+          headers:
+            Location: '{{- state_set_ttl "oauth2:nonce:mock-auth-code-001" .query.nonce 300 -}}{{.query.redirect_uri}}?code=mock-auth-code-001{{if .query.state}}&state={{.query.state}}{{end}}'
+          body: ""
 
       # ── Token endpoint — authorization_code / password / client_credentials
       - id: token-success
@@ -112,7 +112,7 @@ protocols:
               "expires_in": 3600,
               "refresh_token": "mock-refresh-token-opaque-string-001",
               "refresh_expires_in": 86400,
-              "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Im1vY2tseS1yc2Eta2V5LTEifQ.eyJzdWIiOiJ1c2VyLTEyMyIsImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA4MCIsImF1ZCI6Im15LWFwcCIsImV4cCI6OTk5OTk5OTk5OSwiaWF0IjoxNzAwMDAwMDAwLCJub25jZSI6Im1vY2stbm9uY2UiLCJuYW1lIjoiQWxpY2UgRXhhbXBsZSIsImVtYWlsIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZX0.mock-id-sig",
+              "id_token": "{{ jwt_sign (dict "iss" "http://localhost:8080" "aud" "my-app" "sub" "user-123" "nonce" (state "oauth2:nonce:mock-auth-code-001")) "mockly-rsa-key-1" }}",
               "scope": "openid profile email"
             }
 

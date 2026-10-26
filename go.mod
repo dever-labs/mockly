@@ -10,7 +10,7 @@ require (
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/go-chi/cors v1.2.2
 	github.com/gorilla/websocket v1.5.3
-	github.com/gosnmp/gosnmp v1.45.0
+	github.com/gosnmp/gosnmp v1.47.0
 	github.com/miekg/dns v1.1.73
 	github.com/mochi-mqtt/server/v2 v2.7.9
 	github.com/nats-io/nats-server/v2 v2.15.1

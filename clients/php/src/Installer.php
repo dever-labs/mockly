@@ -9,7 +9,7 @@ use RuntimeException;
 /** Binary download and location helpers for mockly-driver. */
 final class Installer
 {
-    public const DEFAULT_VERSION = 'v0.16.0'; // x-release-please-version
+    public const DEFAULT_VERSION = 'v0.17.0'; // x-release-please-version
 
     private const DEFAULT_BASE_URL = 'https://github.com/dever-labs/mockly/releases/download';
 

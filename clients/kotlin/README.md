@@ -80,7 +80,7 @@ class MyServiceTest {
 <dependency>
     <groupId>io.github.dever-labs</groupId>
     <artifactId>mockly-driver-kotlin</artifactId>
-    <version>0.16.0</version> <!-- x-release-please-version -->
+    <version>0.17.0</version> <!-- x-release-please-version -->
 </dependency>
 ```
 
@@ -96,7 +96,7 @@ This transitively pulls in `mockly-driver` (same version) and `kotlinx-coroutine
 val server = mocklyServer {
     httpPort = 8080            // 0 = pick a free port (default)
     apiPort = 8081
-    version = "v0.16.0"        // x-release-please-version
+    version = "v0.17.0"        // x-release-please-version
     binDir = "bin"
     startupTimeoutMs = 10_000
     extraArg("--log-level=debug")

@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.17.0](https://github.com/dever-labs/mockly/compare/v0.16.0...v0.17.0) (2026-10-27)
+
+
+### Features
+
+* add winget manifest generation to goreleaser ([#385](https://github.com/dever-labs/mockly/issues/385)) ([f66063b](https://github.com/dever-labs/mockly/commit/f66063b0cf192898a1c3446771db5fd8a37ae13d))
+* **clients:** add Kotlin DSL wrapper for the Java client ([#382](https://github.com/dever-labs/mockly/issues/382)) ([9b1a294](https://github.com/dever-labs/mockly/commit/9b1a294de6de886e4a31d79c699b1e5f4a359e23))
+* **elixir:** spike Elixir testcontainers client ([#371](https://github.com/dever-labs/mockly/issues/371)) ([#386](https://github.com/dever-labs/mockly/issues/386)) ([4304645](https://github.com/dever-labs/mockly/commit/4304645b8902eb2279498bb8b2a8f1eb092f5315))
+* **node:** publish an npm CLI wrapper for npx mockly start ([#379](https://github.com/dever-labs/mockly/issues/379)) ([e340a8e](https://github.com/dever-labs/mockly/commit/e340a8eb9d66c2108264482d35f9e42a033b7f99))
+* **oidc:** sign id_token nonce dynamically via jwt_sign/jwks_json ([#394](https://github.com/dever-labs/mockly/issues/394)) ([7cbde2b](https://github.com/dever-labs/mockly/commit/7cbde2bc3ae15a60b246e82f0ae422164a7071a5))
+* **php:** add PHP driver and testcontainers clients ([#383](https://github.com/dever-labs/mockly/issues/383)) ([9477f36](https://github.com/dever-labs/mockly/commit/9477f36fc8163b292b8510c9998e02a1e1ceb404))
+* **release:** adopt goreleaser to unify the binary/checksum/Docker pipeline ([#376](https://github.com/dever-labs/mockly/issues/376)) ([65e302f](https://github.com/dever-labs/mockly/commit/65e302f223bb39e2422b1fdc3e28cc8ce7a11b58))
+* **release:** publish .deb/.rpm packages via nfpm ([#377](https://github.com/dever-labs/mockly/issues/377)) ([6a88297](https://github.com/dever-labs/mockly/commit/6a88297b2f6df1d84ebaf384837d79face66cf18)), closes [#367](https://github.com/dever-labs/mockly/issues/367)
+* **release:** publish a Homebrew cask to dever-labs/homebrew-tap ([#378](https://github.com/dever-labs/mockly/issues/378)) ([4bbbff0](https://github.com/dever-labs/mockly/commit/4bbbff041e520e94b767142437b1c3ffdef59bcf)), closes [#363](https://github.com/dever-labs/mockly/issues/363)
+* **release:** publish a Scoop bucket manifest for Windows installs ([#380](https://github.com/dever-labs/mockly/issues/380)) ([973a8de](https://github.com/dever-labs/mockly/commit/973a8deab3fbcf8f671240e4839e12ea6c66280e))
+
+
+### Bug Fixes
+
+* **actions:** make setup-mockly a real node20 action with post-job teardown ([#375](https://github.com/dever-labs/mockly/issues/375)) ([40dc603](https://github.com/dever-labs/mockly/commit/40dc603704b5efbd074783e85ad966aa4efa6403))
+* **ci:** stop committing npm lock files for the Node client packages ([#391](https://github.com/dever-labs/mockly/issues/391)) ([5d5339b](https://github.com/dever-labs/mockly/commit/5d5339bd1bc7cde8afd8c3ea5fb4368204f5fcf0))
+* **http:** add nosniff header and universal Content-Type guard ([#373](https://github.com/dever-labs/mockly/issues/373)) ([acf1906](https://github.com/dever-labs/mockly/commit/acf1906a44ac7128c12804296a25e8ba4cc0f808))
+* **node:** ship dual ESM/CJS build and add query/auth request matchers ([#390](https://github.com/dever-labs/mockly/issues/390)) ([5371f85](https://github.com/dever-labs/mockly/commit/5371f85ac1399190b2a80e9626ad8c7a5181b408))
+
 ## [0.16.0](https://github.com/dever-labs/mockly/compare/v0.15.0...v0.16.0) (2026-10-14)
 
 

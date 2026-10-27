@@ -27,29 +27,9 @@ For security issues, follow the process in [SECURITY.md](https://github.com/deve
 
 Releases are built and published automatically by goreleaser (see
 [`.goreleaser.yaml`](https://github.com/dever-labs/mockly/blob/main/.goreleaser.yaml))
-once a version tag is pushed. Most package registries (Homebrew, Scoop, npm,
+once a version tag is pushed. All package registries (Homebrew, Scoop, npm,
 PyPI, crates.io, NuGet, Maven Central, container images, `.deb`/`.rpm`) are
 fully automated and need no manual steps.
-
-**winget is the one exception**, because publishing requires a pull request
-against Microsoft's own [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs)
-repository rather than a repo `dever-labs` controls outright. goreleaser's
-`winget:` pipe already generates a valid manifest on every release, but ships
-with `skip_upload: true` until the following **one-time, manual** bootstrap
-is completed (tracked in [#381](https://github.com/dever-labs/mockly/issues/381)):
-
-1. Fork `microsoft/winget-pkgs` into the `dever-labs` org.
-2. Confirm the `TAP_GITHUB_TOKEN` org secret (or a dedicated token) has push
-   access to that fork and `public_repo` scope to open pull requests against
-   upstream `microsoft/winget-pkgs`.
-3. Manually submit the first `dever-labs.mockly` manifest — e.g. via
-   [`wingetcreate submit`](https://github.com/microsoft/winget-create) — so
-   winget-pkgs' validation bot approves the `dever-labs.mockly` package
-   identifier once.
-
-Once that's done, remove `skip_upload: true` from the `winget:` pipe in
-`.goreleaser.yaml` so future releases push to the fork and open a PR
-automatically, the same way `homebrew_casks`/`scoops` already do.
 
 ## License
 

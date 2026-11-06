@@ -28,6 +28,7 @@ metadata:
   annotations:
     devhub/visibility: public
     github.com/project-slug: dever-labs/mockly
+    devhub/install: docker:ghcr.io/dever-labs/mockly,scoop:dever-labs/mockly
     backstage.io/techdocs-ref: dir:.
   tags: [go]
 spec:
@@ -85,6 +86,7 @@ metadata:
   annotations:
     devhub/visibility: public
     github.com/project-slug: dever-labs/mockly
+    devhub/install: npm:@dever-labs/mockly-driver
     backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/node
 spec:
   type: library
@@ -104,6 +106,7 @@ metadata:
   annotations:
     devhub/visibility: public
     github.com/project-slug: dever-labs/mockly
+    devhub/install: npm:@dever-labs/mockly-cli
     backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/node-cli
 spec:
   type: library
@@ -123,6 +126,7 @@ metadata:
   annotations:
     devhub/visibility: public
     github.com/project-slug: dever-labs/mockly
+    devhub/install: npm:@dever-labs/mockly-testcontainers
     backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/node-testcontainers
 spec:
   type: library
@@ -142,6 +146,7 @@ metadata:
   annotations:
     devhub/visibility: public
     github.com/project-slug: dever-labs/mockly
+    devhub/install: pip:mockly-driver
     backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/python
 spec:
   type: library
@@ -161,6 +166,7 @@ metadata:
   annotations:
     devhub/visibility: public
     github.com/project-slug: dever-labs/mockly
+    devhub/install: pip:mockly-testcontainers
     backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/python-testcontainers
 spec:
   type: library
@@ -180,6 +186,7 @@ metadata:
   annotations:
     devhub/visibility: public
     github.com/project-slug: dever-labs/mockly
+    devhub/install: cargo:mockly-driver
     backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/rust
 spec:
   type: library
@@ -199,6 +206,7 @@ metadata:
   annotations:
     devhub/visibility: public
     github.com/project-slug: dever-labs/mockly
+    devhub/install: cargo:mockly-testcontainers
     backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/rust-testcontainers
 spec:
   type: library
@@ -256,6 +264,7 @@ metadata:
   annotations:
     devhub/visibility: public
     github.com/project-slug: dever-labs/mockly
+    devhub/install: composer:dever-labs/mockly-driver
     backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/php
 spec:
   type: library
@@ -275,6 +284,7 @@ metadata:
   annotations:
     devhub/visibility: public
     github.com/project-slug: dever-labs/mockly
+    devhub/install: composer:dever-labs/mockly-testcontainers
     backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/php-testcontainers
 spec:
   type: library
@@ -294,6 +304,7 @@ metadata:
   annotations:
     devhub/visibility: public
     github.com/project-slug: dever-labs/mockly
+    devhub/install: nuget:Mockly.Driver,nuget:Testcontainers.Mockly
     backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/dotnet
 spec:
   type: library

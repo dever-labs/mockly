@@ -1,0 +1,334 @@
+# Describes this repository in devhub (https://hub.dever.dk), dever-labs'
+# developer portal. devhub's GitHub discovery reads this file from the
+# default branch; docs come from mkdocs.yml (backstage.io/techdocs-ref).
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: mockly
+  namespace: mockly
+  title: Mockly
+  description: Multi-protocol mock server (20 protocols) with client libraries.
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+  links:
+    - url: https://mockly.dever.dk
+      title: Mockly docs
+spec:
+  owner: group:mockly/engineering
+  domain: domain:mockly/mockly
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly
+  namespace: mockly
+  title: Mockly
+  description: Single Go binary (cmd/mockly) with the embedded React UI and management API.
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    devhub/install: docker:ghcr.io/dever-labs/mockly,scoop:dever-labs/mockly
+    backstage.io/techdocs-ref: dir:.
+  tags: [go]
+spec:
+  type: tool
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  providesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: mockly-management-api
+  namespace: mockly
+  title: Mockly Management API
+  description: REST API for managing mocks, scenarios and faults (port 9091).
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  definition:
+    $text: ./docs/openapi.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-go
+  namespace: mockly
+  title: Mockly client — Go
+  description: github.com/dever-labs/mockly/clients/go (clients/go)
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/go
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-node
+  namespace: mockly
+  title: Mockly client — Node.js
+  description: "@dever-labs/mockly-driver (clients/node)"
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    devhub/install: npm:@dever-labs/mockly-driver
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/node
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-node-cli
+  namespace: mockly
+  title: Mockly client — Node.js CLI
+  description: "@dever-labs/mockly-cli (clients/node-cli)"
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    devhub/install: npm:@dever-labs/mockly-cli
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/node-cli
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-node-testcontainers
+  namespace: mockly
+  title: Mockly client — Node.js Testcontainers
+  description: "@dever-labs/mockly-testcontainers (clients/node-testcontainers)"
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    devhub/install: npm:@dever-labs/mockly-testcontainers
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/node-testcontainers
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-python
+  namespace: mockly
+  title: Mockly client — Python
+  description: mockly-driver (clients/python)
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    devhub/install: pip:mockly-driver
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/python
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-python-testcontainers
+  namespace: mockly
+  title: Mockly client — Python Testcontainers
+  description: mockly-testcontainers (clients/python-testcontainers)
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    devhub/install: pip:mockly-testcontainers
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/python-testcontainers
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-rust
+  namespace: mockly
+  title: Mockly client — Rust
+  description: mockly-driver (clients/rust)
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    devhub/install: cargo:mockly-driver
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/rust
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-rust-testcontainers
+  namespace: mockly
+  title: Mockly client — Rust Testcontainers
+  description: mockly-testcontainers (clients/rust-testcontainers)
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    devhub/install: cargo:mockly-testcontainers
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/rust-testcontainers
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-java
+  namespace: mockly
+  title: Mockly client — Java
+  description: mockly-driver (clients/java)
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/java
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-kotlin
+  namespace: mockly
+  title: Mockly client — Kotlin
+  description: mockly-driver-kotlin (clients/kotlin)
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/kotlin
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-php
+  namespace: mockly
+  title: Mockly client — PHP
+  description: dever-labs/mockly-driver (clients/php)
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    devhub/install: composer:dever-labs/mockly-driver
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/php
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-php-testcontainers
+  namespace: mockly
+  title: Mockly client — PHP Testcontainers
+  description: dever-labs/mockly-testcontainers (clients/php-testcontainers)
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    devhub/install: composer:dever-labs/mockly-testcontainers
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/php-testcontainers
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-dotnet
+  namespace: mockly
+  title: Mockly client — .NET
+  description: Mockly.Driver, Testcontainers.Mockly (clients/dotnet)
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    devhub/install: nuget:Mockly.Driver,nuget:Testcontainers.Mockly
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/dotnet
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mockly-client-elixir-testcontainers
+  namespace: mockly
+  title: Mockly client — Elixir Testcontainers
+  description: mockly_testcontainers (clients/elixir-testcontainers)
+  annotations:
+    devhub/visibility: public
+    github.com/project-slug: dever-labs/mockly
+    backstage.io/source-location: url:https://github.com/dever-labs/mockly/tree/main/clients/elixir-testcontainers
+spec:
+  type: library
+  lifecycle: production
+  owner: group:mockly/engineering
+  system: system:mockly/mockly
+  consumesApis:
+    - api:mockly/mockly-management-api

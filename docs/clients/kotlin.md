@@ -13,7 +13,7 @@ arguments, and adds optional `suspend` wrappers for use from coroutines.
 <dependency>
   <groupId>io.github.dever-labs</groupId>
   <artifactId>mockly-driver-kotlin</artifactId>
-  <version>0.16.0</version> <!-- x-release-please-version -->
+  <version>0.17.0</version> <!-- x-release-please-version -->
   <scope>test</scope>
 </dependency>
 ```
@@ -21,7 +21,7 @@ arguments, and adds optional `suspend` wrappers for use from coroutines.
 ### Gradle
 
 ```kotlin
-testImplementation("io.github.dever-labs:mockly-driver-kotlin:0.16.0") // x-release-please-version
+testImplementation("io.github.dever-labs:mockly-driver-kotlin:0.17.0") // x-release-please-version
 ```
 
 ## Quickstart
@@ -56,7 +56,7 @@ import io.mockly.driver.kotlin.*
 val server = mocklyServer {
     httpPort = 8080            // fixed HTTP mock port (0 = pick free port, the default)
     apiPort = 8081              // fixed management API port (0 = pick free port)
-    version = "v0.16.0"          // x-release-please-version
+    version = "v0.17.0"          // x-release-please-version
     binDir = "bin"              // directory to search / install binary
     startupTimeoutMs = 15_000
     extraArg("--log-level=debug")

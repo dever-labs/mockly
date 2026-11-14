@@ -1,6 +1,6 @@
 {
   "name": "@dever-labs/mockly-cli",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Run the Mockly mock server via npx — npx @dever-labs/mockly-cli start",
   "keywords": [
     "mock",
@@ -35,7 +35,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dever-labs/mockly-driver": "0.16.0"
+    "@dever-labs/mockly-driver": "0.17.0"
   },
   "devDependencies": {
     "vitest": "^5.0.2"

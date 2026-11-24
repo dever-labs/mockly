@@ -14,12 +14,12 @@ require (
 	github.com/miekg/dns v1.1.73
 	github.com/mochi-mqtt/server/v2 v2.7.9
 	github.com/nats-io/nats-server/v2 v2.15.3
-	github.com/nats-io/nats.go v1.55.0
+	github.com/nats-io/nats.go v1.56.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/rs/xid v1.6.0
 	github.com/spf13/cobra v1.10.2
 	github.com/tidwall/redcon v1.6.4
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -53,5 +53,5 @@ require (
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect
 )

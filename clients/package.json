@@ -12,6 +12,9 @@
     "@dever-labs/mockly-driver-linux-arm64": "file:packages/mockly-driver-linux-arm64",
     "@dever-labs/mockly-driver-darwin-x64": "file:packages/mockly-driver-darwin-x64",
     "@dever-labs/mockly-driver-darwin-arm64": "file:packages/mockly-driver-darwin-arm64",
-    "@dever-labs/mockly-driver-win32-x64": "file:packages/mockly-driver-win32-x64"
+    "@dever-labs/mockly-driver-win32-x64": "file:packages/mockly-driver-win32-x64",
+    "glob": {
+      "minimatch": "^11.0.1"
+    }
   }
 }
